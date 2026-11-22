@@ -1,88 +1,55 @@
 #!/bin/sh
-# omloader loader init (PID 1 in initramfs)
+# omloader stage 1 (PID 1 in the tiny initramfs): find the live medium, loop-mount the squashfs layers,
+# overlay them with a tmpfs upper and switch_root into the Debian live system (systemd).
 export PATH=/usr/bin:/bin:/sbin
-export DM_DISABLE_UDEV=1   # no udevd in the loader: make libdm create /dev/mapper nodes itself
 mount -t proc proc /proc
 mount -t sysfs sys /sys
 mount -t devtmpfs dev /dev
-mkdir -p /dev/pts /run /tmp /mnt/snap /mnt/images /newroot
+mkdir -p /dev/pts /run /newroot
 mount -t tmpfs -o mode=755 tmpfs /run
 mount -t devpts devpts /dev/pts 2>/dev/null
 echo 1 > /proc/sys/kernel/sysrq
 CMD=$(cat /proc/cmdline)
 arg() { for a in $CMD; do case "$a" in "$1="*) echo "${a#*=}"; return;; esac; done; }
-has() { for a in $CMD; do [ "$a" = "$1" ] && return 0; done; return 1; }
-echo "OMLOADER_LOADER: starting (kernel $(uname -r))"
+echo "OMLOADER_STAGE1: starting (kernel $(uname -r))"
 
 for m in $(cat /etc/modules-list); do modprobe "$m" 2>/dev/null; done
 
-find_label() { blkid -L "$1" 2>/dev/null; }
-SNAPDEV=; IMGDEV=; i=0
-while [ $i -lt 30 ]; do
-  [ -z "$SNAPDEV" ] && SNAPDEV=$(find_label OMLOADER)
-  [ -z "$IMGDEV" ] && IMGDEV=$(find_label VTOYDATA)
-  [ -n "$SNAPDEV" ] && [ -n "$IMGDEV" ] && break
-  sleep 0.5; i=$((i+1))
-done
+die() { echo "OMLOADER_STAGE1: FATAL: $*"; echo "dropping to a rescue shell (poweroff -f to stop)"; exec setsid sh -c 'exec sh </dev/console >/dev/console 2>&1'; }
 
-SNAPOK=0
-if [ -n "$SNAPDEV" ]; then
-  mount -t ext4 -o rw "$SNAPDEV" /mnt/snap && SNAPOK=1
-fi
-IMAGES_ROOT=/mnt/snap/images
-if [ -n "$IMGDEV" ]; then
-  T=$(blkid -o value -s TYPE "$IMGDEV")
-  if mount -t "$T" -o rw "$IMGDEV" /mnt/images; then IMAGES_ROOT=/mnt/images/images; fi
-fi
-mkdir -p /mnt/snap/snapshots 2>/dev/null
-echo "OMLOADER_LOADER: snap=${SNAPDEV:-none}(mounted=$SNAPOK) images=${IMGDEV:-none} images_root=$IMAGES_ROOT"
-[ -d "$IMAGES_ROOT" ] && echo "OMLOADER_LOADER: images: $(ls $IMAGES_ROOT | tr '\n' ' ')"
-
-if [ "$(arg omloader.hook)" = 1 ]; then   # test helper: run /mnt/stage/hook.sh from a OMLSTAGE-labelled fs, then power off
-  SD=$(find_label OMLSTAGE); mkdir -p /mnt/stage
-  if [ -n "$SD" ] && mount -t ext4 "$SD" /mnt/stage; then sh /mnt/stage/hook.sh; echo "OMLOADER_HOOK_RC=$?"; else echo "OMLOADER_HOOK_RC=nostage"; fi
-  sync; umount /mnt/images 2>/dev/null; umount /mnt/snap 2>/dev/null; echo o > /proc/sysrq-trigger; sleep 5
-fi
-
-if has omloader.selftest=1 || [ "$(arg omloader.selftest)" = 1 ]; then
-  grep -E ' /mnt/' /proc/mounts
-  omloader 2>&1 | head -5
-  echo OMLOADER_LOADER_SELFTEST_DONE
-  sync; echo o > /proc/sysrq-trigger; sleep 5
-fi
-
-IMG=$(arg omloader.image); SNAP=$(arg omloader.snapshot)
-if [ -n "$IMG" ]; then
-  echo "OMLOADER_LOADER: auto boot image=$IMG snapshot=${SNAP:-default}"
-  set -- boot --image "$IMG" --images-root "$IMAGES_ROOT" --snap-root /mnt/snap/snapshots
-  [ -n "$SNAP" ] && set -- "$@" --snapshot "$SNAP"
-  omloader "$@"
-  RC=$?
-  # overlay (oci / lxd-container) handoff: omloader mounted /newroot and wrote /run/omloader-switch
-  # (line 1 = new root, then init + args, one per line). switch_root must be exec'd by PID 1 (this shell).
-  if [ "$RC" = 0 ] && [ -s /run/omloader-switch ]; then
-    set --
-    while IFS= read -r l; do set -- "$@" "$l"; done < /run/omloader-switch
-    NR=$1; shift
-    rm -f /run/omloader-switch
-    echo "OMLOADER_LOADER: switch_root $NR $* (loader kernel $(uname -r))"
-    mount --move /dev "$NR/dev" && mount --move /proc "$NR/proc" && mount --move /sys "$NR/sys" && mount --move /run "$NR/run" \
-      || echo "OMLOADER_LOADER: warning: mount --move failed"
-    exec switch_root "$NR" "$@"
-    echo "OMLOADER_LOADER: exec switch_root failed"; RC=127
+mkdir -p /run/medium /run/live /run/extra /run/rw
+has_live() { [ -f /run/medium/live/live.squashfs ] && [ -f /run/medium/live/omloader.squashfs ]; }
+try_dev() { # $1 = block device
+  mount -o ro "$1" /run/medium 2>/dev/null || return 1
+  has_live && return 0
+  umount /run/medium 2>/dev/null; return 1
+}
+FOUND=
+i=0
+while [ $i -lt 40 ] && [ -z "$FOUND" ]; do
+  OV=$(arg omloader.live)
+  [ -n "$OV" ] && [ -b "$OV" ] && try_dev "$OV" && FOUND=$OV
+  if [ -z "$FOUND" ]; then
+    L=$(blkid -L OMLOADER_LIVE 2>/dev/null)
+    [ -n "$L" ] && try_dev "$L" && FOUND=$L
   fi
-  echo "OMLOADER_LOADER: 'omloader boot' returned rc=$RC (exec failed or no kexec)"
-  if [ "$(arg omloader.poweroff_on_fail)" = 1 ]; then echo OMLOADER_LOADER_FAILED; sync; echo o > /proc/sysrq-trigger; sleep 5; fi
-fi
-
-cat <<BANNER
-
-=== omloader loader shell ===
-  omloader boot --image <name> [--snapshot <n>] \\
-     --images-root $IMAGES_ROOT --snap-root /mnt/snap/snapshots [--dry-run]
-  omloader snapshot list|create|rollback|delete --root /mnt/snap/snapshots <image>
-  mounts: /mnt/snap (OMLOADER) /mnt/images (VTOYDATA)   poweroff: poweroff -f
-=============================
-BANNER
-export PS1='omloader# '
-while true; do setsid cttyhack sh; echo "shell exited"; sleep 1; done
+  if [ -z "$FOUND" ]; then   # fallback: scan every block device (e.g. ISO written to a USB stick / re-labelled)
+    for d in /dev/sr* /dev/sd* /dev/vd* /dev/nvme*n*; do
+      [ -b "$d" ] || continue
+      try_dev "$d" && { FOUND=$d; break; }
+    done
+  fi
+  [ -n "$FOUND" ] || { sleep 0.5; i=$((i+1)); }
+done
+[ -n "$FOUND" ] || die "live medium (label OMLOADER_LIVE / live/live.squashfs) not found"
+echo "OMLOADER_STAGE1: live medium $FOUND"
+mount -t squashfs -o loop,ro /run/medium/live/live.squashfs /run/live || die "cannot mount live.squashfs"
+mount -t squashfs -o loop,ro /run/medium/live/omloader.squashfs /run/extra || die "cannot mount omloader.squashfs"
+mount -t tmpfs -o mode=755 tmpfs /run/rw
+mkdir -p /run/rw/upper /run/rw/work
+mount -t overlay overlay -o lowerdir=/run/extra:/run/live,upperdir=/run/rw/upper,workdir=/run/rw/work /newroot || die "overlay mount failed"
+mkdir -p /newroot/dev /newroot/proc /newroot/sys /newroot/run
+mount --move /dev /newroot/dev && mount --move /proc /newroot/proc && mount --move /sys /newroot/sys && mount --move /run /newroot/run \
+  || echo "OMLOADER_STAGE1: warning: mount --move failed"
+echo "OMLOADER_STAGE1: switch_root into the live system"
+exec switch_root /newroot /sbin/init

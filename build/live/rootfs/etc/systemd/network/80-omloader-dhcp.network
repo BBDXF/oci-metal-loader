@@ -1,0 +1,11 @@
+# DHCP on all wired NICs (Wi-Fi via iwd is installed but not configured yet)
+[Match]
+Name=en* eth*
+
+[Network]
+DHCP=yes
+IPv6AcceptRA=yes
+
+[DHCPv4]
+UseDNS=yes
+UseNTP=no

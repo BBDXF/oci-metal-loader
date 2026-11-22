@@ -1,0 +1,18 @@
+[Unit]
+Description=omloader: mount the OMLOADER (ext4) and VTOYDATA (exfat/ext4) partitions
+After=local-fs.target systemd-udevd.service systemd-modules-load.service
+Before=omloader-autoboot.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=DM_DISABLE_UDEV=1
+ExecStart=/usr/local/lib/omloader/mounts.sh
+StandardInput=null
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/console
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target

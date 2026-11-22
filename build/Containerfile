@@ -1,9 +1,23 @@
-FROM debian:bookworm
+# Two targets from one package set (shared layer cache):
+#   live    - the Debian bookworm live userspace; exported (podman export) and squashed to live.squashfs
+#   builder - live + ISO tooling (grub, xorriso, ...); runs build/mk-iso-inner.sh (stage-1 initramfs + ISO)
+FROM debian:bookworm AS live
 ARG DEBIAN_MIRROR=http://mirrors.ustc.edu.cn/debian
 ENV DEBIAN_FRONTEND=noninteractive
-RUN sed -i "s#http://deb.debian.org/debian#$DEBIAN_MIRROR#g" /etc/apt/sources.list.d/debian.sources
+RUN sed -i "s#http://deb.debian.org/debian#$DEBIAN_MIRROR#g; s#^Components: main\$#Components: main non-free-firmware#" /etc/apt/sources.list.d/debian.sources
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      linux-image-amd64 busybox-static kexec-tools dmsetup lvm2 kpartx \
-      e2fsprogs exfatprogs xfsprogs squashfs-tools util-linux kmod fdisk \
-      grub-efi-amd64-bin grub-common xorriso mtools dosfstools cpio xz-utils ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+      systemd systemd-sysv systemd-resolved udev dbus kmod \
+      util-linux e2fsprogs exfatprogs xfsprogs squashfs-tools lvm2 dmsetup kpartx kexec-tools qemu-utils \
+      parted gdisk fdisk cryptsetup \
+      iproute2 iputils-ping ca-certificates curl iwd wireless-regdb \
+      linux-image-amd64 firmware-linux-free firmware-misc-nonfree firmware-realtek firmware-iwlwifi \
+      less nano vim-tiny busybox-static procps pciutils usbutils \
+ && rm -f /boot/initrd.img-* \
+ && rm -rf /var/lib/apt/lists/* /var/cache/apt/* /var/log/* /usr/share/man /usr/share/info /usr/share/lintian /usr/share/locale \
+ && find /usr/share/doc -type f ! -name copyright -delete \
+ && find /usr/share/doc -type d -empty -delete
+
+FROM live AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      grub-efi-amd64-bin grub-common xorriso mtools dosfstools cpio xz-utils \
+ && rm -rf /var/lib/apt/lists/*
