@@ -90,6 +90,9 @@ func BuildPlan(o Options, res *config.Resolved, imageDir string) (*Plan, error) 
 	if img.Type != "vm" && img.Type != "oci" && img.Type != "lxd-container" {
 		return nil, fmt.Errorf("boot supports types vm, oci, lxd-container; got %q", img.Type)
 	}
+	if img.Type == "oci" && !res.Config.OCIEnabled() {
+		return nil, fmt.Errorf("%s", config.OCIDisabledMsg)
+	}
 	isVM := img.Type == "vm"
 	base := img.Base
 	if strings.Contains(base, "://") {

@@ -283,6 +283,15 @@
         }
       }
     },
+    "experimental": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "oci_images": {
+          "type": "boolean"
+        }
+      }
+    },
     "policy": {
       "type": "object",
       "additionalProperties": false,

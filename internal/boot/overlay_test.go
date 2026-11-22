@@ -18,6 +18,7 @@ type ofx struct {
 }
 
 func osetup(t *testing.T, tree *snapshot.Tree, rtYAML string) *ofx {
+	t.Setenv("OML_EXPERIMENTAL", "oci") // the fixtures are type: oci (experimental)
 	d := t.TempDir()
 	f := &ofx{t: t, root: d}
 	f.img = filepath.Join(d, "images", "c")
@@ -281,5 +282,29 @@ func TestBindModulesDirect(t *testing.T) {
 	}
 	if strings.Contains(cmds, "cp -a") {
 		t.Error("no module copy any more")
+	}
+}
+
+func TestOCIDisabledByDefault(t *testing.T) {
+	f := osetup(t, nil, "")
+	t.Setenv("OML_EXPERIMENTAL", "")
+	if _, err := config.Load("", filepath.Join(f.img, "image.yaml")); err == nil || !strings.Contains(err.Error(), "experimental and disabled by default") {
+		t.Fatalf("config validation must reject type oci: %v", err)
+	}
+	// opt-in through the config key
+	g := filepath.Join(f.root, "g.yaml")
+	os.WriteFile(g, []byte("experimental:\n  oci_images: true\n"), 0o644)
+	res, err := config.Load(g, filepath.Join(f.img, "image.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.o.Snapshot = "new:x"
+	if _, err := BuildPlan(f.o, res, f.img); err != nil {
+		t.Fatalf("enabled: %v", err)
+	}
+	// boot planning refuses even if a Resolved slipped through without opt-in
+	res.Config.Experimental.OCIImages = false
+	if _, err := BuildPlan(f.o, res, f.img); err == nil || !strings.Contains(err.Error(), "experimental") {
+		t.Fatalf("BuildPlan must refuse type oci: %v", err)
 	}
 }

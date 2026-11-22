@@ -22,7 +22,9 @@ const usage = `usage:
             [--force] [--ro] [--no-inject] [--data-root DIR]
   omloader guest-assemble --plan /omloader/plan.json   (runs inside the guest initramfs)
   omloader snapshot <op> ...   (run 'omloader snapshot' for the operations)
-  omloader import oci-dir|oci-archive|docker-archive|lxd PATH --name N --out IMAGES_ROOT [--force] [--autologin] [--data SPEC]...
+  omloader import lxd PATH --name N --out IMAGES_ROOT [--force] [--autologin] [--data SPEC]...
+  experimental (disabled by default; --experimental-oci, OML_EXPERIMENTAL=oci or experimental.oci_images: true):
+    omloader import oci-dir|oci-archive|docker-archive PATH --name N --out IMAGES_ROOT ...   and  boot of type: oci images
 `
 
 func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
@@ -103,12 +105,16 @@ func runBoot(args []string, out, errw io.Writer) int {
 	force := fs.Bool("force", false, "allow booting a snapshot that has children")
 	ro := fs.Bool("ro", false, "boot base read-only (no ephemeral COW child)")
 	dataRoot := fs.String("data-root", "", "data volumes root (default <snap-root>/../data)")
+	expOCI := fs.Bool("experimental-oci", false, "enable experimental Docker/OCI image support")
 	noInj := fs.Bool("no-inject", false, "do not append the guest-assemble initrd")
 	if pos, err := parse(fs, args); err != nil || len(pos) > 0 {
 		return 1
 	}
 	if *image == "" || strings.ContainsAny(*image, "/\\") || *image == ".." {
 		return fail(fmt.Errorf("--image NAME required (no path separators)"))
+	}
+	if *expOCI {
+		os.Setenv("OML_EXPERIMENTAL", "oci")
 	}
 	g, err := config.Load(*cfg, "")
 	if err != nil {
@@ -178,6 +184,8 @@ func runImport(args []string, out, errw io.Writer) int {
 	autologin := fs.Bool("autologin", false, "set runtime.autologin (serial-getty autologin on ttyS0)")
 	var data multi
 	fs.Var(&data, "data", "data volume name:/mount:backend[:size[:snapshot]] (repeatable)")
+	expOCI := fs.Bool("experimental-oci", false, "enable experimental Docker/OCI image support")
+	cfg := fs.String("c", "", "global omloader.yaml (experimental.oci_images)")
 	tmp := fs.String("tmp", "", "temp dir for archive extraction (default $TMPDIR)")
 	pos, err := parse(fs, args)
 	if err != nil {
@@ -187,8 +195,13 @@ func runImport(args []string, out, errw io.Writer) int {
 		fmt.Fprint(errw, usage)
 		return 1
 	}
+	if !*expOCI && *cfg != "" {
+		if g, err := config.Load(*cfg, ""); err == nil && g.Config.OCIEnabled() {
+			*expOCI = true
+		}
+	}
 	d, err := imgimport.Import(imgimport.Options{Kind: pos[0], Path: pos[1], Name: *name, Out: *dst, TmpDir: *tmp,
-		Runner: &boot.ExecRunner{}, Warn: errw, Force: *force, Autologin: *autologin, Data: data})
+		Runner: &boot.ExecRunner{}, Warn: errw, Force: *force, Autologin: *autologin, Data: data, ExperimentalOCI: *expOCI})
 	if err != nil {
 		fmt.Fprintln(errw, "error:", err)
 		return 1

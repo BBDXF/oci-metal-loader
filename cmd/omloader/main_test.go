@@ -28,6 +28,7 @@ func TestSnapshotCLI(t *testing.T) {
 }
 
 func TestSnapshotOpsCLI(t *testing.T) {
+	t.Setenv("OML_EXPERIMENTAL", "oci")
 	d := t.TempDir()
 	snap, imgs := d+"/snaps", d+"/images"
 	os.MkdirAll(imgs+"/c", 0o755)
@@ -77,4 +78,30 @@ func TestSnapshotOpsCLI(t *testing.T) {
 	do(0, "snapshot", "gc", "c", "--tmp", "--older-than", "0s")
 	do(0, "snapshot", "delete", "c", "s1", "--recursive", "--force")
 	do(1, "snapshot", "bogus", "c")
+}
+
+func TestOCIGatedCLI(t *testing.T) {
+	t.Setenv("OML_EXPERIMENTAL", "")
+	d := t.TempDir()
+	var o, e bytes.Buffer
+	if c := run([]string{"import", "oci-archive", "x", "--name", "n", "--out", d}, &o, &e); c != 1 || !strings.Contains(e.String(), "experimental and disabled by default") {
+		t.Fatalf("import oci-archive must be refused: %d %s", c, e.String())
+	}
+	os.MkdirAll(d+"/images/c", 0o755)
+	os.WriteFile(d+"/images/c/image.yaml", []byte("name: c\ntype: oci\nformat: squashfs\nbase: b\nsnapshots:\n  mode: overlayfs\n"), 0o644)
+	e.Reset()
+	if c := run([]string{"boot", "--image", "c", "--images-root", d + "/images", "--snap-root", d + "/s", "--dry-run"}, &o, &e); c != 1 || !strings.Contains(e.String(), "experimental and disabled by default") {
+		t.Fatalf("boot of type oci must be refused: %d %s", c, e.String())
+	}
+	e.Reset()
+	// --experimental-oci lifts the gate (then it fails later on the missing base, not on the gate)
+	run([]string{"boot", "--image", "c", "--images-root", d + "/images", "--snap-root", d + "/s", "--dry-run", "--experimental-oci"}, &o, &e)
+	if strings.Contains(e.String(), "experimental and disabled") {
+		t.Fatalf("flag must opt in: %s", e.String())
+	}
+	t.Setenv("OML_EXPERIMENTAL", "")
+	e.Reset()
+	if c := run([]string{"import", "lxd", "nonexistent", "--name", "n", "--out", d}, &o, &e); strings.Contains(e.String(), "experimental") {
+		t.Fatalf("lxd import is not gated (code %d): %s", c, e.String())
+	}
 }

@@ -52,3 +52,5 @@ cache:
   offline: auto   # auto | on (never go online) | off (always check upstream)
 policy:
   allow_online: true
+experimental:
+  oci_images: false   # Docker/OCI images: experimental, disabled by default (env OML_EXPERIMENTAL=oci / --experimental-oci)

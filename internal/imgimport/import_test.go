@@ -202,10 +202,11 @@ func mkOCI(t *testing.T) string {
 }
 
 func TestImportOCIDir(t *testing.T) {
+	t.Setenv("OML_EXPERIMENTAL", "oci")
 	src := mkOCI(t)
 	out := t.TempDir()
 	fr := &fakeRunner{}
-	d, err := Import(Options{Kind: "oci-dir", Path: src, Name: "app", Out: out, Runner: fr})
+	d, err := Import(Options{Kind: "oci-dir", Path: src, Name: "app", Out: out, Runner: fr, ExperimentalOCI: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,12 +233,13 @@ func TestImportOCIDir(t *testing.T) {
 	if len(img.Data) != 1 || img.Data[0].Mount != "/var/lib/data" || img.Data[0].Backend != "dir" {
 		t.Errorf("data %+v", img.Data)
 	}
-	if _, err := Import(Options{Kind: "oci-dir", Path: src, Name: "app", Out: out, Runner: fr}); err == nil {
+	if _, err := Import(Options{Kind: "oci-dir", Path: src, Name: "app", Out: out, Runner: fr, ExperimentalOCI: true}); err == nil {
 		t.Error("expected exists error")
 	}
 }
 
 func TestImportArchives(t *testing.T) {
+	t.Setenv("OML_EXPERIMENTAL", "oci")
 	src := mkOCI(t)
 	// oci-archive: tar of the layout dir
 	var b bytes.Buffer
@@ -256,7 +258,7 @@ func TestImportArchives(t *testing.T) {
 	ar := filepath.Join(t.TempDir(), "a.tar")
 	os.WriteFile(ar, b.Bytes(), 0o644)
 	out := t.TempDir()
-	if _, err := Import(Options{Kind: "oci-archive", Path: ar, Name: "o", Out: out, Runner: &fakeRunner{}, TmpDir: t.TempDir()}); err != nil {
+	if _, err := Import(Options{Kind: "oci-archive", Path: ar, Name: "o", Out: out, Runner: &fakeRunner{}, TmpDir: t.TempDir(), ExperimentalOCI: true}); err != nil {
 		t.Fatal(err)
 	}
 	// docker-archive
@@ -273,7 +275,7 @@ func TestImportArchives(t *testing.T) {
 	dk := filepath.Join(t.TempDir(), "d.tar")
 	os.WriteFile(dk, b.Bytes(), 0o644)
 	fr := &fakeRunner{}
-	d, err := Import(Options{Kind: "docker-archive", Path: dk, Name: "dk", Out: out, Runner: fr})
+	d, err := Import(Options{Kind: "docker-archive", Path: dk, Name: "dk", Out: out, Runner: fr, ExperimentalOCI: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,5 +326,19 @@ func TestParseDataAndMerge(t *testing.T) {
 	out := mergeData(cur, d)
 	if len(out) != 3 || out[0]["backend"] != "dir" || out[0]["name"] != "x" {
 		t.Fatalf("%v", out)
+	}
+}
+
+func TestImportOCIDisabledByDefault(t *testing.T) {
+	t.Setenv("OML_EXPERIMENTAL", "")
+	for _, k := range []string{"oci-dir", "oci-archive", "docker-archive"} {
+		_, err := Import(Options{Kind: k, Path: "x", Name: "n", Out: t.TempDir(), Runner: &fakeRunner{}})
+		if err == nil || !strings.Contains(err.Error(), "experimental and disabled by default") {
+			t.Errorf("%s: %v", k, err)
+		}
+	}
+	t.Setenv("OML_EXPERIMENTAL", "oci")
+	if _, err := Import(Options{Kind: "oci-dir", Path: "/nonexistent", Name: "n", Out: t.TempDir(), Runner: &fakeRunner{}}); err == nil || strings.Contains(err.Error(), "experimental") {
+		t.Errorf("env opt-in must pass the gate: %v", err)
 	}
 }

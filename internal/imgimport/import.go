@@ -14,6 +14,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 	"omloader/internal/boot"
+	"omloader/internal/config"
 )
 
 var nameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.+-]*$`)
@@ -32,6 +33,8 @@ type Options struct {
 	Autologin bool
 	// Data declares extra data volumes: "name:/mount:backend[:size[:snapshot]]" (replaces an imported VOLUME with the same mount).
 	Data []string
+	// ExperimentalOCI opts in to oci-dir/oci-archive/docker-archive (also OML_EXPERIMENTAL=oci).
+	ExperimentalOCI bool
 }
 
 // ParseData parses --data specs.
@@ -95,6 +98,9 @@ func sha256File(p string) (string, error) {
 
 // Import converts the image to <out>/<name>/{base.squashfs,image.yaml}.
 func Import(o Options) (string, error) {
+	if o.Kind != "lxd" && !o.ExperimentalOCI && !config.EnvOCI() {
+		return "", fmt.Errorf("%s", config.OCIDisabledMsg)
+	}
 	if !nameRe.MatchString(o.Name) {
 		return "", fmt.Errorf("invalid --name %q", o.Name)
 	}

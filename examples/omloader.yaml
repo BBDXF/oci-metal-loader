@@ -5,3 +5,6 @@ boot:
   timeout: 10
 mirror_policy:
   region_preset: cn
+# Docker/OCI images are experimental and off by default:
+# experimental:
+#   oci_images: true

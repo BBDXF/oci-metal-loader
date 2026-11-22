@@ -119,6 +119,9 @@ func (r *Resolved) Validate() ErrorList {
 		add("image.name", "required")
 	}
 	enum("image.type", img.Type, "vm", "lxd-container", "oci")
+	if img.Type == "oci" && !c.OCIEnabled() {
+		add("image.type", "%s", OCIDisabledMsg)
+	}
 	enum("image.format", img.Format, "raw", "squashfs")
 	enum("image.snapshots.mode", img.Snapshots.Mode, "dm-snapshot", "overlayfs")
 	switch img.Type {

@@ -1,5 +1,10 @@
 package config
 
+import (
+	"os"
+	"strings"
+)
+
 // Config is the global omloader.yaml.
 type Config struct {
 	Storage      Storage           `yaml:"storage" json:"storage"`
@@ -13,6 +18,7 @@ type Config struct {
 	Sources      map[string]Source `yaml:"sources" json:"sources"`
 	Cache        Cache             `yaml:"cache" json:"cache"`
 	Policy       Policy            `yaml:"policy" json:"policy"`
+	Experimental Experimental      `yaml:"experimental" json:"experimental"`
 }
 
 type Storage struct {
@@ -125,3 +131,24 @@ type DataVolume struct {
 	Snapshot bool   `yaml:"snapshot" json:"snapshot"`
 	Shared   bool   `yaml:"shared" json:"shared"`
 }
+
+// Experimental gates features that are not part of the project's focus (LXD images).
+type Experimental struct {
+	OCIImages bool `yaml:"oci_images" json:"oci_images"` // Docker/OCI image support (import + boot); off by default
+}
+
+// OCIDisabledMsg is the error shown when OCI/Docker support is used without opt-in.
+const OCIDisabledMsg = "OCI/Docker images are experimental and disabled by default; set experimental.oci_images: true, pass --experimental-oci or set OML_EXPERIMENTAL=oci"
+
+// EnvOCI reports whether OML_EXPERIMENTAL (comma separated) contains "oci".
+func EnvOCI() bool {
+	for _, f := range strings.Split(os.Getenv("OML_EXPERIMENTAL"), ",") {
+		if strings.TrimSpace(f) == "oci" {
+			return true
+		}
+	}
+	return false
+}
+
+// OCIEnabled is true when the config key or the environment opts in to OCI images.
+func (c *Config) OCIEnabled() bool { return c.Experimental.OCIImages || EnvOCI() }
