@@ -258,3 +258,28 @@ func TestExportAndFlatten(t *testing.T) {
 		t.Errorf("%v", err)
 	}
 }
+
+func TestBindModulesDirect(t *testing.T) {
+	f := osetup(t, nil, "")
+	systemdRoot(f.o.NewRoot)
+	src := filepath.Join(f.root, "libmods", "6.1.0-test")
+	os.MkdirAll(src, 0o755)
+	f.o.ModulesSrc = src
+	f.o.Snapshot = "new:m"
+	p, err := BuildPlan(f.o, f.res, f.img)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &DryRunner{}
+	if _, err := ExecuteOverlay(f.o, f.res, p, r); err != nil {
+		t.Fatal(err)
+	}
+	cmds := strings.Join(r.Cmds, "\n")
+	dst := filepath.Join(f.o.NewRoot, "lib/modules/6.1.0-test")
+	if !strings.Contains(cmds, "mount --bind "+src+" "+dst) || !strings.Contains(cmds, "mount -o remount,bind,ro "+dst) {
+		t.Errorf("modules must be bind-mounted read-only straight from the live system (no copy):\n%s", cmds)
+	}
+	if strings.Contains(cmds, "cp -a") {
+		t.Error("no module copy any more")
+	}
+}

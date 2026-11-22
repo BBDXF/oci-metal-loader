@@ -212,9 +212,9 @@ func ExecuteOverlay(o Options, res *config.Resolved, p *Plan, r Runner) (*Switch
 	return spec, nil
 }
 
-// bindModules copies the loader's module tree to a tmpfs-backed dir (RunDir) and bind-mounts
-// it read-only into the guest so it can modprobe after switch_root. (A bind of the initramfs
-// itself would be wiped by busybox switch_root, which deletes the old rootfs.)
+// bindModules bind-mounts the loader's module tree read-only into the guest so it can modprobe after the
+// root switch. The loader is a normal Debian live system (systemctl switch-root, no initramfs cleanup of the
+// old root), so a plain bind of /lib/modules/<release> stays valid; nothing is copied.
 func (o Options) bindModules(r Runner, warn io.Writer) error {
 	if o.KernelRelease == "" || o.ModulesSrc == "" {
 		return nil
@@ -223,18 +223,11 @@ func (o Options) bindModules(r Runner, warn io.Writer) error {
 		fmt.Fprintf(warn, "warning: loader modules %s not found; guest cannot modprobe\n", o.ModulesSrc)
 		return nil
 	}
-	cp := filepath.Join(o.RunDir, "modules", o.KernelRelease)
-	if err := runCmd(r, "mkdir", "-p", filepath.Dir(cp)); err != nil {
-		return err
-	}
-	if err := runCmd(r, "cp", "-a", o.ModulesSrc, cp); err != nil {
-		return err
-	}
 	dst, err := walkInRoot(o.NewRoot, "/lib/modules/"+o.KernelRelease, true)
 	if err != nil {
 		return err
 	}
-	if err := runCmd(r, "mount", "--bind", cp, dst); err != nil {
+	if err := runCmd(r, "mount", "--bind", o.ModulesSrc, dst); err != nil {
 		return err
 	}
 	return runCmd(r, "mount", "-o", "remount,bind,ro", dst)

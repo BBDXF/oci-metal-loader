@@ -44,7 +44,7 @@ func parse(fs *flag.FlagSet, args []string) ([]string, error) {
 
 func run(args []string, out, errw io.Writer) int {
 	fail := func(err error) int { fmt.Fprintln(errw, "error:", err); return 1 }
-	if len(args) < 1 || (len(args) < 2 && args[0] != "boot" && args[0] != "guest-assemble") {
+	if len(args) < 1 || (len(args) < 2 && args[0] != "boot" && args[0] != "guest-assemble" && args[0] != "snapshot") {
 		fmt.Fprint(errw, usage)
 		return 1
 	}
