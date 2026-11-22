@@ -24,25 +24,85 @@ try_dev() { # $1 = block device
   has_live && return 0
   umount /run/medium 2>/dev/null; return 1
 }
-FOUND=
+FOUND=; HOW=
+# ---- (c) iso-scan: the ISO is a *file* on some partition (Ventoy, a plain data stick, ...) ----
+# omloader.isofile=/path.iso [omloader.isodev=LABEL=x|UUID=x|/dev/x] pins it; else /omloader.iso, /omloader/omloader.iso,
+# /ISO/omloader.iso, then every *.iso within two directory levels whose volume label is OMLOADER_LIVE.
+HOST=/run/medium-host; mkdir -p $HOST /run/omloader
+ISOFILE=$(arg omloader.isofile); ISODEV=$(arg omloader.isodev); SCANNED=" "; ISOLOOP=; ISOPATH=
+iso_try() { # $1 = ISO file, $2 = 1 -> no volume label check (explicit name)
+  [ -f "$1" ] || return 1
+  lo=$(losetup -f 2>/dev/null) && losetup -r "$lo" "$1" 2>/run/losetup.err || { echo "OMLOADER_STAGE1: losetup $1: $(cat /run/losetup.err)"; return 1; }
+  if [ -z "$2" ] && [ "$(blkid -o value -s LABEL "$lo" 2>/dev/null)" != OMLOADER_LIVE ]; then losetup -d "$lo" 2>/dev/null; return 1; fi
+  if mount -t iso9660 -o ro "$lo" /run/medium 2>/dev/null && has_live; then ISOLOOP=$lo; return 0; fi
+  umount /run/medium 2>/dev/null; losetup -d "$lo" 2>/dev/null; return 1
+}
+resolve_dev() { case "$1" in LABEL=*) blkid -L "${1#LABEL=}";; UUID=*) blkid -U "${1#UUID=}";; *) echo "$1";; esac 2>/dev/null; }
+scan_dev() { # $1 = partition/disk device. 0 = ISO found (host fs stays mounted on $HOST, ISO on /run/medium)
+  d=$1; t=$(blkid -o value -s TYPE "$d" 2>/dev/null)
+  case "$t" in exfat|vfat|ext2|ext3|ext4|xfs) ft=$t;; *) return 1;; # no ntfs3 in the loader kernel; ntfs-3g (FUSE) is not available in stage 1
+   esac
+  mount -t "$ft" -o ro "$d" $HOST 2>/dev/null || return 1
+  f=
+  if [ -n "$ISOFILE" ]; then iso_try "$HOST$ISOFILE" 1 && f=$ISOFILE
+  else
+    for c in /omloader.iso /omloader/omloader.iso /ISO/omloader.iso; do iso_try "$HOST$c" 1 && { f=$c; break; }; done
+    if [ -z "$f" ]; then for c in "$HOST"/*.iso "$HOST"/*/*.iso "$HOST"/*/*/*.iso; do iso_try "$c" && { f=${c#$HOST}; break; }; done; fi
+  fi
+  if [ -n "$f" ]; then
+    ISOPATH=$f
+    # the loader's own data partitions are mounted rw by omloader-mounts later: switch this (shared) mount to rw now so both agree
+    case "$(blkid -o value -s LABEL "$d" 2>/dev/null)" in VTOYDATA|OMLOADER) mount -o remount,rw $HOST 2>/dev/null;; esac
+    cat > /run/omloader/medium.env <<ENV
+MEDIUM_VIA=iso-scan
+MEDIUM_HOST_DEV=$d
+MEDIUM_HOST_FS=$ft
+MEDIUM_HOST_MNT=$HOST
+MEDIUM_ISO=$f
+MEDIUM_ISO_LOOP=$ISOLOOP
+ENV
+    FOUND=$d; HOW="iso-scan: dev=$d fs=$ft file=$f"; return 0
+  fi
+  umount $HOST 2>/dev/null; SCANNED="$SCANNED$d "; return 1
+}
 i=0
 while [ $i -lt 40 ] && [ -z "$FOUND" ]; do
   OV=$(arg omloader.live)
-  [ -n "$OV" ] && [ -b "$OV" ] && try_dev "$OV" && FOUND=$OV
-  if [ -z "$FOUND" ]; then
+  [ -n "$OV" ] && [ -b "$OV" ] && try_dev "$OV" && { FOUND=$OV; HOW="omloader.live="; }
+  if [ -z "$FOUND" ]; then   # (a) volume label
     L=$(blkid -L OMLOADER_LIVE 2>/dev/null)
-    [ -n "$L" ] && try_dev "$L" && FOUND=$L
+    [ -n "$L" ] && try_dev "$L" && { FOUND=$L; HOW="label OMLOADER_LIVE"; }
   fi
-  if [ -z "$FOUND" ]; then   # fallback: scan every block device (e.g. ISO written to a USB stick / re-labelled)
-    for d in /dev/sr* /dev/sd* /dev/vd* /dev/nvme*n*; do
+  if [ -z "$FOUND" ]; then   # (b) scan every block device (ISO written to a USB stick / re-labelled / Ventoy dm device)
+    for d in /dev/sr* /dev/mapper/* /dev/sd* /dev/vd* /dev/nvme*n* /dev/mmcblk*; do
       [ -b "$d" ] || continue
-      try_dev "$d" && { FOUND=$d; break; }
+      try_dev "$d" && { FOUND=$d; HOW="device scan"; break; }
     done
+  fi
+  if [ -z "$FOUND" ] && [ $i -ge 2 ]; then   # (c) ISO file on a partition
+    if [ -n "$ISODEV" ]; then
+      d=$(resolve_dev "$ISODEV"); [ -b "$d" ] && scan_dev "$d"
+    else
+      for n in $(awk 'NR>2{print $4}' /proc/partitions); do
+        case "$n" in loop*|ram*|dm-*) continue;; esac
+        case "$SCANNED" in *" /dev/$n "*) continue;; esac
+        [ -b "/dev/$n" ] && scan_dev "/dev/$n" && break
+      done
+    fi
   fi
   [ -n "$FOUND" ] || { sleep 0.5; i=$((i+1)); }
 done
+if [ -z "$FOUND" ]; then   # diagnostics: one more, traced, pass over every partition
+  echo "OMLOADER_STAGE1: live medium not found; partitions:"; cat /proc/partitions; blkid
+  SCANNED=" "; set -x
+  for n in $(awk 'NR>2{print $4}' /proc/partitions); do
+    case "$n" in loop*|ram*|dm-*) continue;; esac
+    [ -b "/dev/$n" ] && scan_dev "/dev/$n" && break
+  done
+  set +x
+fi
 [ -n "$FOUND" ] || die "live medium (label OMLOADER_LIVE / live/live.squashfs) not found"
-echo "OMLOADER_STAGE1: live medium $FOUND"
+echo "OMLOADER_STAGE1: live medium $FOUND ($HOW)"
 mount -t squashfs -o loop,ro /run/medium/live/live.squashfs /run/live || die "cannot mount live.squashfs"
 mount -t squashfs -o loop,ro /run/medium/live/omloader.squashfs /run/extra || die "cannot mount omloader.squashfs"
 mount -t tmpfs -o mode=755 tmpfs /run/rw

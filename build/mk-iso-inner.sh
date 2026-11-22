@@ -25,7 +25,7 @@ for b in mount umount blkid losetup kmod; do addbin $b; done
 ln -sf kmod $R/usr/bin/modprobe; ln -sf kmod $R/usr/bin/depmod; ln -sf kmod $R/usr/bin/insmod
 cp -L /lib64/ld-linux-x86-64.so.2 $R/usr/lib64/ 2>/dev/null || { mkdir -p $R/usr/lib64; cp -L /lib64/ld-linux-x86-64.so.2 $R/usr/lib64/; }
 # modules needed to find and assemble the live medium (everything else is loaded by udev inside the live system)
-MODS="loop squashfs overlay isofs cdrom sr_mod sd_mod nls_cp437 nls_iso8859-1 nls_utf8 ext4 exfat vfat fat crc32c_generic ahci libahci ata_piix ata_generic libata scsi_mod nvme nvme_core virtio_blk virtio_scsi virtio_pci virtio_ring usb-storage uas usbhid xhci-pci xhci-hcd ehci-pci ehci-hcd uhci-hcd ohci-pci ohci-hcd mmc_block sdhci-pci hid_generic"
+MODS="loop squashfs overlay isofs udf xfs nls_ascii cdrom sr_mod sd_mod nls_cp437 nls_iso8859-1 nls_utf8 ext4 exfat vfat fat crc32c_generic ahci libahci ata_piix ata_generic libata scsi_mod nvme nvme_core virtio_blk virtio_scsi virtio_pci virtio_ring usb-storage uas usbhid xhci-pci xhci-hcd ehci-pci ehci-hcd uhci-hcd ohci-pci ohci-hcd mmc_block sdhci-pci hid_generic"
 echo $MODS > $R/etc/modules-list
 mkdir -p $R/usr/lib/modules/$KVER
 for m in $MODS; do { modprobe -d / -S $KVER --show-depends $m 2>/dev/null || true; } | awk '$1=="insmod"{print $2}'; done | sort -u | while read -r f; do
