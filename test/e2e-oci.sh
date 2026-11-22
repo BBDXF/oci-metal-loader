@@ -2,6 +2,7 @@
 # Run ON THE REMOTE. M3 flow: ISO -> OCI fixture (podman, rootless) -> disk -> 3 loader boots (no kexec) -> assertions.
 # SKIP_BUILD=1 reuses artifacts in out/.  The guest must run on the LOADER's own kernel (compared via uname).
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; O=$ROOT/out; W=$ROOT/work; T=$ROOT/test
+export EXPERIMENTAL_OCI=1   # the OCI fixture is an experimental feature (opt-in)
 export NAME=${NAME:-omloci} TIMEOUT=${TIMEOUT:-300}
 FAIL=0
 pass() { echo "PASS: $*"; }; fail() { echo "FAIL: $*"; FAIL=1; }

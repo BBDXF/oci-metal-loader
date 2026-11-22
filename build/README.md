@@ -35,7 +35,7 @@ Fixture rootfs: `podman export` of bookworm+kernel → `mkfs.ext4 -d tar` → sf
 Disk: p1 exfat `VTOYDATA` (populated with exfat-fuse in rootless podman, ext4 fallback recorded in `out/usb.vtoydata-fs`), p2 ext4 `OMLOADER`.
 - `DEBIAN_MIRROR` (default `http://mirrors.ustc.edu.cn/debian`; deb.debian.org was ~20KB/s from the remote).
 
-## M3 (OCI/LXD containers)
+## M3 (container boot; OCI fixture = experimental, opt-in via omloader.experimental=oci)
 `make e2e-oci` -> `test/e2e-oci.sh`: ISO, `test/make-fixture-oci.sh` (podman build of `test/fixture-oci/Containerfile` on debian:bookworm-slim + systemd,
 `podman save --format oci-archive`, `omloader import oci-archive` -> `out/oci-images/omloci`), `NO_VM=1 test/make-disk.sh` (disk includes `out/oci-images/*`,
 and the VM fixture if present), then boots `new:run1`, `base`, `run1`. `autoboot.sh` does the `systemctl switch-root` handoff (see top-level README).

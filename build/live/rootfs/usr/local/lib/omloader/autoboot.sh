@@ -5,6 +5,8 @@ export DM_DISABLE_UDEV=1
 CMD=$(cat /proc/cmdline)
 arg() { local a; for a in $CMD; do case "$a" in "$1="*) echo "${a#*=}"; return;; esac; done; }
 . /run/omloader/env 2>/dev/null
+# omloader.experimental=oci -> opt in to the experimental Docker/OCI image support (disabled by default)
+EXP=$(arg omloader.experimental); [ -n "$EXP" ] && export OML_EXPERIMENTAL="$EXP"
 echo 1 > /proc/sys/kernel/sysrq
 find_label() { blkid -L "$1" 2>/dev/null; }
 poweroff_now() { sync; echo o > /proc/sysrq-trigger; sleep 5; }

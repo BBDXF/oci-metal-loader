@@ -3,6 +3,7 @@
 # (they need root: mounts, loop, dm) run inside the loader VM via the omloader.hook=1 stage-disk mechanism.
 # Env: SKIP_BUILD=1 reuse artifacts (ISO, fixtures, disk)  SKIP_ISO=1 only skip the ISO rebuild  NO_VM=1 skip the VM-fixture part
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; O=$ROOT/out; W=$ROOT/work; T=$ROOT/test
+export EXPERIMENTAL_OCI=1   # the OCI fixture is an experimental feature (opt-in)
 export TIMEOUT=${TIMEOUT:-300}
 FAIL=0
 pass() { echo "PASS: $*"; }; fail() { echo "FAIL: $*"; FAIL=1; }

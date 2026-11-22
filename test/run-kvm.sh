@@ -1,6 +1,7 @@
 #!/bin/bash
 # Run ON THE REMOTE. Boots the loader ISO under KVM/OVMF with the simulated USB disk.
 # Env: NAME (image; => omloader.image=NAME) SNAP (=> omloader.snapshot) EXTRA (more cmdline)
+#      EXPERIMENTAL_OCI=1 (=> omloader.experimental=oci: opt in to the experimental OCI support)
 #      SELFTEST=1 (mount check + poweroff) LOG=serial log file TIMEOUT=sec (default 240)
 #      DISK=path DISK2=path(optional extra virtio disk) BUS=nvme|virtio|usb ISO=path INTERACTIVE=1 (serial on stdio)
 # How cmdline args reach the kernel: the ISO's grub.cfg `source`s /boot/grub/extra.cfg if present.
@@ -13,6 +14,7 @@ ARGS=""
 [ -n "${NAME:-}" ] && ARGS="omloader.image=$NAME omloader.poweroff_on_fail=1"
 [ -n "${SNAP:-}" ] && ARGS="$ARGS omloader.snapshot=$SNAP"
 [ -n "${SELFTEST:-}" ] && ARGS="$ARGS omloader.selftest=1"
+[ -n "${EXPERIMENTAL_OCI:-}" ] && ARGS="$ARGS omloader.experimental=oci"
 ARGS="$ARGS ${EXTRA:-}"
 RUN=$W/run.$$; mkdir -p $RUN; trap 'rm -rf $RUN' EXIT
 cp /usr/share/OVMF/OVMF_VARS_4M.fd $RUN/vars.fd

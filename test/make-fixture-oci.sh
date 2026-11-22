@@ -15,6 +15,6 @@ fi
 podman build -q --build-arg BASE=$BASE --build-arg DEBIAN_MIRROR=$MIRROR -t omloader-fixture-oci -f $ROOT/test/fixture-oci/Containerfile $ROOT/test/fixture-oci
 rm -f $W/oci.tar; podman save --format oci-archive -o $W/oci.tar localhost/omloader-fixture-oci
 rm -rf $O/oci-images; mkdir -p $O/oci-images
-$ROOT/bin/omloader import oci-archive $W/oci.tar --name $NAME --out $O/oci-images --autologin --tmp $W --data omldata:/var/lib/omloader-data:ext4-file:64M:false
+$ROOT/bin/omloader import oci-archive --experimental-oci $W/oci.tar --name $NAME --out $O/oci-images --autologin --tmp $W --data omldata:/var/lib/omloader-data:ext4-file:64M:false
 rm -f $W/oci.tar
 ls -l $O/oci-images/$NAME; cat $O/oci-images/$NAME/image.yaml
