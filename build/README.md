@@ -1,4 +1,4 @@
-# OCI Meta Loader (omloader): loader ISO + KVM test harness
+# OCI Metal Loader (omloader): loader ISO + KVM test harness
 
 Everything builds/tests on a remote host over ssh (rootless podman, KVM). Nothing needs root.
 

@@ -1,6 +1,6 @@
-# OCI Meta Loader (`omloader`)
+# OCI Metal Loader (`omloader`)
 
-A UEFI x86_64 bare-metal loader ISO that boots LXD VM, LXD container and OCI images, with snapshots
+A UEFI x86_64 bare-metal (“metal”) loader ISO that boots LXD VM, LXD container and OCI images, with snapshots
 (dm-snapshot + kexec for VMs; squashfs + overlayfs on the loader's own kernel for containers).
 
 > Disclaimer: this project is not an official Open Container Initiative (OCI) project and is not affiliated with or endorsed by the OCI.
@@ -22,7 +22,7 @@ Closest ones: [Ventoy](https://github.com/ventoy/Ventoy) and [vtoyboot](https://
 
 ## License
 
-GPL-3.0-or-later, the same license family as Ventoy. See [LICENSE](LICENSE). Copyright (C) 2026 the oci-meta-loader authors.
+GPL-3.0-or-later, the same license family as Ventoy. See [LICENSE](LICENSE). Copyright (C) 2026 the oci-metal-loader authors.
 
 ## Config layers
 `built-in defaults (configs/defaults.yaml, embedded)` < `omloader.yaml` < `image.yaml`,
