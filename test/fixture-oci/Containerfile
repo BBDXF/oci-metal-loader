@@ -3,9 +3,10 @@ FROM ${BASE}
 ARG DEBIAN_MIRROR=http://mirrors.ustc.edu.cn/debian
 ENV DEBIAN_FRONTEND=noninteractive
 RUN sed -i "s#http://deb.debian.org/debian#$DEBIAN_MIRROR#g" /etc/apt/sources.list.d/debian.sources
-RUN apt-get update && apt-get install -y --no-install-recommends systemd systemd-sysv udev kmod \
+RUN apt-get update && apt-get install -y --no-install-recommends systemd systemd-sysv udev kmod sudo \
  && rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man /usr/share/locale /var/cache/apt
 COPY omloader-test.sh /usr/local/bin/omloader-test.sh
+COPY omloader-login.sh /etc/profile.d/omloader-login.sh
 COPY omloader-test.service /etc/systemd/system/omloader-test.service
 RUN chmod +x /usr/local/bin/omloader-test.sh \
  && mkdir -p /etc/systemd/system/multi-user.target.wants /var/lib/omloader-test \

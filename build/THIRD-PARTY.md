@@ -21,7 +21,7 @@ redistributes the ISO must comply with those licenses (source offer / pointer to
 |---|---|
 | init / services | systemd, systemd-sysv, systemd-resolved, udev, dbus, kmod |
 | disks / filesystems | util-linux, e2fsprogs, exfatprogs, xfsprogs, squashfs-tools, lvm2, dmsetup, kpartx, parted, gdisk, fdisk, cryptsetup |
-| boot / VM tooling | kexec-tools, qemu-utils, busybox-static |
+| boot / VM tooling | kexec-tools, qemu-utils, busybox-static, xz-utils (lxd.tar.xz metadata) |
 | networking / TLS | iproute2, iputils-ping, ca-certificates, curl, iwd, wireless-regdb |
 | kernel + firmware | linux-image-amd64, firmware-linux-free, firmware-misc-nonfree, firmware-realtek, firmware-iwlwifi |
 | shell comfort | less, nano, vim-tiny, procps, pciutils, usbutils |

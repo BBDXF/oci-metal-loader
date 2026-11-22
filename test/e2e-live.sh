@@ -55,6 +55,7 @@ t omloader omloader snapshot
 t omloader_cfg omloader config validate
 t extra_ca sh -c 'cp /mnt/stage/test-ca.crt /usr/local/share/ca-certificates/omloader-test-ca.crt && update-ca-certificates'
 t tls curl -sS -m 20 https://10.0.2.2:$PORT/hello
+t xz sh -c 'xz --version | head -1; echo hi | xz | xz -d'
 t internet sh -c 'curl -sSI -m 20 https://deb.debian.org 2>&1 | head -1'
 t tools sh -c 'for b in kexec dmsetup kpartx mksquashfs mkfs.ext4 mkfs.exfat qemu-img iwctl parted sgdisk cryptsetup curl nano busybox; do command -v \$b >/dev/null && echo ok:\$b || echo MISSING:\$b; done'
 t kernel sh -c 'uname -r; ls /lib/modules; ls /lib/firmware | wc -l; cat /etc/debian_version; systemctl is-system-running'
@@ -82,6 +83,7 @@ sect cabundle | grep -q BUNDLE_OK && pass "system CA bundle present ($(sect cabu
 sect extra_ca | grep -qE '1 added' && pass "update-ca-certificates added the extra test CA" || fail "extra CA: $(sect extra_ca | tr '\n' ' ')"
 sect tls | grep -q OMLOADER_TLS_OK && pass "TLS handshake + HTTP GET to the local https endpoint using the system CA store (extra_ca)" || fail "TLS: $(sect tls | tr '\n' ' ')"
 if sect internet | grep -q 'HTTP/'; then pass "internet: $(sect internet | grep HTTP/ | head -1)"; else echo "NOTE: no internet from the test VM ($(sect internet | sed -n 2p))"; fi
+sect xz | grep -q 'xz (XZ Utils)' && sect xz | grep -q '^hi$' && pass "xz works in the loader (xz --version, compress/decompress round trip)" || fail "xz missing/broken in the loader"
 ! sect tools | grep -q MISSING && pass "tool set present (kexec dmsetup kpartx mksquashfs mkfs.* qemu-img iwctl parted cryptsetup curl busybox ...)" || fail "missing tools: $(sect tools | grep MISSING | tr '\n' ' ')"
 sect kernel | head -4 | tr '\n' ' '; echo
 

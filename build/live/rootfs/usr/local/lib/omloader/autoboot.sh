@@ -9,12 +9,15 @@ arg() { local a; for a in $CMD; do case "$a" in "$1="*) echo "${a#*=}"; return;;
 EXP=$(arg omloader.experimental); [ -n "$EXP" ] && export OML_EXPERIMENTAL="$EXP"
 echo 1 > /proc/sys/kernel/sysrq
 find_label() { blkid -L "$1" 2>/dev/null; }
-poweroff_now() { sync; echo o > /proc/sysrq-trigger; sleep 5; }
+# clean shutdown of the loader's own partitions: flush, then remount read-only (marks the ext4 journal clean
+# / clears the exfat dirty flag), then power off. systemd's normal poweroff does this by itself; these paths bypass it.
+sync_ro() { sync; for m in /mnt/snap /mnt/images; do mountpoint -q $m && mount -o remount,ro $m 2>/dev/null; done; sync; }
+poweroff_now() { sync_ro; echo o > /proc/sysrq-trigger; sleep 5; }
 
 if [ "$(arg omloader.hook)" = 1 ]; then   # test helper: run /mnt/stage/hook.sh from an OMLSTAGE-labelled fs, then power off
   SD=$(find_label OMLSTAGE); mkdir -p /mnt/stage
   if [ -n "$SD" ] && mount -t ext4 "$SD" /mnt/stage; then sh /mnt/stage/hook.sh; echo "OMLOADER_HOOK_RC=$?"; else echo "OMLOADER_HOOK_RC=nostage"; fi
-  sync; umount /mnt/images 2>/dev/null; umount /mnt/snap 2>/dev/null; poweroff_now
+  sync; umount /mnt/images 2>/dev/null; umount /mnt/snap 2>/dev/null; poweroff_now   # (umount ok here: no overlay uses them)
 fi
 
 if [ "$(arg omloader.selftest)" = 1 ]; then
@@ -50,6 +53,17 @@ if [ -n "$IMG" ]; then
       for a in "${INIT[@]}"; do printf " '%s'" "${a//\'/\'\\\'\'}"; done
       echo
     } > "$NR/.omloader/switch-init" 2>/dev/null && chmod 755 "$NR/.omloader/switch-init" && SWINIT=/.omloader/switch-init || SWINIT=${INIT[0]}
+    # keep the loader partitions reachable (and cleanly shut-downable) inside the guest: the overlay upper/work live on
+    # OMLOADER so it can never be unmounted while the root is mounted; the guest's shutdown hook (/.omloader/sync.sh)
+    # remounts these read-only at poweroff. /.omloader/devs lists "<name> <device> <fstype>" for the hook.
+    : > "$NR/.omloader/devs" 2>/dev/null
+    for pair in "snap:$SNAPDEV:/mnt/snap" "images:$IMGDEV:/mnt/images"; do
+      n=${pair%%:*}; r=${pair#*:}; dev=${r%%:*}; mp=${r#*:}
+      if [ -n "$dev" ] && mountpoint -q "$mp"; then
+        mkdir -p "$NR/.omloader/$n" && mount --bind "$mp" "$NR/.omloader/$n" \
+          && echo "$n $dev $(blkid -o value -s TYPE "$dev")" >> "$NR/.omloader/devs"
+      fi
+    done
     mountpoint -q "$NR/run" || mount -t tmpfs -o mode=755 tmpfs "$NR/run"   # fresh /run for the new init (systemd moves /proc /sys /dev itself)
     echo "OMLOADER_LOADER: switch-root $NR ${INIT[*]} (loader kernel $(uname -r))"
     sync

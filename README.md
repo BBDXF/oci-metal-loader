@@ -5,7 +5,7 @@ directly on the hardware, without installing anything.
 
 - **LXD VM images** (disk images): `dm-snapshot` stack over the read-only base + `kexec` into the guest's own kernel.
 - **LXD container images** (`rootfs.squashfs`): squashfs + overlayfs on the loader's kernel, then `switch-root` into the container's init.
-- Snapshots (tree, rollback, prune, flatten, export), persistent data volumes, and (planned, M4) mirrors/proxy, a cache and an offline mode.
+- Snapshots (tree, rollback, prune, flatten, export), persistent data volumes, and online pull (M4) with mirrors/proxy, a content-addressed cache and an offline mode.
 
 **Docker/OCI images are experimental only**: the code exists (import of oci-dir/oci-archive/docker-archive, boot as a container) but it is
 **disabled by default**, not part of the project focus and not planned to be extended (there will be no registry client). Reason: Docker/OCI images are
@@ -25,27 +25,40 @@ To opt in: `experimental.oci_images: true` in `omloader.yaml`, `--experimental-o
 | M2 | snapshot management: list/create/rollback/delete/gc/prune/verify/flatten/export, space guard, container data volumes | ✅ done |
 | M3 | container boot: squashfs + overlayfs, firstboot adapter, `systemctl switch-root` handoff | ✅ done (the OCI part is now experimental, off by default) |
 | Live loader | Debian bookworm live system (systemd, networkd, resolved, tools, firmware), 254 MiB ISO | ✅ done |
-| M4 | online pull for LXD: simplestreams client, mirrors/proxy, cache/offline mode, LXD VM import (qcow2 → raw) | ⬜ next |
-| Usability | console login (tty1/users/passwords) and clean unmount of the OMLOADER partition | ⬜ after M4 |
+| M4 | online pull for LXD: simplestreams client, mirrors/proxy, cache/offline mode, LXD VM import (qcow2 → raw) | ✅ done (QEMU-tested: `make e2e-pull`) |
+| Usability | container console login (tty1 + ttyS0 autologin, users/passwords/sudo/ssh keys, busybox debug-shell fallback) and clean shutdown of the OMLOADER/VTOYDATA partitions | ✅ done for containers (VM: see limitations) |
 | M5 | device isolation, real-hardware testing, Secure Boot, LUKS | ⬜ |
 | TUI | interactive menu | ⬜ |
 | Windows | VHDX differencing disks | ⬜ last |
 
-Rough overall estimate: the core boot + snapshot pipeline is about **60-65 %** of the planned scope; what remains is mostly online pull (M4),
-real hardware and usability.
+Rough overall estimate: M0–M4, the Debian live loader and container usability are done; about **70-75 %** of the planned scope. The rest is real-hardware
+work (M5), Ventoy integration checks, polish and optimisations.
+
+### Next steps (queued, not started)
+
+1. **Ventoy compatibility check**: boot `omloader.iso` through Ventoy (normal and GRUB2 mode) in QEMU/OVMF; stage 1 should also be able to find the ISO *file* on a data partition (`findiso`-style) instead of relying on the `OMLOADER_LIVE` label of a mapped device.
+2. **Store-file mode**: an ext4 image file (Ventoy `.dat` convention, label `OMLOADER`) on an exFAT/NTFS partition as the snapshot/data store, so no separate Linux partition is needed (NTFS: dirty-flag / read-only fallback).
+3. **Installer** (`omloader install`, UEFI/GPT, free space only) to run from the loader on an internal disk; Ventoy2Disk can already install Ventoy itself to a local disk.
+4. **Optimisations** (deliberately postponed until the core is finished): COW size margin (dm-snapshot needs ~0.4 % more than the base size in the worst case; currently the COW is sized exactly to the base) and usage warnings; storing `base.raw` inside squashfs to save space on exFAT (no sparse files); VM data volumes; hot snapshots from a running guest; more LXD images in a compatibility matrix (currently one container and one VM fixture only); LXD template rendering / cloud-init.
+5. M5 (device isolation, real hardware, Secure Boot, LUKS), TUI, Windows VHDX differencing disks.
 
 ## Known limitations
 
-- **No login on the physical console**: autologin is only configured on ttyS0 and only when `runtime.autologin` is set (the loader itself has root autologin on ttyS0 and tty1); there is no
-  tty1 setup for guests and no initial user/password support for container or VM guests.
-- **The OMLOADER partition is not cleanly unmounted** after the container root switch (and after `kexec`): an abrupt power-off can lose the last writes (journal replay on next mount; guests `sync` on poweroff).
+- **VM guests: no account/console provisioning and no clean unmount of the OMLOADER partition.** `runtime.users`/`autologin`/`debug_shell`/`shutdown_sync` are container-only: a VM boots its own
+  disk image through kexec and the loader never edits the guest's root disk. Its COW files live on the OMLOADER partition that the guest's *initramfs* mounted (`/omlmnt-*`); that mount is
+  kept busy by the loop/dm-snapshot stack under the guest root, so it can be neither unmounted nor remounted read-only by the guest at poweroff (the loader cannot hook the guest's shutdown
+  without modifying the guest's root filesystem). After a VM poweroff the OMLOADER ext4 is therefore left needing journal replay (the next loader mount replays it; the guest's own `sync` at
+  shutdown makes data loss unlikely, an abrupt power cut can still lose the last writes). Workaround: `poweroff` from the guest's normal shutdown path, then boot the loader once (it replays the journal).
+- **Container console login is only implemented for systemd guests** (autologin drop-ins); sysvinit/busybox-init/OpenRC guests get the busybox debug shell (`debug_shell`) and best-effort shutdown hooks
+  (sysvinit `K99omloader-sync`, busybox-init `::shutdown:`; OpenRC: none). The tty1 console is only useful with a display; with `console=tty0 console=ttyS0,115200` (the loader's grub.cfg) the guest's `/dev/console` is ttyS0.
+  Removing a user from `runtime.users` does not delete the account (accounts are only created/updated); passwords in the image config are only hashed on the loader (prefer `password_hash`).
 - **VM path has no independent data volumes**: all guest data lives in the COW layer of the snapshot node (data volumes exist for containers only).
 - **VM path is verified only on the Debian/initramfs-tools fixture.** The `rdinit` guest reassembly is generic in principle but untested elsewhere; no Windows guests, no LVM or encrypted (LUKS) root.
 - **Secure Boot is not supported** (unsigned GRUB/kernel chain); kexec has restrictions under Secure Boot / kernel lockdown.
 - **Only QEMU/OVMF has been tested, no real hardware yet** (NIC/disk/USB enumeration timing, firmware quirks and kexec on real drivers are unknown).
 - **The live system's upper layer is tmpfs (RAM)**: `/tmp`, flatten staging and the like use memory, so flattening big images needs enough RAM.
 - **Wi-Fi is not configured**: iwd and wireless-regdb are installed, nothing sets them up; wired DHCP only.
-- **No online pull yet (M4)**; **LXD VM import (qcow2 → raw) is manual** until M4 (convert with `qemu-img convert -O raw`).
+- **Online pull**: only Simplestreams sources (images.linuxcontainers.org layout); SHA256 verification only (no GPG: the index/catalog is not signed-checked, blobs are digest-checked against it; a malicious *mirror* could therefore lie in the index when the primary is unreachable — a warning is printed). No Wi-Fi, no registry/Docker pull. The VM kernel probe needs root (losetup/kpartx/mount) — inside the loader, or use `--no-probe`.
 - **Data persistence rules**: data persists only when you boot the same snapshot node and the OMLOADER partition is writable. `--snapshot base` creates an ephemeral `tmp-*`
   child (removed with `snapshot gc`), `new:<name>` starts a fresh child; volumes declared `snapshot: false` live outside the layers and survive rollback.
 
@@ -130,7 +143,7 @@ names, runs `kpartx` and waits for the root partition node. Before `kexec -e` th
 mount/kpartx/dm/loop devices and syncs so COW headers are consistent.
 dracut-based guests are not supported yet (the `rdinit` approach would likely work but is untested).
 Kernel/initrd paths are resolved *inside* the image root (absolute symlinks like `/boot/vmlinuz -> /boot/vmlinuz-X` work; no escaping the root).
-`kernel.inject_modules` is ignored (warning). Storage filesystems stay mounted in the initramfs after switch_root (not cleanly unmounted at poweroff).
+`kernel.inject_modules` is ignored (warning). Storage filesystems stay mounted in the initramfs after switch_root (not cleanly unmounted at poweroff; see Known limitations: nothing on the guest disk may be changed, so the VM path has no shutdown hook).
 
 `cache.offline`: `auto` | `on` (never go online) | `off` (always check upstream).
 
@@ -158,18 +171,50 @@ Limits: kernel allows 500 lower layers and the mount option string must fit one 
 (loader's if it has nameservers, else 1.1.1.1/8.8.8.8; an existing symlink is replaced, never followed outside the root),
 `runtime.network: dhcp`: systemd guests get `/etc/systemd/network/80-omloader-dhcp.network` (Type=ether, DHCP=ipv4) and
 systemd-networkd enabled; others get `/.omloader/net.sh` (loader busybox `udhcpc`) + a sysv `omloader-net` script (best effort).
-`runtime.autologin: true`: serial-getty@ttyS0 autologin drop-in (tests/debug). `runtime.env` -> systemd `DefaultEnvironment`.
+`runtime.env` -> systemd `DefaultEnvironment`. Console login, accounts, debug shell and shutdown hooks: next section.
 `/.omloader/busybox` (copy of the loader's static busybox, ~1MB) is installed for the wrapper below.
 Init selection: `runtime.entrypoint` (+`cmd`) -> `/sbin/init` -> `runtime.cmd` -> `/bin/sh` (warning). If the chosen command's basename is
 `init`/`systemd` it is exec'd directly; otherwise it is wrapped by `/.omloader/entrypoint` (static-busybox shell script: mounts
 proc/sys/dev/devpts/run, applies `runtime.env`/`workdir` from `/.omloader/env`, starts DHCP, `exec "$@"`; the app becomes PID 1).
 Guest `/proc /sys /dev` are moved from the loader; systemd/sysv mount the rest themselves.
 
+### Console login and clean shutdown (containers; part of the firstboot adapter)
+Written offline into the node's upper (symlink-safe: every path is resolved inside the new root and never escapes it) and **re-applied whenever the hash of these keys changes**
+(the hash is stored as `ui-config=` in `/.omloader-adapted`; unchanged config => no-op, so accounts are never duplicated; editing the config and booting again updates them).
+
+    runtime:
+      autologin: true            # getty@tty1 AND serial-getty@ttyS0 autologin (systemd guests); default false
+      autologin_user: alice      # default root
+      root_password_hash: '$6$...'   # or root_password: plain text (hashed with SHA-512 crypt by the loader, warned about, never logged)
+      users:
+        - name: alice
+          password_hash: '$6$salt$...'   # `openssl passwd -6`; or password: <plain> (discouraged)
+          groups: [sudo, users]          # missing groups are created; members are added in /etc/group (+gshadow)
+          shell: /bin/bash               # default /bin/bash if present, else /bin/sh
+          sudo: true                     # /etc/sudoers.d/90-omloader-alice (0440): NOPASSWD if no password is configured, else password required
+          ssh_authorized_keys: ["ssh-ed25519 AAAA... alice@host"]   # ~/.ssh/authorized_keys 0600 (rewritten from the config)
+      debug_shell: auto          # auto | always | never (see below)
+      shutdown_sync: true        # default true
+
+Accounts: `/etc/passwd`, `/etc/shadow`, `/etc/group`, `/etc/gshadow` are edited in place (modes/owners kept; uid/gid allocated from 1000, a same-named private group is created,
+`/etc/skel` is copied, home directory and keys are chowned by numeric id). Existing users keep uid/gid/home and only get the changed fields.
+Autologin uses the guest's own `agetty` (`--autologin <user>`); a `getty.target.wants/getty@tty1.service` link is added so tty1 always has a getty; ttyS0 is spawned by systemd's getty generator
+because the loader passes `console=tty0 console=ttyS0,115200` (the guest shares the loader kernel command line).
+**Debug shell fallback**: if the guest has no usable getty+login (no `agetty|getty` and `login`; a guest `busybox` counts for both) `debug_shell: auto` starts the omloader static busybox
+(`/.omloader/dbgshell`) as a respawning shell on `/dev/console`: a `omloader-debug-shell.service` for systemd, a `::respawn:` line for busybox init, a `respawn` line for sysvinit;
+with the entrypoint wrapper (no init) only `debug_shell: always` runs it in the background. The shell prints `OMLOADER_DEBUG_SHELL ...`.
+**Clean shutdown**: before `switch-root`, `autoboot.sh` bind-mounts the OMLOADER and VTOYDATA partitions at `/.omloader/snap` and `/.omloader/images` inside the new root and records
+`<name> <device> <fstype>` in `/.omloader/devs`. The adapter installs `/.omloader/sync.sh` (`sync`, `mount -o remount,ro`, `sync` per partition; if systemd-shutdown already detached the bind
+mounts it mounts the device again, which shares the same superblock, and remounts that read-only) and runs it: systemd = `/usr/lib/systemd/system-shutdown/omloader-sync.sh`
+(very end of poweroff/reboot) + `omloader-sync.service` (`ExecStop`, after all normal services are stopped); busybox init = `::shutdown:`; sysvinit = `/etc/init.d/omloader-sync` + `K99` links; OpenRC: none.
+The remount marks the ext4 journal clean (`needs_recovery` cleared) and clears the exfat dirty flag. The loader's own poweroff paths in `autoboot.sh` (hook/selftest/failure) do `sync` + remount-ro too.
+`shutdown_sync: false` disables the guest hooks (tests use it to reproduce the old behaviour).
+
 ### Kernel modules in the guest
 The guest runs the loader kernel, so it needs the loader's modules to `modprobe`. The live system has the complete Debian kernel module tree
 (plus firmware under `/lib/firmware`); `omloader` bind-mounts `/lib/modules/<uname -r>` **read-only** on `<newroot>/lib/modules/<uname -r>` (no copy).
 The bind mountpoint dir is created in the upper layer. Other kernel versions in the guest are not supported.
-After the root switch the OMLOADER ext4 stays in use by the overlay (its old mount is detached) and is never cleanly unmounted (journal replay on next boot; guest `sync` on poweroff).
+After the root switch the OMLOADER ext4 stays in use by the overlay, so it can never be *unmounted* while the guest runs; instead it is made clean by remounting read-only (see "Console login and clean shutdown").
 
 ### Import (rootless, build-time helper; `oci-*`/`docker-archive` need the experimental opt-in)
     omloader import oci-dir|oci-archive|docker-archive|lxd PATH --name N --out IMAGES_ROOT [--force] [--autologin]
@@ -215,9 +260,50 @@ Common flags: `--root SNAPROOT --images-root IMGROOT -c omloader.yaml` (defaults
 `import --data name:/mount:backend[:size[:snapshot]]` declares/overrides volumes. **VM images: data volumes are not implemented (TODO)** (the boot warns): the guest is kexec'd
 and the loader's loop devices die with it; it would need a guest-assemble post-hook that attaches the file and edits the guest fstab.
 
+## Online pull (M4)
+Commands (all CLI, `-c omloader.yaml` optional):
+
+    omloader images list [--source S] [--type container|vm] [--os ubuntu] [--release noble] [--variant default]
+    omloader pull lxc:ubuntu/noble[/variant] [--vm|--container] [--name N] [--out IMAGES_ROOT] [--offline] [--force] [--no-probe]
+    omloader import lxd-vm DISK.qcow2|DIR [--name N --out ROOT] [--no-probe]
+    omloader source list|test [NAME]      omloader cache ls|gc [--max-size-gb N]      omloader net status
+
+- `pull` reads `streams/v1/index.json` + `images.json`, picks the latest version for amd64 (variant `default` unless given), downloads `lxd.tar.xz` + `rootfs.squashfs`
+  (container) or `disk.qcow2` (VM) into the cache, verifies SHA256, and produces `<images-root>/<name>/{image.yaml,base.*}` (default name `<os>-<release>[-variant][-vm]`).
+  Default `--out` inside the loader is the mounted images partition (`IMAGES_ROOT` from `/run/omloader/env`).
+- VM import: `qemu-img convert -O raw`, then (unless `--no-probe`) the raw disk is attached read-only (`losetup`, `kpartx`), the ext4/xfs partition holding `/boot/vmlinuz*` is mounted
+  read-only, and `kernel.path`/`initrd`/`root_partition` are written (symlinks resolved only inside the image). With `--no-probe` fill those fields by hand.
+- Cache: `cache.path` (default `/OMLOADER/cache`; inside the loader that means `cache/` on the OMLOADER partition, mounted at `/mnt/snap`), blobs by sha256 (`blobs/aa/<sha>`), atomic rename,
+  `Range` resume of `tmp/<sha>.part`, `cache gc` evicts least recently used blobs above `cache.max_size_gb`.
+  `cache.offline`: `auto` (use cached index/catalog younger than `mirror_policy.cache_ttl_hours`, fall back to stale on network failure), `on` (never touch the network; also `--offline`,
+  and implied by `policy.allow_online: false`), `off` (always re-check upstream metadata).
+- Mirrors: `sources.<n>.mirrors` + `mirror_policy.strategy` = `fallback` (primary then mirrors), `fastest` (HEAD timing probe, health-checked order) or `mirror-only`; `sources.<n>.rewrite`
+  (`from`/`to` URL prefix rules). **Mirrors are never trusted for content**: every blob is checked against the SHA256 from the index, a mismatch is discarded and the next server tried.
+  `mirror_policy.region_preset: cn` adds the **unverified** presets `mirrors.tuna.tsinghua.edu.cn/lxc-images` and `mirror.nju.edu.cn/lxc-images` to `lxc-images`.
+- Network: `network.proxy` (http/https/socks5), `no_proxy`, per-source `proxy` (`direct` disables), `extra_ca` (PEM added to the system pool), `timeout_sec`, `retries`. `policy.allowed_sources` restricts usable sources.
+
+```yaml
+network: {proxy: "socks5://127.0.0.1:1080", no_proxy: "10.0.0.0/8,.lan", extra_ca: /OMLOADER/corp-ca.pem, retries: 3}
+mirror_policy: {strategy: fastest, region_preset: cn}
+sources:
+  lxc-images:
+    type: simplestreams
+    url: https://images.linuxcontainers.org
+    mirrors: [https://mirror.example.org/lxc-images]
+    rewrite: [{from: "https://images.linuxcontainers.org", to: "https://cache.lan/lxc"}]
+cache: {path: /OMLOADER/cache, max_size_gb: 20, offline: auto}
+policy: {allow_online: true, allowed_sources: [lxc-images]}
+```
+`make e2e-pull` (`test/e2e-pull.sh`): fake simplestreams tree on the remote host (python http.server, guest sees it as 10.0.2.2), dead primary + working mirror, pull + boot of a container and a VM,
+then server stopped and `--offline` / `cache.offline: on` pulls from the cache that boot again.
+
 ## Tests (remote KVM)
 `make e2e-snap` (`test/e2e-snap.sh`): snapshot management on the OCI fixture (create/list/stacking/rollback with data still on disk/delete refusal/gc/prune/verify/export/space guard/overlay flatten + boot of the flattened image/data volumes surviving rollback)
 and on the VM fixture (create/list/verify/discard/prune --dry-run/qcow2 export/dm flatten + boot of the flattened VM). Snapshot commands that need root run in the loader through the `omloader.hook=1` stage disk.
+
+## Usability test (remote KVM)
+    make e2e-ui      # test/e2e-ui.sh: users/autologin on tty1+ttyS0, password+sudo checks, 2nd boot idempotency, busybox-only image (debug shell), ext4/exfat clean-state check, shutdown_sync:false baseline
+The clean-state check reads the ext4 superblock (`s_state`, `needs_recovery`) and the exfat `VolumeDirty` flag straight from the disk image after the guest powered off.
 
 ## M3 test (remote KVM)
     export OML_REMOTE_PASS=...   # never stored

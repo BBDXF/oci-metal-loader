@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN sed -i "s#http://deb.debian.org/debian#$DEBIAN_MIRROR#g; s#^Components: main\$#Components: main non-free-firmware#" /etc/apt/sources.list.d/debian.sources
 RUN apt-get update && apt-get install -y --no-install-recommends \
       systemd systemd-sysv systemd-resolved udev dbus kmod \
-      util-linux e2fsprogs exfatprogs xfsprogs squashfs-tools lvm2 dmsetup kpartx kexec-tools qemu-utils \
+      util-linux e2fsprogs exfatprogs xfsprogs squashfs-tools lvm2 dmsetup kpartx kexec-tools qemu-utils xz-utils \
       parted gdisk fdisk cryptsetup \
       iproute2 iputils-ping ca-certificates curl iwd wireless-regdb \
       linux-image-amd64 firmware-linux-free firmware-misc-nonfree firmware-realtek firmware-iwlwifi \
