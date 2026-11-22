@@ -13,6 +13,23 @@ M2 (snapshot management, flatten/export, data volumes for containers), M3 (OCI /
 Planned: M4 (online pull with registry mirrors/proxy, simplestreams), M5 (device isolation, real-hardware testing, Secure Boot, LUKS),
 interactive TUI, Windows VHDX differencing disks (last).
 
+## Architecture of the loader ISO
+
+    UEFI -> GRUB -> kernel + stage-1 initramfs (busybox + modules)          build/stage1-init
+              -> live medium (label OMLOADER_LIVE): live/live.squashfs (Debian bookworm userspace, zstd)
+                                                    live/omloader.squashfs (omloader binary, units, scripts)
+              -> overlay (squashfs layers + tmpfs upper) -> switch_root -> systemd (PID 1)
+    systemd: omloader-mounts.service   (OMLOADER ext4 -> /mnt/snap, VTOYDATA -> /mnt/images, <=15 s wait if omloader.* flags)
+             omloader-autoboot.service (omloader.hook / selftest / image= : `omloader boot` -> kexec (VM) or systemctl switch-root (container))
+             systemd-networkd (DHCP on en*/eth*) + systemd-resolved, serial-getty/getty autologin root + banner  (iwd installed, not configured yet)
+
+The loader is a real minimal Debian 12 system (systemd, udev, kmod, e2fsprogs, exfatprogs, xfsprogs, lvm2/dmsetup/kpartx, cryptsetup, parted/gdisk,
+kexec-tools, qemu-utils, iproute2, curl + ca-certificates, iwd + wireless-regdb, kernel + firmware), so networking/TLS/mirrors (M4), Wi-Fi, a TUI and
+diagnostics have a proper userspace. Kernel command line flags (all optional): `omloader.image=NAME`, `omloader.snapshot=S`, `omloader.poweroff_on_fail=1`,
+`omloader.selftest=1`, `omloader.hook=1` (test helper: runs `hook.sh` from an `OMLSTAGE` ext4 disk, then powers off), `omloader.live=/dev/X` (stage 1 medium override).
+Without `omloader.image=` you get the autologin root shell with a banner. Details: [build/README.md](build/README.md); the Debian package set and
+licensing: [build/THIRD-PARTY.md](build/THIRD-PARTY.md) (`make licenses`).
+
 ## Related projects
 
 No existing project covers the whole idea (Ventoy-style boot of OCI / LXD / VM image files on bare metal, no install, with snapshots and data volumes).
@@ -88,9 +105,12 @@ Kernel/initrd paths are resolved *inside* the image root (absolute symlinks like
 Flow: verify sha256 -> `mount -t squashfs -o loop,ro base.squashfs /run/omloader/base` -> per tree node
 `<snap-root>/<image>/<node>/{upper,work}` (on the ext4 OMLOADER partition; `work` must be on the same fs as `upper`) ->
 `mount -t overlay -o lowerdir=<parent uppers newest-first>:/run/omloader/base,upperdir=<node>/upper,workdir=<node>/work /newroot`
--> firstboot adapter -> bind loader modules -> write `/run/omloader-switch` and return 0. The loader `/init` then
-`mount --move`s /dev /proc /sys /run into the new root and does `exec switch_root /newroot <init> [args]` itself
-(it must be exec'd by PID 1, which is why `omloader boot` only writes the handoff file: line 1 = new root, then init and args, one per line).
+-> firstboot adapter -> bind loader modules -> write `/run/omloader-switch` and return 0 (line 1 = new root, then init and args, one per line).
+The loader is a systemd system, so `omloader-autoboot.service` (`build/live/rootfs/usr/local/lib/omloader/autoboot.sh`) does the root switch:
+it writes a tiny wrapper `/.omloader/switch-init` into the new root (`#!/.omloader/busybox sh` + `exec <init> <args>`), mounts a fresh tmpfs on `<newroot>/run`
+and calls `systemctl switch-root /newroot /.omloader/switch-init`. PID 1 kills the live system's processes, moves /proc /sys /dev into the new root,
+pivots (the old live root is detached; the overlay holds private clones of its lower/upper mounts, so the OMLOADER partition stays in use) and execs the wrapper,
+which execs the guest's init. Using a wrapper as "init" makes systemd start the guest init *fresh* (otherwise a systemd guest would `--deserialize` the live system's state).
 Snapshot semantics are the same as M1: `new:<name>` creates a child, `base` boots an ephemeral `tmp-<ts>` child, booting a node
 that has children is refused unless `--force` (its upper is a lower layer of the children), `--ro` boots the squashfs read-only.
 Limits: kernel allows 500 lower layers and the mount option string must fit one page: `omloader` refuses (> `snapshots.max_chain_depth`,
@@ -110,12 +130,10 @@ proc/sys/dev/devpts/run, applies `runtime.env`/`workdir` from `/.omloader/env`, 
 Guest `/proc /sys /dev` are moved from the loader; systemd/sysv mount the rest themselves.
 
 ### Kernel modules in the guest
-The guest runs the loader kernel, so it needs the loader's modules to `modprobe`. The loader initramfs ships the modules listed in
-`build/mk-iso-inner.sh` (`MODS`: storage, fs: overlay squashfs loop ext4 xfs exfat vfat..., NICs: virtio_net e1000 e1000e r8169 igb igc tg3 ...).
-`omloader` copies `/lib/modules/<uname -r>` to tmpfs (`/run/omloader/modules`) and bind-mounts it **read-only** on
-`<newroot>/lib/modules/<uname -r>` (an in-initramfs bind would be wiped by busybox `switch_root`'s old-root cleanup).
+The guest runs the loader kernel, so it needs the loader's modules to `modprobe`. The live system has the complete Debian kernel module tree
+(plus firmware under `/lib/firmware`); `omloader` bind-mounts `/lib/modules/<uname -r>` **read-only** on `<newroot>/lib/modules/<uname -r>` (no copy).
 The bind mountpoint dir is created in the upper layer. Other kernel versions in the guest are not supported.
-After switch_root the OMLOADER ext4 stays mounted under the hidden old root and is never cleanly unmounted (journal replay on next boot; guest `sync` on poweroff).
+After the root switch the OMLOADER ext4 stays in use by the overlay (its old mount is detached) and is never cleanly unmounted (journal replay on next boot; guest `sync` on poweroff).
 
 ### Import (rootless, build-time helper)
     omloader import oci-dir|oci-archive|docker-archive|lxd PATH --name N --out IMAGES_ROOT [--force] [--autologin]
@@ -152,7 +170,7 @@ Common flags: `--root SNAPROOT --images-root IMGROOT -c omloader.yaml` (defaults
 - **flatten** (needs root: loop/dm/mount, run it in the loader shell or via the hook mechanism): overlay = read-only overlay of base+uppers -> `mksquashfs`;
   dm = loop+dm snapshot stack (`oml-x-<image>-<node>`) -> sparse copy of the top device (Go, skips zero blocks; the loader's busybox `dd` has no `conv=sparse`) -> `base.raw`.
   Both create a NEW image `<images-root>/<image>-flat-<node>` (or `--name`) with a copy of `image.yaml` (new name + sha256) and an empty snapshot tree; the original is untouched.
-- **export**: overlay -> squashfs of the node's own upper; dm -> raw disk image of base+chain, or qcow2 if `qemu-img` exists (the loader does not ship it: clear error with a hint).
+- **export**: overlay -> squashfs of the node's own upper; dm -> raw disk image of base+chain, or qcow2 via `qemu-img convert` (shipped in the Debian loader; without it: clear error with a hint).
 
 ### Data volumes (containers)
 `data:` entries of `type: oci|lxd-container` images are mounted into the new root *after* the overlay, outside the snapshot layers, so they survive rollback, delete, prune and flatten
@@ -163,7 +181,7 @@ and the loader's loop devices die with it; it would need a guest-assemble post-h
 
 ## Tests (remote KVM)
 `make e2e-snap` (`test/e2e-snap.sh`): snapshot management on the OCI fixture (create/list/stacking/rollback with data still on disk/delete refusal/gc/prune/verify/export/space guard/overlay flatten + boot of the flattened image/data volumes surviving rollback)
-and on the VM fixture (create/list/verify/discard/prune --dry-run/qcow2 hint/dm flatten + boot of the flattened VM). Snapshot commands that need root run in the loader through the `omloader.hook=1` stage disk.
+and on the VM fixture (create/list/verify/discard/prune --dry-run/qcow2 export/dm flatten + boot of the flattened VM). Snapshot commands that need root run in the loader through the `omloader.hook=1` stage disk.
 
 ## M3 test (remote KVM)
     export OML_REMOTE_PASS=...   # never stored
