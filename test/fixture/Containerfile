@@ -1,0 +1,16 @@
+FROM debian:bookworm
+ARG DEBIAN_MIRROR=http://mirrors.ustc.edu.cn/debian
+ENV DEBIAN_FRONTEND=noninteractive
+RUN sed -i "s#http://deb.debian.org/debian#$DEBIAN_MIRROR#g" /etc/apt/sources.list.d/debian.sources
+RUN mkdir -p /etc/initramfs-tools && printf 'dm-mod\ndm-snapshot\ndm-linear\nloop\nvirtio_blk\nvirtio_pci\nnvme\next4\nsd_mod\n' >> /etc/initramfs-tools/modules \
+ && echo 'RESUME=none' > /etc/initramfs-tools/conf.d/resume 2>/dev/null || true
+COPY hook-blkid /etc/initramfs-tools/hooks/blkid
+COPY premount-label /etc/initramfs-tools/scripts/init-premount/omllabel
+RUN chmod +x /etc/initramfs-tools/hooks/blkid /etc/initramfs-tools/scripts/init-premount/omllabel \
+ && apt-get update && apt-get install -y --no-install-recommends linux-image-amd64 initramfs-tools util-linux kmod \
+ && rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man /usr/share/locale /var/cache/apt \
+ && ln -sf /boot/$(cd /boot && ls vmlinuz-* | head -1) /boot/vmlinuz && ln -sf /boot/$(cd /boot && ls initrd.img-* | head -1) /boot/initrd.img \
+ && lsinitramfs /boot/initrd.img | grep -E 'dm-snapshot|dm-mod|/blkid' \
+ && echo omlfixture > /etc/hostname && echo 'root:x:0:0:root:/root:/bin/bash' >/dev/null
+COPY init /sbin/init
+RUN chmod +x /sbin/init

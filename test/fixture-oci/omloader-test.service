@@ -1,0 +1,12 @@
+[Unit]
+Description=omloader OCI guest test (prints OMLOADER_GUEST_OK, bumps a counter, powers off)
+After=multi-user.target systemd-networkd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/omloader-test.sh
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

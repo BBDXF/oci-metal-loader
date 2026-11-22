@@ -1,0 +1,8 @@
+#!/bin/sh
+[ "$1" = prereqs ] && { echo; exit 0; }
+# no udev: resolve root=LABEL=OMLROOT via blkid, also for dm/kpartx devices
+i=0; while [ $i -lt 30 ]; do i=$((i+1))
+  d=$(blkid -L OMLROOT 2>/dev/null)
+  if [ -n "$d" ]; then echo "ROOT=$d" >> /conf/param.conf; echo "omllabel: ROOT=$d" > /dev/console; exit 0; fi
+  sleep 0.5
+done

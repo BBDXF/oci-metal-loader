@@ -1,0 +1,30 @@
+# Remote build/test harness (M1). Password via env OML_REMOTE_PASS (never stored).
+OML_REMOTE ?= philips@192.168.8.26
+OML_RDIR   ?= omloader-test
+export SSHPASS := $(OML_REMOTE_PASS)
+SSH  = sshpass -e ssh -o StrictHostKeyChecking=no $(OML_REMOTE)
+RSH  = sshpass -e ssh -o StrictHostKeyChecking=no
+
+.PHONY: bin sync iso fixture disk e2e e2e-oci e2e-snap clean-remote
+bin:
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/omloader.bin ./cmd/omloader
+
+sync: bin
+	$(SSH) 'mkdir -p ~/$(OML_RDIR)/bin'
+	tar -c --exclude=omloader.bin build test | $(SSH) 'cd ~/$(OML_RDIR) && tar -x'
+	cat build/omloader.bin | $(SSH) 'cat > ~/$(OML_RDIR)/bin/omloader.new && chmod +x ~/$(OML_RDIR)/bin/omloader.new && mv ~/$(OML_RDIR)/bin/omloader.new ~/$(OML_RDIR)/bin/omloader'
+
+iso: sync
+	$(SSH) 'cd ~/$(OML_RDIR) && build/build-iso.sh'
+fixture: sync
+	$(SSH) 'cd ~/$(OML_RDIR) && test/make-fixture.sh'
+disk: sync
+	$(SSH) 'cd ~/$(OML_RDIR) && test/make-disk.sh'
+e2e: sync
+	$(SSH) 'cd ~/$(OML_RDIR) && test/e2e.sh'
+e2e-oci: sync
+	$(SSH) 'cd ~/$(OML_RDIR) && test/e2e-oci.sh'
+e2e-snap: sync
+	$(SSH) 'cd ~/$(OML_RDIR) && test/e2e-snap.sh'
+clean-remote:
+	-$(SSH) 'pkill -u $$USER -f "[o]mloader-test/.*qemu" || true; pkill -u $$USER -f "[o]mloader-test/test/" || true; rm -rf ~/$(OML_RDIR)/out ~/$(OML_RDIR)/work; true'

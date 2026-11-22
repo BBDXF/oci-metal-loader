@@ -1,0 +1,14 @@
+ARG BASE=docker.io/library/debian:bookworm-slim
+FROM ${BASE}
+ARG DEBIAN_MIRROR=http://mirrors.ustc.edu.cn/debian
+ENV DEBIAN_FRONTEND=noninteractive
+RUN sed -i "s#http://deb.debian.org/debian#$DEBIAN_MIRROR#g" /etc/apt/sources.list.d/debian.sources
+RUN apt-get update && apt-get install -y --no-install-recommends systemd systemd-sysv udev kmod \
+ && rm -rf /var/lib/apt/lists/* /usr/share/doc /usr/share/man /usr/share/locale /var/cache/apt
+COPY omloader-test.sh /usr/local/bin/omloader-test.sh
+COPY omloader-test.service /etc/systemd/system/omloader-test.service
+RUN chmod +x /usr/local/bin/omloader-test.sh \
+ && mkdir -p /etc/systemd/system/multi-user.target.wants /var/lib/omloader-test \
+ && ln -s /etc/systemd/system/omloader-test.service /etc/systemd/system/multi-user.target.wants/omloader-test.service
+VOLUME /srv/dirdata
+ENTRYPOINT ["/sbin/init"]

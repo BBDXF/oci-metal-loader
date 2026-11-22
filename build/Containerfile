@@ -1,0 +1,9 @@
+FROM debian:bookworm
+ARG DEBIAN_MIRROR=http://mirrors.ustc.edu.cn/debian
+ENV DEBIAN_FRONTEND=noninteractive
+RUN sed -i "s#http://deb.debian.org/debian#$DEBIAN_MIRROR#g" /etc/apt/sources.list.d/debian.sources
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      linux-image-amd64 busybox-static kexec-tools dmsetup lvm2 kpartx \
+      e2fsprogs exfatprogs xfsprogs squashfs-tools util-linux kmod fdisk \
+      grub-efi-amd64-bin grub-common xorriso mtools dosfstools cpio xz-utils ca-certificates \
+    && rm -rf /var/lib/apt/lists/*

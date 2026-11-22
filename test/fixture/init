@@ -1,0 +1,11 @@
+#!/bin/bash
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+mount -t proc proc /proc; mount -t sysfs sys /sys
+mount -t devtmpfs dev /dev 2>/dev/null
+mount -o remount,rw / 2>/dev/null
+D=/var/lib/omloader-test; mkdir -p $D
+n=$(cat $D/counter 2>/dev/null || echo 0); n=$((n+1)); echo $n > $D/counter; sync
+{ echo "OMLOADER_GUEST_OK"; echo "OMLOADER_COUNTER=$n"; echo "OMLOADER_GUEST_CMDLINE=$(cat /proc/cmdline)"; echo "OMLOADER_GUEST_ROOT=$(findmnt -no SOURCE /)"; } > /dev/ttyS0
+sync
+exec 3<> <(:); echo 1 > /proc/sys/kernel/sysrq; echo o > /proc/sysrq-trigger
+read -t 30 -u 3 x

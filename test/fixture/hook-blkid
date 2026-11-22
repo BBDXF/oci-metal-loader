@@ -1,0 +1,4 @@
+#!/bin/sh
+[ "$1" = prereqs ] && { echo; exit 0; }
+. /usr/share/initramfs-tools/hook-functions
+copy_exec /sbin/blkid /sbin

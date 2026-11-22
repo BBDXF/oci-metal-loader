@@ -1,0 +1,88 @@
+#!/bin/sh
+# omloader loader init (PID 1 in initramfs)
+export PATH=/usr/bin:/bin:/sbin
+export DM_DISABLE_UDEV=1   # no udevd in the loader: make libdm create /dev/mapper nodes itself
+mount -t proc proc /proc
+mount -t sysfs sys /sys
+mount -t devtmpfs dev /dev
+mkdir -p /dev/pts /run /tmp /mnt/snap /mnt/images /newroot
+mount -t tmpfs -o mode=755 tmpfs /run
+mount -t devpts devpts /dev/pts 2>/dev/null
+echo 1 > /proc/sys/kernel/sysrq
+CMD=$(cat /proc/cmdline)
+arg() { for a in $CMD; do case "$a" in "$1="*) echo "${a#*=}"; return;; esac; done; }
+has() { for a in $CMD; do [ "$a" = "$1" ] && return 0; done; return 1; }
+echo "OMLOADER_LOADER: starting (kernel $(uname -r))"
+
+for m in $(cat /etc/modules-list); do modprobe "$m" 2>/dev/null; done
+
+find_label() { blkid -L "$1" 2>/dev/null; }
+SNAPDEV=; IMGDEV=; i=0
+while [ $i -lt 30 ]; do
+  [ -z "$SNAPDEV" ] && SNAPDEV=$(find_label OMLOADER)
+  [ -z "$IMGDEV" ] && IMGDEV=$(find_label VTOYDATA)
+  [ -n "$SNAPDEV" ] && [ -n "$IMGDEV" ] && break
+  sleep 0.5; i=$((i+1))
+done
+
+SNAPOK=0
+if [ -n "$SNAPDEV" ]; then
+  mount -t ext4 -o rw "$SNAPDEV" /mnt/snap && SNAPOK=1
+fi
+IMAGES_ROOT=/mnt/snap/images
+if [ -n "$IMGDEV" ]; then
+  T=$(blkid -o value -s TYPE "$IMGDEV")
+  if mount -t "$T" -o rw "$IMGDEV" /mnt/images; then IMAGES_ROOT=/mnt/images/images; fi
+fi
+mkdir -p /mnt/snap/snapshots 2>/dev/null
+echo "OMLOADER_LOADER: snap=${SNAPDEV:-none}(mounted=$SNAPOK) images=${IMGDEV:-none} images_root=$IMAGES_ROOT"
+[ -d "$IMAGES_ROOT" ] && echo "OMLOADER_LOADER: images: $(ls $IMAGES_ROOT | tr '\n' ' ')"
+
+if [ "$(arg omloader.hook)" = 1 ]; then   # test helper: run /mnt/stage/hook.sh from a OMLSTAGE-labelled fs, then power off
+  SD=$(find_label OMLSTAGE); mkdir -p /mnt/stage
+  if [ -n "$SD" ] && mount -t ext4 "$SD" /mnt/stage; then sh /mnt/stage/hook.sh; echo "OMLOADER_HOOK_RC=$?"; else echo "OMLOADER_HOOK_RC=nostage"; fi
+  sync; umount /mnt/images 2>/dev/null; umount /mnt/snap 2>/dev/null; echo o > /proc/sysrq-trigger; sleep 5
+fi
+
+if has omloader.selftest=1 || [ "$(arg omloader.selftest)" = 1 ]; then
+  grep -E ' /mnt/' /proc/mounts
+  omloader 2>&1 | head -5
+  echo OMLOADER_LOADER_SELFTEST_DONE
+  sync; echo o > /proc/sysrq-trigger; sleep 5
+fi
+
+IMG=$(arg omloader.image); SNAP=$(arg omloader.snapshot)
+if [ -n "$IMG" ]; then
+  echo "OMLOADER_LOADER: auto boot image=$IMG snapshot=${SNAP:-default}"
+  set -- boot --image "$IMG" --images-root "$IMAGES_ROOT" --snap-root /mnt/snap/snapshots
+  [ -n "$SNAP" ] && set -- "$@" --snapshot "$SNAP"
+  omloader "$@"
+  RC=$?
+  # overlay (oci / lxd-container) handoff: omloader mounted /newroot and wrote /run/omloader-switch
+  # (line 1 = new root, then init + args, one per line). switch_root must be exec'd by PID 1 (this shell).
+  if [ "$RC" = 0 ] && [ -s /run/omloader-switch ]; then
+    set --
+    while IFS= read -r l; do set -- "$@" "$l"; done < /run/omloader-switch
+    NR=$1; shift
+    rm -f /run/omloader-switch
+    echo "OMLOADER_LOADER: switch_root $NR $* (loader kernel $(uname -r))"
+    mount --move /dev "$NR/dev" && mount --move /proc "$NR/proc" && mount --move /sys "$NR/sys" && mount --move /run "$NR/run" \
+      || echo "OMLOADER_LOADER: warning: mount --move failed"
+    exec switch_root "$NR" "$@"
+    echo "OMLOADER_LOADER: exec switch_root failed"; RC=127
+  fi
+  echo "OMLOADER_LOADER: 'omloader boot' returned rc=$RC (exec failed or no kexec)"
+  if [ "$(arg omloader.poweroff_on_fail)" = 1 ]; then echo OMLOADER_LOADER_FAILED; sync; echo o > /proc/sysrq-trigger; sleep 5; fi
+fi
+
+cat <<BANNER
+
+=== omloader loader shell ===
+  omloader boot --image <name> [--snapshot <n>] \\
+     --images-root $IMAGES_ROOT --snap-root /mnt/snap/snapshots [--dry-run]
+  omloader snapshot list|create|rollback|delete --root /mnt/snap/snapshots <image>
+  mounts: /mnt/snap (OMLOADER) /mnt/images (VTOYDATA)   poweroff: poweroff -f
+=============================
+BANNER
+export PS1='omloader# '
+while true; do setsid cttyhack sh; echo "shell exited"; sleep 1; done
