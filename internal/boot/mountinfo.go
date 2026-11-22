@@ -100,11 +100,29 @@ func (t *storageTracker) ref(file string, rw bool) (FileRef, error) {
 	}
 	s := t.bySrc[m.Source+"|"+m.Root]
 	if s == nil {
+		// store-file mode: the filesystem sits on a loop device backed by a file on another storage; that host
+		// storage is recorded first (and must be writable: the loop device writes into the file).
+		var loopFile *FileRef
+		if strings.HasPrefix(m.Source, "/dev/loop") {
+			bo, err := t.r.Run("losetup", "--noheadings", "-O", "BACK-FILE", m.Source)
+			if err != nil {
+				return FileRef{}, err
+			}
+			bf := strings.TrimSuffix(firstLine(bo), " (deleted)")
+			if bf == "" {
+				return FileRef{}, fmt.Errorf("cannot determine the backing file of %s", m.Source)
+			}
+			hr, err := t.ref(bf, true)
+			if err != nil {
+				return FileRef{}, fmt.Errorf("store file %s: %w", bf, err)
+			}
+			loopFile = &hr
+		}
 		out, err := t.r.Run("blkid", "-o", "export", m.Source)
 		if err != nil {
 			return FileRef{}, err
 		}
-		s = &StorageRef{ID: fmt.Sprintf("s%d", len(t.list)), Root: m.Root}
+		s = &StorageRef{ID: fmt.Sprintf("s%d", len(t.list)), Root: m.Root, Loop: loopFile}
 		for _, ln := range strings.Split(out, "\n") {
 			k, v, _ := strings.Cut(strings.TrimSpace(ln), "=")
 			switch k {
@@ -116,7 +134,10 @@ func (t *storageTracker) ref(file string, rw bool) (FileRef, error) {
 				s.FSType = v
 			}
 		}
-		if s.UUID == "" && s.Label == "" {
+		if s.FSType == "ntfs" {
+			s.FSType = "ntfs3" // the in-kernel driver (blkid only says "ntfs"); mounted with -t ntfs3 in the guest
+		}
+		if s.UUID == "" && s.Label == "" && s.Loop == nil {
 			return FileRef{}, fmt.Errorf("%s has neither UUID nor label", m.Source)
 		}
 		t.bySrc[m.Source+"|"+m.Root] = s

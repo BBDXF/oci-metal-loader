@@ -17,11 +17,13 @@ import (
 const usage = `usage:
   omloader config validate [-c omloader.yaml] [-i image.yaml]
   omloader config show --resolved [-c omloader.yaml] [-i image.yaml]
+  omloader config get [-c omloader.yaml] KEY   (print one resolved value, e.g. boot.default_image; for scripts)
   omloader boot --image NAME [--snapshot NAME|current|base|new:NAME] [-c global.yaml]
             [--images-root DIR] [--snap-root DIR] [--dry-run] [--no-kexec] [--exec-cmd-log FILE]
             [--force] [--ro] [--no-inject] [--data-root DIR]
   omloader guest-assemble --plan /omloader/plan.json   (runs inside the guest initramfs)
   omloader snapshot <op> ...   (run 'omloader snapshot' for the operations)
+  omloader store create|info|check|grow|find ...   (ext4 store FILE on exFAT/NTFS: see docs/store-file.md)
   omloader import lxd PATH --name N --out IMAGES_ROOT [--force] [--autologin] [--data SPEC]...
 ` + usageM4 + `  experimental (disabled by default; --experimental-oci, OML_EXPERIMENTAL=oci or experimental.oci_images: true):
     omloader import oci-dir|oci-archive|docker-archive PATH --name N --out IMAGES_ROOT ...   and  boot of type: oci images
@@ -64,6 +66,9 @@ func run(args []string, out, errw io.Writer) int {
 	}
 	if args[0] == "snapshot" {
 		return runSnap(args[1:], out, errw)
+	}
+	if args[0] == "config" && args[1] == "get" {
+		return runConfigGet(args[2:], out, errw)
 	}
 	fs := flag.NewFlagSet(args[0]+" "+args[1], flag.ContinueOnError)
 	fs.SetOutput(errw)

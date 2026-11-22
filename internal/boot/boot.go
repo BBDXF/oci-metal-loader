@@ -469,6 +469,10 @@ func (o Options) prepareGuest(r Runner, res *config.Resolved, p *Plan, mnt, kern
 		}
 	}
 	files := moduleFiles(r, mnt, kver, names)
+	if miss := missingStoreModules(r, mnt, kver, gp.Storages); len(miss) > 0 {
+		return nil, nil, fmt.Errorf("store-file mode: the guest kernel %s lacks the module(s) %s (needed to reach the snapshot store file inside the guest initramfs); "+
+			"boot with a store on a real OMLOADER partition, or use a guest kernel that ships them", kver, strings.Join(miss, ", "))
+	}
 	self := o.SelfBinary
 	if self == "" {
 		if self, err = os.Executable(); err != nil {

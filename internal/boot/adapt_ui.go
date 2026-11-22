@@ -20,6 +20,9 @@ const (
 // loader partitions read-only, which marks the ext4 journal clean (and clears the exfat dirty flag).
 // systemd-shutdown may already have detached the bind mounts; the superblock lives on (the overlay
 // holds it), so the script mounts the device again (same superblock) and remounts that read-only.
+// Store-file mode: the "snap" entry is the loop device of the store file (listed before "images"), so the store ext4
+// is remounted read-only first and the host partition afterwards; the host remount is refused while the loop
+// device still has the file open, but the final sync clears the exfat dirty flag anyway.
 const syncScript = `#!%s
 # omloader: flush + mark clean the loader partitions (OMLOADER ext4 / VTOYDATA) at shutdown.
 B=/.omloader/busybox; [ -x $B ] || B=
@@ -34,9 +37,15 @@ while read -r name dev fs; do
     $B mount -t "$fs" "$dev" $d 2>/dev/null || continue
   fi
   $B sync
-  $B mount -o remount,ro $d 2>/dev/null && echo "omloader: $name flushed and remounted read-only" > /dev/console 2>/dev/null
+  if $B mount -o remount,ro $d 2>/dev/null; then echo "omloader: $name flushed and remounted read-only" > /dev/console 2>/dev/null
+  else $B sync; echo "omloader: $name flushed (remount read-only refused: busy, e.g. the OMLOADER store file on it is still attached)" > /dev/console 2>/dev/null; fi
 done < /.omloader/devs
 $B sync
+# NTFS host via ntfs-3g (FUSE daemon, argv[0] "@ntfs-3g" so it survives the root switch): everything is flushed and the
+# store ext4 is read-only now, so let the daemon unmount cleanly (SIGTERM) to clear the NTFS dirty flag.
+for d in /proc/[0-9]*; do
+  [ "$($B cat $d/comm 2>/dev/null)" = ntfs-3g ] && $B kill -TERM "${d#/proc/}" 2>/dev/null
+done
 exit 0
 `
 

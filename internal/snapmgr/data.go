@@ -1,11 +1,10 @@
 package snapmgr
 
 import (
-	"fmt"
+	"omloader/internal/config"
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 )
 
 // Runner mirrors boot.Runner (kept local to avoid an import cycle).
@@ -14,27 +13,7 @@ type Runner interface {
 }
 
 // ParseSize parses "512M", "20G", "1.5G", "1048576" (bytes) into bytes.
-func ParseSize(s string) (int64, error) {
-	s = strings.TrimSpace(strings.ToUpper(s))
-	if s == "" {
-		return 0, fmt.Errorf("empty size")
-	}
-	mult := int64(1)
-	for suf, m := range map[string]int64{"K": 1 << 10, "M": 1 << 20, "G": 1 << 30, "T": 1 << 40} {
-		for _, x := range []string{suf + "IB", suf + "B", suf} {
-			if strings.HasSuffix(s, x) {
-				s, mult = strings.TrimSuffix(s, x), m
-				goto parsed
-			}
-		}
-	}
-parsed:
-	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
-	if err != nil || f <= 0 {
-		return 0, fmt.Errorf("invalid size %q", s)
-	}
-	return int64(f * float64(mult)), nil
-}
+func ParseSize(s string) (int64, error) { return config.ParseSize(s) }
 
 // EnsureExt4File creates a sparse ext4 image (once). Existing files are left untouched.
 func EnsureExt4File(r Runner, path string, size int64, label string) (created bool, err error) {

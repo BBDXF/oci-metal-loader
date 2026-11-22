@@ -27,20 +27,23 @@ To opt in: `experimental.oci_images: true` in `omloader.yaml`, `--experimental-o
 | Live loader | Debian bookworm live system (systemd, networkd, resolved, tools, firmware), 254 MiB ISO | ✅ done |
 | M4 | online pull for LXD: simplestreams client, mirrors/proxy, cache/offline mode, LXD VM import (qcow2 → raw) | ✅ done (QEMU-tested: `make e2e-pull`) |
 | Usability | container console login (tty1 + ttyS0 autologin, users/passwords/sudo/ssh keys, busybox debug-shell fallback) and clean shutdown of the OMLOADER/VTOYDATA partitions | ✅ done for containers (VM: see limitations) |
+| Ventoy | `omloader.iso` boots through Ventoy 1.1.17 (normal + GRUB2 mode, UEFI): stage-1 iso-scan, `boot.yaml` default image with countdown, see [docs/ventoy.md](docs/ventoy.md) | ✅ done (QEMU-tested: `make e2e-ventoy`) |
+| Store file | the OMLOADER store as an ext4 image file (Ventoy `.dat` convention) on exFAT/NTFS/…, containers and VMs, `omloader store create|info|check|grow`, see [docs/store-file.md](docs/store-file.md) | ✅ done (QEMU-tested: `make e2e-store`) |
 | M5 | device isolation, real-hardware testing, Secure Boot, LUKS | ⬜ |
 | TUI | interactive menu | ⬜ |
 | Windows | VHDX differencing disks | ⬜ last |
 
-Rough overall estimate: M0–M4, the Debian live loader and container usability are done; about **70-75 %** of the planned scope. The rest is real-hardware
-work (M5), Ventoy integration checks, polish and optimisations.
+Rough overall estimate: M0–M4, the Debian live loader, container usability, Ventoy compatibility and the store-file mode are done; about **80 %** of the planned
+scope. What is left is real-hardware work (M5), the installer, polish and optimisations.
 
 ### Next steps (queued, not started)
 
-1. **Ventoy compatibility check**: boot `omloader.iso` through Ventoy (normal and GRUB2 mode) in QEMU/OVMF; stage 1 should also be able to find the ISO *file* on a data partition (`findiso`-style) instead of relying on the `OMLOADER_LIVE` label of a mapped device.
-2. **Store-file mode**: an ext4 image file (Ventoy `.dat` convention, label `OMLOADER`) on an exFAT/NTFS partition as the snapshot/data store, so no separate Linux partition is needed (NTFS: dirty-flag / read-only fallback).
-3. **Installer** (`omloader install`, UEFI/GPT, free space only) to run from the loader on an internal disk; Ventoy2Disk can already install Ventoy itself to a local disk.
-4. **Optimisations** (deliberately postponed until the core is finished): COW size margin (dm-snapshot needs ~0.4 % more than the base size in the worst case; currently the COW is sized exactly to the base) and usage warnings; storing `base.raw` inside squashfs to save space on exFAT (no sparse files); VM data volumes; hot snapshots from a running guest; more LXD images in a compatibility matrix (currently one container and one VM fixture only); LXD template rendering / cloud-init.
-5. M5 (device isolation, real hardware, Secure Boot, LUKS), TUI, Windows VHDX differencing disks.
+1. **Installer** (`omloader install`, UEFI/GPT, free space only) to run from the loader on an internal disk; Ventoy2Disk can already install Ventoy itself to a local disk.
+2. **Optimisations** (deliberately postponed until the core is finished): COW size margin (dm-snapshot needs ~0.4 % more than the base size in the worst case; currently the COW is sized exactly to the base) and usage warnings; storing `base.raw` inside squashfs to save space on exFAT (no sparse files); VM data volumes; hot snapshots from a running guest; more LXD images in a compatibility matrix (currently one container and one VM fixture only); LXD template rendering / cloud-init.
+3. M5 (device isolation, real hardware, Secure Boot, LUKS), TUI, Windows VHDX differencing disks.
+
+Known limits of the Ventoy/store-file work: the loader kernel has no `ntfs3` driver (NTFS is mounted with ntfs-3g/FUSE after stage 1, so an ISO on an NTFS Ventoy partition is not found — use exFAT/ext4/xfs/FAT32);
+Ventoy under UEFI Secure Boot needs its key enrolled; the NTFS dirty-volume fallback and VM + NTFS store are not verified end to end.
 
 ## Known limitations
 

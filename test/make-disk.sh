@@ -11,6 +11,7 @@ HAVE_VM=1; [ -f $O/fixture.raw ] && [ -z "${NO_VM:-}" ] || HAVE_VM=0
 HAVE_OCI=0; [ -d $O/oci-images ] && [ -n "$(ls -A $O/oci-images)" ] && HAVE_OCI=1
 [ $HAVE_VM = 1 ] || [ $HAVE_OCI = 1 ] || { echo "run make-fixture.sh and/or make-fixture-oci.sh first"; exit 1; }
 rm -rf $W/stage; mkdir -p $W/stage/images $W/stage2/snapshots
+[ -z "${VTOY_EXTRA:-}" ] || cp -r "$VTOY_EXTRA"/. $W/stage/   # optional extra files at the VTOYDATA root (e.g. omloader/boot.yaml)
 EXTRA_MB=0
 if [ $HAVE_OCI = 1 ]; then cp -r $O/oci-images/* $W/stage/images/; EXTRA_MB=$(du -sm --apparent-size $O/oci-images | cut -f1); fi
 S=$W/stage/images/$NAME
@@ -38,7 +39,7 @@ FS=exfat
 # VTOYDATA) plus an ext4 stage disk (label OMLSTAGE) and copies images/ across. This also exercises loader exfat rw.
 truncate -s ${P1_MB}M $P1
 mkfs.exfat -L VTOYDATA $P1 >/dev/null 2>&1 || mkfs.exfat -L VTOYDATA $P1 >/dev/null
-echo 'cp -r /mnt/stage/images /mnt/images/ && echo OMLOADER_HOOK_COPIED' > $W/stage/hook.sh
+echo 'cp -r /mnt/stage/images /mnt/images/ && { [ ! -d /mnt/stage/omloader ] || cp -r /mnt/stage/omloader /mnt/images/; } && echo OMLOADER_HOOK_COPIED' > $W/stage/hook.sh
 ST=$W/stage.img; rm -f $ST; VM_MB=0; [ $HAVE_VM = 1 ] && VM_MB=$(du -m --apparent-size $S/base.raw | cut -f1)
 truncate -s $((300+EXTRA_MB*13/10+VM_MB+(VM_MB>0?800:0)))M $ST
 mkfs.ext4 -q -L OMLSTAGE -d $W/stage $ST

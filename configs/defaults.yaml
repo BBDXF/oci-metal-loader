@@ -7,6 +7,15 @@ storage:
     path: /snapshots
     fs_required: [ext4, btrfs, xfs]
     fallback: tmpfs
+    # store-file mode: an ext4 image (label OMLOADER) on the host partition (exFAT/NTFS/vfat<4G/ext4...). A real
+    # OMLOADER partition always wins; only files whose ext4 label is OMLOADER count.
+    store_file:
+      enabled: true
+      path: ""                       # exact file inside the host partition (checked first)
+      glob: [/omloader/store.img, /ventoy/*.dat]   # Ventoy persistence-file convention
+      host_match: {label: VTOYDATA, uuid: ""}     # uuid wins over label
+      size: 20G                      # default for `omloader store create`
+      prealloc: auto                 # auto: yes on exfat/vfat (no sparse files), no elsewhere
 snapshot:
   max_chain_depth: 5
   persistent: true

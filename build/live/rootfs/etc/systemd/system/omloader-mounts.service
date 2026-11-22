@@ -8,11 +8,13 @@ Type=oneshot
 RemainAfterExit=yes
 Environment=DM_DISABLE_UDEV=1
 ExecStart=/usr/local/lib/omloader/mounts.sh
+ExecStop=/usr/local/lib/omloader/mounts.sh stop
 StandardInput=null
 StandardOutput=tty
 StandardError=tty
 TTYPath=/dev/console
 TimeoutStartSec=60
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target

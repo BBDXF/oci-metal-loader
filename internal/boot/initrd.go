@@ -181,3 +181,30 @@ func kernelVersion(root, kernelReal string) (string, error) {
 	}
 	return vs[0], nil
 }
+
+// missingStoreModules lists the modules a store-file plan needs in the guest (loop, every host/loop filesystem)
+// that the guest kernel neither ships nor has built in. Plans without a store file need nothing (existing behaviour).
+func missingStoreModules(r Runner, root, kver string, st []StorageRef) []string {
+	need := false
+	for _, s := range st {
+		need = need || s.Loop != nil
+	}
+	if !need {
+		return nil
+	}
+	want := []string{"loop"}
+	seen := map[string]bool{"loop": true}
+	for _, s := range st {
+		if s.FSType != "" && !seen[s.FSType] {
+			seen[s.FSType] = true
+			want = append(want, s.FSType)
+		}
+	}
+	var miss []string
+	for _, n := range want {
+		if _, err := r.Run("modprobe", "-d", root, "-S", kver, "--show-depends", n); err != nil {
+			miss = append(miss, n)
+		}
+	}
+	return miss
+}

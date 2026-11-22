@@ -1,7 +1,9 @@
 package config
 
 import (
+	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -34,7 +36,53 @@ type SnapStore struct {
 	Path       string   `yaml:"path" json:"path"`
 	FSRequired []string `yaml:"fs_required" json:"fs_required"`
 	Fallback   string   `yaml:"fallback" json:"fallback"`
+	// StoreFile: the store may be an ext4 image file (label OMLOADER) on a Windows-readable host partition.
+	StoreFile StoreFile `yaml:"store_file" json:"store_file"`
 }
+
+// StoreFile configures "store-file mode". Precedence in the loader: a real ext4/btrfs/xfs partition labelled
+// OMLOADER wins, else a store file found on the host partition, else `fallback`.
+type StoreFile struct {
+	Enabled   bool      `yaml:"enabled" json:"enabled"`
+	Path      string    `yaml:"path" json:"path"`             // exact file inside the host partition (checked first), e.g. /omloader/store.img
+	Glob      []string  `yaml:"glob" json:"glob"`             // patterns inside the host partition; only files whose ext4 label is OMLOADER count
+	HostMatch HostMatch `yaml:"host_match" json:"host_match"` // which partition holds the file (uuid wins over label)
+	Size      string    `yaml:"size" json:"size"`             // default size of `omloader store create`
+	Prealloc  string    `yaml:"prealloc" json:"prealloc"`     // auto (yes on exfat/vfat) | yes | no
+}
+
+// HostMatch selects the host partition of a store file.
+type HostMatch struct {
+	Label string `yaml:"label" json:"label"`
+	UUID  string `yaml:"uuid" json:"uuid"`
+}
+
+// ParseSize parses "512M", "20G", "1.5G", "1048576" (bytes) into bytes.
+func ParseSize(s string) (int64, error) {
+	s = strings.TrimSpace(strings.ToUpper(s))
+	if s == "" {
+		return 0, fmt.Errorf("empty size")
+	}
+	mult := int64(1)
+	for _, u := range []struct {
+		suf string
+		m   int64
+	}{{"K", 1 << 10}, {"M", 1 << 20}, {"G", 1 << 30}, {"T", 1 << 40}} {
+		for _, x := range []string{u.suf + "IB", u.suf + "B", u.suf} {
+			if strings.HasSuffix(s, x) {
+				s, mult = strings.TrimSuffix(s, x), u.m
+				goto parsed
+			}
+		}
+	}
+parsed:
+	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil || f <= 0 {
+		return 0, fmt.Errorf("invalid size %q", s)
+	}
+	return int64(f * float64(mult)), nil
+}
+
 type Retention struct {
 	KeepLast       int  `yaml:"keep_last" json:"keep_last"`
 	MinFreePercent int  `yaml:"min_free_percent" json:"min_free_percent"` // space guard: refuse create/boot below this % free
@@ -53,6 +101,11 @@ type Boot struct {
 	Timeout            int    `yaml:"timeout" json:"timeout"`
 	DefaultSnapshot    string `yaml:"default_snapshot" json:"default_snapshot"`
 	KernelCmdlineExtra string `yaml:"kernel_cmdline_extra" json:"kernel_cmdline_extra"`
+	// DefaultImage: image to boot automatically (after Timeout seconds) when the kernel command line has no
+	// omloader.image= (e.g. under Ventoy, which cannot pass kernel parameters). Empty = drop to the shell.
+	DefaultImage string `yaml:"default_image" json:"default_image"`
+	// ExtraCmdlineFlags: omloader.* equivalents without the prefix, e.g. ["poweroff_on_fail=1", "experimental=oci", "selftest=1"].
+	ExtraCmdlineFlags []string `yaml:"extra_cmdline_flags" json:"extra_cmdline_flags"`
 }
 type DataCfg struct {
 	DefaultBackend    string `yaml:"default_backend" json:"default_backend"`

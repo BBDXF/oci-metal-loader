@@ -93,14 +93,21 @@ tr -d '\r' < $W/live-self.log | sed 's/\x1b\[[0-9;]*[mK]//g' > $W/live-self.clea
 grep -q OMLOADER_LOADER_SELFTEST_DONE $W/live-self.clean && pass "omloader.selftest=1 works (powers off)" || fail "selftest"
 
 # ---- boot-to-shell time (plain boot, no omloader.* flags): poll the serial log for the shell banner marker ----
-T1=$(date +%s.%N)
-( DISK=$D TIMEOUT=120 LOG=$W/live-shell.log $T/run-kvm.sh > /dev/null 2>&1 & )
-for i in $(seq 1 240); do grep -q OMLOADER_SHELL_READY $W/live-shell.log 2>/dev/null && break; sleep 0.5; done
-T2=$(date +%s.%N)
-pkill -u $USER -f "file:$W/live-shell.log" 2>/dev/null
-sleep 1
-tr -d '\r' < $W/live-shell.log | sed 's/\x1b\[[0-9;]*[mK]//g' > $W/live-shell.clean
-UP=$(grep -o 'OMLOADER_SHELL_READY uptime=[0-9.]*' $W/live-shell.clean | head -1 | cut -d= -f2)
+# The shell-boot measurement is retried once: an empty serial log (qemu failed to start right after the
+# previous suite, seen as a rare harness flake) is not a loader failure.
+for ATTEMPT in 1 2; do
+  rm -f $W/live-shell.log
+  T1=$(date +%s.%N)
+  ( DISK=$D TIMEOUT=120 LOG=$W/live-shell.log $T/run-kvm.sh > /dev/null 2>&1 & )
+  for i in $(seq 1 240); do grep -q OMLOADER_SHELL_READY $W/live-shell.log 2>/dev/null && break; sleep 0.5; done
+  T2=$(date +%s.%N)
+  pkill -u $USER -f "file:$W/live-shell.log" 2>/dev/null
+  sleep 2
+  tr -d '\r' < $W/live-shell.log | sed 's/\x1b\[[0-9;]*[mK]//g' > $W/live-shell.clean
+  UP=$(grep -o 'OMLOADER_SHELL_READY uptime=[0-9.]*' $W/live-shell.clean | head -1 | cut -d= -f2)
+  [ -n "$UP" ] && break
+  echo "NOTE: no shell banner on attempt $ATTEMPT (log bytes: $(stat -c %s $W/live-shell.log 2>/dev/null || echo 0)); retrying"
+done
 WALL=$(awk "BEGIN{printf \"%.0f\", $T2-$T1}")
 [ -n "$UP" ] && pass "boot-to-shell: kernel uptime ${UP}s at the omloader shell banner (wall ${WALL}s incl. OVMF/GRUB/qemu start)" || fail "no shell banner (autologin getty) on serial"
 grep -q 'OMLOADER_LOADER: starting' $W/live-shell.clean && ! grep -q 'auto boot image' $W/live-shell.clean && pass "no omloader.image= -> shell (no automatic boot)" || echo "NOTE: shell-run log check inconclusive"

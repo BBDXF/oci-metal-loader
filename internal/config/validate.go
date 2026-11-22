@@ -83,6 +83,26 @@ func (r *Resolved) Validate() ErrorList {
 	for _, fs := range c.Storage.Snapshots.FSRequired {
 		enum("storage.snapshots.fs_required", fs, "ext4", "btrfs", "xfs")
 	}
+	sf := c.Storage.Snapshots.StoreFile
+	enum("storage.snapshots.store_file.prealloc", sf.Prealloc, "auto", "yes", "no")
+	if _, err := ParseSize(sf.Size); err != nil {
+		add("storage.snapshots.store_file.size", "%v", err)
+	}
+	for _, p := range append([]string{sf.Path}, sf.Glob...) {
+		if p == "" {
+			continue
+		}
+		if !strings.HasPrefix(p, "/") {
+			add("storage.snapshots.store_file", "path/glob %q must be absolute inside the host partition (start with /)", p)
+		}
+		nopath("storage.snapshots.store_file", p)
+	}
+	if sf.Enabled && sf.Path == "" && len(sf.Glob) == 0 {
+		add("storage.snapshots.store_file", "enabled but neither path nor glob is set")
+	}
+	if len(sf.HostMatch.Label) > 16 {
+		add("storage.snapshots.store_file.host_match.label", "label longer than 16 bytes")
+	}
 	enum("storage.snapshots.fallback", c.Storage.Snapshots.Fallback, "tmpfs", "none")
 	if c.Snapshot.MaxChainDepth < 1 {
 		add("snapshot.max_chain_depth", "must be >= 1")

@@ -29,6 +29,9 @@ type StorageRef struct {
 	FSType string `json:"fstype"`
 	RW     bool   `json:"rw"`
 	Root   string `json:"root,omitempty"` // path of the mount's root inside the fs (bind/subvol), usually "/"
+	// Loop (store-file mode): this storage is a filesystem inside an image FILE on another storage (which is
+	// listed earlier): attach the file with losetup, then mount the loop device. UUID/Label are informational.
+	Loop *FileRef `json:"loop,omitempty"`
 }
 
 // FileRef is a file on a storage.
@@ -159,6 +162,19 @@ func GuestAssemble(p *GuestPlan, r Runner, o GuestOptions) (string, error) {
 	for _, s := range p.Storages {
 		var dev string
 		var lastErr error
+		if s.Loop != nil {
+			m, ok := mounts[s.Loop.Storage]
+			if !ok {
+				return "", fmt.Errorf("storage %s: host storage %q of the store file is not mounted (plan order)", s.ID, s.Loop.Storage)
+			}
+			file := filepath.Join(m, s.Loop.Rel)
+			out, err := r.Run("losetup", "-f", "--show", file)
+			if err != nil {
+				return "", fmt.Errorf("storage %s: attaching store file %s: %w", s.ID, file, err)
+			}
+			dev = firstLine(out)
+			logf("storage %s: store file %s attached as %s", s.ID, file, dev)
+		}
 		for i := 0; i < o.Tries && dev == ""; i++ {
 			if s.UUID != "" {
 				if out, err := r.Run("blkid", "-U", s.UUID); err == nil {
