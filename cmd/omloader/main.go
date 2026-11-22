@@ -23,7 +23,7 @@ const usage = `usage:
   omloader guest-assemble --plan /omloader/plan.json   (runs inside the guest initramfs)
   omloader snapshot <op> ...   (run 'omloader snapshot' for the operations)
   omloader import lxd PATH --name N --out IMAGES_ROOT [--force] [--autologin] [--data SPEC]...
-  experimental (disabled by default; --experimental-oci, OML_EXPERIMENTAL=oci or experimental.oci_images: true):
+` + usageM4 + `  experimental (disabled by default; --experimental-oci, OML_EXPERIMENTAL=oci or experimental.oci_images: true):
     omloader import oci-dir|oci-archive|docker-archive PATH --name N --out IMAGES_ROOT ...   and  boot of type: oci images
 `
 
@@ -49,6 +49,9 @@ func run(args []string, out, errw io.Writer) int {
 	if len(args) < 1 || (len(args) < 2 && args[0] != "boot" && args[0] != "guest-assemble" && args[0] != "snapshot") {
 		fmt.Fprint(errw, usage)
 		return 1
+	}
+	if h, ok := m4Commands[args[0]]; ok {
+		return h(args[1:], out, errw)
 	}
 	if args[0] == "guest-assemble" {
 		return runGuest(args[1:], out, errw)
@@ -187,6 +190,7 @@ func runImport(args []string, out, errw io.Writer) int {
 	expOCI := fs.Bool("experimental-oci", false, "enable experimental Docker/OCI image support")
 	cfg := fs.String("c", "", "global omloader.yaml (experimental.oci_images)")
 	tmp := fs.String("tmp", "", "temp dir for archive extraction (default $TMPDIR)")
+	noProbe := fs.Bool("no-probe", false, "lxd-vm: skip kernel/initrd/root-partition detection (needs root)")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return 1
@@ -201,7 +205,7 @@ func runImport(args []string, out, errw io.Writer) int {
 		}
 	}
 	d, err := imgimport.Import(imgimport.Options{Kind: pos[0], Path: pos[1], Name: *name, Out: *dst, TmpDir: *tmp,
-		Runner: &boot.ExecRunner{}, Warn: errw, Force: *force, Autologin: *autologin, Data: data, ExperimentalOCI: *expOCI})
+		Runner: &boot.ExecRunner{}, Warn: errw, Force: *force, NoProbe: *noProbe, Autologin: *autologin, Data: data, ExperimentalOCI: *expOCI})
 	if err != nil {
 		fmt.Fprintln(errw, "error:", err)
 		return 1

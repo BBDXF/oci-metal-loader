@@ -106,6 +106,68 @@
         "autologin": {
           "type": "boolean"
         },
+        "autologin_user": {
+          "type": "string",
+          "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+        },
+        "root_password_hash": {
+          "type": "string"
+        },
+        "root_password": {
+          "type": "string"
+        },
+        "debug_shell": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "always",
+            "never"
+          ]
+        },
+        "shutdown_sync": {
+          "type": "boolean"
+        },
+        "users": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+              },
+              "password_hash": {
+                "type": "string"
+              },
+              "password": {
+                "type": "string"
+              },
+              "groups": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "shell": {
+                "type": "string",
+                "pattern": "^/"
+              },
+              "sudo": {
+                "type": "boolean"
+              },
+              "ssh_authorized_keys": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
         "env": {
           "type": "object",
           "additionalProperties": {

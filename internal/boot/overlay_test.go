@@ -46,7 +46,7 @@ func osetup(t *testing.T, tree *snapshot.Tree, rtYAML string) *ofx {
 }
 
 func systemdRoot(nr string) {
-	for _, p := range []string{"lib/systemd/systemd", "lib/systemd/system/systemd-networkd.service", "bin/sh"} {
+	for _, p := range []string{"lib/systemd/systemd", "lib/systemd/system/systemd-networkd.service", "bin/sh", "sbin/agetty"} {
 		os.MkdirAll(filepath.Dir(filepath.Join(nr, p)), 0o755)
 		os.WriteFile(filepath.Join(nr, p), []byte("x"), 0o755)
 	}
@@ -134,7 +134,7 @@ func TestOverlayBootNewAndFrozen(t *testing.T) {
 	}
 	// second run: marker present => nothing reapplied
 	os.WriteFile(filepath.Join(nr, "etc/hostname"), []byte("custom\n"), 0o644)
-	if applied, err := Adapt(AdaptInput{Root: nr, Image: "c"}); err != nil || applied {
+	if applied, err := Adapt(AdaptInput{Root: nr, Image: "c", Runtime: f.res.Image.Runtime}); err != nil || applied {
 		t.Errorf("re-applied: %v %v", applied, err)
 	}
 	if rd("etc/hostname") != "custom\n" {

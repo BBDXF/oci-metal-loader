@@ -101,3 +101,28 @@ func TestUnknownKey(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestRuntimeUsers(t *testing.T) {
+	ok := goodImage + "runtime:\n  autologin: true\n  autologin_user: alice\n  debug_shell: auto\n  shutdown_sync: false\n  root_password_hash: '$6$s$h'\n  users:\n    - name: alice\n      password: pw\n      groups: [sudo]\n      sudo: true\n      ssh_authorized_keys: [\"ssh-ed25519 AAAA a\"]\n"
+	r, err := Load("", write(t, "i.yaml", ok))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if errs := r.Validate(); len(errs) != 0 {
+		t.Fatalf("valid config rejected: %v", errs)
+	}
+	if rt := r.Image.Runtime; len(rt.Users) != 1 || !rt.Users[0].Sudo || rt.SyncOnShutdown() || rt.AutologinUser != "alice" {
+		t.Fatalf("runtime: %+v", rt)
+	}
+	bad := goodImage + "runtime:\n  debug_shell: maybe\n  users:\n    - name: Bad Name\n    - name: ok\n      password: a\n      password_hash: b\n    - name: ok\n      shell: sh\n"
+	_, err = Load("", write(t, "b.yaml", bad))
+	if err == nil {
+		t.Fatal("invalid users accepted")
+	}
+	e := err.Error()
+	for _, w := range []string{"debug_shell", "invalid user name", "not both", "duplicate user", "absolute path"} {
+		if !strings.Contains(e, w) {
+			t.Errorf("missing %q in:\n%s", w, e)
+		}
+	}
+}

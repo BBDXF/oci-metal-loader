@@ -34,8 +34,12 @@ devices:
 network:
   timeout_sec: 15
   retries: 3
+  proxy: ""        # http://host:port | https://... | socks5://host:port
+  no_proxy: ""     # comma separated hosts / domain suffixes / CIDRs
+  extra_ca: ""     # PEM file added to the system CA pool
+  dns: []
 mirror_policy:
-  strategy: fallback
+  strategy: fallback   # fallback | fastest | mirror-only
   health_check: true
   cache_ttl_hours: 24
   region_preset: global
@@ -43,6 +47,7 @@ sources:
   lxc-images:
     type: simplestreams
     url: https://images.linuxcontainers.org
+    mirrors: []      # region_preset: cn adds UNVERIFIED tuna/nju presets (content is digest-checked anyway)
   dockerhub:
     type: oci-registry
     url: registry-1.docker.io
@@ -52,5 +57,6 @@ cache:
   offline: auto   # auto | on (never go online) | off (always check upstream)
 policy:
   allow_online: true
+  allowed_sources: []   # empty = all sources
 experimental:
   oci_images: false   # Docker/OCI images: experimental, disabled by default (env OML_EXPERIMENTAL=oci / --experimental-oci)

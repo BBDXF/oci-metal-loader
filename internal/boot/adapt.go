@@ -1,6 +1,9 @@
 package boot
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -88,6 +91,8 @@ func guestWrite(root, rel string, data []byte, mode os.FileMode) error {
 	full := filepath.Join(dir, path.Base(rel))
 	if fi, err := os.Lstat(full); err == nil && fi.Mode()&os.ModeSymlink != 0 {
 		os.Remove(full)
+	} else if err == nil && fi.Mode().IsRegular() {
+		os.Chmod(full, fi.Mode().Perm()|0o200) // e.g. 0440 sudoers drop-ins when not root
 	}
 	if err := os.WriteFile(full, data, mode); err != nil {
 		return err
@@ -189,16 +194,63 @@ exit 0
 
 func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
-// Adapt applies the firstboot adapter into in.Root unless AdaptMarker exists.
-// It returns whether anything was applied.
+// Adapt applies the firstboot adapter into in.Root. The base part (hostname, resolv.conf, DHCP,
+// helper files, env) runs once (AdaptMarker). The "UI" part (console autologin, users/passwords,
+// debug shell, shutdown sync hooks) is re-applied whenever the hash of its config differs from the
+// one stored in the marker, so editing runtime.users takes effect on the next boot without
+// duplicating accounts. It returns whether anything was applied.
 func Adapt(in AdaptInput) (bool, error) {
 	warn := in.Warn
 	if warn == nil {
 		warn = io.Discard
 	}
-	if guestExists(in.Root, AdaptMarker) {
+	first := !guestExists(in.Root, AdaptMarker)
+	want := uiConfigHash(in.Runtime)
+	if !first && markerUIHash(in.Root) == want {
 		return false, nil
 	}
+	sysd := isSystemd(in.Root)
+	var hasBB bool
+	if first {
+		var err error
+		if hasBB, err = adaptBase(in, warn, sysd); err != nil {
+			return false, err
+		}
+	} else {
+		hasBB = guestExists(in.Root, guestHelperDir+"/busybox")
+	}
+	if err := adaptUI(in, warn, sysd, hasBB); err != nil {
+		return false, fmt.Errorf("console/users adapter: %w", err)
+	}
+	if err := guestWrite(in.Root, AdaptMarker, []byte("omloader adapter v2 "+time.Now().UTC().Format(time.RFC3339)+"\nui-config="+want+"\n"), 0o644); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// uiConfigHash fingerprints the runtime keys handled by adaptUI.
+func uiConfigHash(rt config.Runtime) string {
+	v := struct {
+		V  int
+		RT config.Runtime
+	}{2, config.Runtime{Autologin: rt.Autologin, AutologinUser: rt.AutologinUser, Users: rt.Users, RootPasswordHash: rt.RootPasswordHash,
+		RootPassword: rt.RootPassword, DebugShell: rt.DebugShell, ShutdownSync: rt.ShutdownSync}}
+	b, _ := json.Marshal(v)
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
+}
+
+func markerUIHash(root string) string {
+	s, _ := readGuest(root, AdaptMarker)
+	for _, l := range strings.Split(s, "\n") {
+		if strings.HasPrefix(l, "ui-config=") {
+			return strings.TrimPrefix(l, "ui-config=")
+		}
+	}
+	return ""
+}
+
+func adaptBase(in AdaptInput, warn io.Writer, sysd bool) (bool, error) {
 	rt := in.Runtime
 	host := rt.Hostname
 	if host == "" {
@@ -242,7 +294,6 @@ func Adapt(in AdaptInput) (bool, error) {
 	} else {
 		fmt.Fprintln(warn, "warning: no static busybox available; entrypoint wrapper and busybox DHCP are disabled")
 	}
-	sysd := isSystemd(in.Root)
 	if hasBB {
 		for n, c := range map[string]string{"entrypoint": wrapperScript, "udhcpc.script": udhcpcScript} {
 			if err := W(guestHelperDir+"/"+n, c, 0o755); err != nil {
@@ -294,27 +345,16 @@ func Adapt(in AdaptInput) (bool, error) {
 			}
 		}
 	}
-	if sysd {
-		if rt.Autologin {
-			if err := W("/etc/systemd/system/serial-getty@ttyS0.service.d/omloader-autologin.conf",
-				"[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin root --noclear %I $TERM\n", 0o644); err != nil {
-				return false, err
-			}
+	if sysd && len(rt.Env) > 0 {
+		var kv []string
+		for _, k := range sortedKeys(rt.Env) {
+			kv = append(kv, `"`+k+"="+strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(rt.Env[k])+`"`)
 		}
-		if len(rt.Env) > 0 {
-			var kv []string
-			for _, k := range sortedKeys(rt.Env) {
-				kv = append(kv, `"`+k+"="+strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(rt.Env[k])+`"`)
-			}
-			if err := W("/etc/systemd/system.conf.d/omloader-env.conf", "[Manager]\nDefaultEnvironment="+strings.Join(kv, " ")+"\n", 0o644); err != nil {
-				return false, err
-			}
+		if err := W("/etc/systemd/system.conf.d/omloader-env.conf", "[Manager]\nDefaultEnvironment="+strings.Join(kv, " ")+"\n", 0o644); err != nil {
+			return false, err
 		}
 	}
-	if err := W(AdaptMarker, "omloader adapter v1 "+time.Now().UTC().Format(time.RFC3339)+"\n", 0o644); err != nil {
-		return false, err
-	}
-	return true, nil
+	return hasBB, nil
 }
 
 func sortedKeys(m map[string]string) []string {
@@ -334,6 +374,9 @@ func WriteWrapperEnv(root string, rt config.Runtime) error {
 	}
 	if rt.WorkingDir != "" {
 		fmt.Fprintf(&b, "cd %s 2>/dev/null || true\n", shQuote(rt.WorkingDir))
+	}
+	if rt.DebugShell == "always" {
+		b.WriteString("[ -x /.omloader/dbgshell ] && ( while :; do /.omloader/dbgshell </dev/console >/dev/console 2>&1; $B sleep 1; done ) &\n")
 	}
 	return guestWrite(root, guestHelperDir+"/env", []byte(b.String()), 0o644)
 }

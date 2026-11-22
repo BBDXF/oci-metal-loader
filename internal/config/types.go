@@ -67,8 +67,12 @@ type Devices struct {
 	HibernatedFS string `yaml:"hibernated_fs" json:"hibernated_fs"`
 }
 type Network struct {
-	TimeoutSec int `yaml:"timeout_sec" json:"timeout_sec"`
-	Retries    int `yaml:"retries" json:"retries"`
+	TimeoutSec int      `yaml:"timeout_sec" json:"timeout_sec"`
+	Retries    int      `yaml:"retries" json:"retries"`
+	Proxy      string   `yaml:"proxy" json:"proxy"`       // http://, https:// or socks5:// URL
+	NoProxy    string   `yaml:"no_proxy" json:"no_proxy"` // comma separated hosts/domains/CIDRs
+	ExtraCA    string   `yaml:"extra_ca" json:"extra_ca"` // PEM file added to the system CA pool
+	DNS        []string `yaml:"dns" json:"dns"`           // informational (resolver is systemd-resolved)
 }
 type MirrorPolicy struct {
 	Strategy      string `yaml:"strategy" json:"strategy"`
@@ -77,16 +81,50 @@ type MirrorPolicy struct {
 	RegionPreset  string `yaml:"region_preset" json:"region_preset"`
 }
 type Source struct {
-	Type string `yaml:"type" json:"type"`
-	URL  string `yaml:"url" json:"url"`
+	Type    string    `yaml:"type" json:"type"`
+	URL     string    `yaml:"url" json:"url"`
+	Mirrors []string  `yaml:"mirrors" json:"mirrors"`
+	Proxy   string    `yaml:"proxy" json:"proxy"` // overrides network.proxy for this source ("direct" = none)
+	Rewrite []Rewrite `yaml:"rewrite" json:"rewrite"`
 }
+
+// Rewrite replaces a URL prefix (applied to every candidate URL of the source).
+type Rewrite struct {
+	From string `yaml:"from" json:"from"`
+	To   string `yaml:"to" json:"to"`
+}
+
+// RegionPresets are UNVERIFIED mirror presets added to source "lxc-images" by mirror_policy.region_preset.
+// Content is always digest-verified against the upstream index, but the mirror URLs themselves are not guaranteed.
+var RegionPresets = map[string][]string{
+	"cn": {"https://mirrors.tuna.tsinghua.edu.cn/lxc-images", "https://mirror.nju.edu.cn/lxc-images"},
+}
+
+// SourceMirrors returns the configured mirrors of a source plus (for lxc-images) the region preset.
+func (c *Config) SourceMirrors(name string) []string {
+	m := append([]string{}, c.Sources[name].Mirrors...)
+	if name == "lxc-images" {
+		for _, p := range RegionPresets[c.MirrorPolicy.RegionPreset] {
+			dup := false
+			for _, e := range m {
+				dup = dup || e == p
+			}
+			if !dup {
+				m = append(m, p)
+			}
+		}
+	}
+	return m
+}
+
 type Cache struct {
 	Path      string `yaml:"path" json:"path"`
 	MaxSizeGB int    `yaml:"max_size_gb" json:"max_size_gb"`
 	Offline   string `yaml:"offline" json:"offline"`
 }
 type Policy struct {
-	AllowOnline bool `yaml:"allow_online" json:"allow_online"`
+	AllowOnline    bool     `yaml:"allow_online" json:"allow_online"`
+	AllowedSources []string `yaml:"allowed_sources" json:"allowed_sources"` // empty = all configured sources
 }
 
 // Image is a per-image image.yaml.
@@ -120,8 +158,32 @@ type Runtime struct {
 	Env        map[string]string `yaml:"env" json:"env"`
 	Network    string            `yaml:"network" json:"network"`
 	Hostname   string            `yaml:"hostname" json:"hostname"`
-	Autologin  bool              `yaml:"autologin" json:"autologin"` // serial-getty autologin on ttyS0 (tests/debug)
+	Autologin  bool              `yaml:"autologin" json:"autologin"` // console autologin on tty1 and ttyS0 (systemd guests)
+	// AutologinUser is the account for autologin (default root).
+	AutologinUser    string `yaml:"autologin_user" json:"autologin_user"`
+	Users            []User `yaml:"users" json:"users"`
+	RootPasswordHash string `yaml:"root_password_hash" json:"root_password_hash"`
+	RootPassword     string `yaml:"root_password" json:"root_password"` // plain text: hashed (SHA-512 crypt) by the loader; prefer root_password_hash
+	// DebugShell: auto (busybox shell on the console when the guest has no getty/login), always, never.
+	DebugShell string `yaml:"debug_shell" json:"debug_shell"`
+	// ShutdownSync (default true) installs the hooks that remount the loader partitions read-only at poweroff.
+	ShutdownSync *bool `yaml:"shutdown_sync" json:"shutdown_sync"`
 }
+
+// User is a guest account created offline by the firstboot adapter.
+type User struct {
+	Name         string   `yaml:"name" json:"name"`
+	PasswordHash string   `yaml:"password_hash" json:"password_hash"`
+	Password     string   `yaml:"password" json:"password"` // plain text: hashed by the loader; prefer password_hash
+	Groups       []string `yaml:"groups" json:"groups"`
+	Shell        string   `yaml:"shell" json:"shell"`
+	Sudo         bool     `yaml:"sudo" json:"sudo"`
+	SSHKeys      []string `yaml:"ssh_authorized_keys" json:"ssh_authorized_keys"`
+}
+
+// SyncOnShutdown reports the effective runtime.shutdown_sync (default true).
+func (r Runtime) SyncOnShutdown() bool { return r.ShutdownSync == nil || *r.ShutdownSync }
+
 type DataVolume struct {
 	Name     string `yaml:"name" json:"name"`
 	Mount    string `yaml:"mount" json:"mount"`

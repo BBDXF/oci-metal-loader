@@ -207,6 +207,21 @@
         "retries": {
           "type": "integer",
           "minimum": 0
+        },
+        "proxy": {
+          "type": "string"
+        },
+        "no_proxy": {
+          "type": "string"
+        },
+        "extra_ca": {
+          "type": "string"
+        },
+        "dns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -218,8 +233,8 @@
           "type": "string",
           "enum": [
             "fallback",
-            "round-robin",
-            "fastest"
+            "fastest",
+            "mirror-only"
           ]
         },
         "health_check": {
@@ -251,6 +266,34 @@
           },
           "url": {
             "type": "string"
+          },
+          "mirrors": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^https?://"
+            }
+          },
+          "proxy": {
+            "type": "string"
+          },
+          "rewrite": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "from"
+              ],
+              "properties": {
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                }
+              }
+            }
           }
         },
         "required": [
@@ -298,6 +341,12 @@
       "properties": {
         "allow_online": {
           "type": "boolean"
+        },
+        "allowed_sources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     }

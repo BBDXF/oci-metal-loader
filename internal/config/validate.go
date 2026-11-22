@@ -37,7 +37,18 @@ func (c *Config) SourceUsable(name string) bool {
 	if !ok {
 		return false
 	}
+	if !c.SourceAllowed(name) {
+		return false
+	}
 	return c.Policy.AllowOnline || s.Type == "local"
+}
+
+// SourceAllowed applies policy.allowed_sources (empty list = every source).
+func (c *Config) SourceAllowed(name string) bool {
+	if len(c.Policy.AllowedSources) == 0 {
+		return true
+	}
+	return in(name, c.Policy.AllowedSources...)
 }
 
 func isRemote(s string) bool {
@@ -99,12 +110,33 @@ func (r *Resolved) Validate() ErrorList {
 	if c.Network.Retries < 0 {
 		add("network.retries", "must be >= 0")
 	}
-	enum("mirror_policy.strategy", c.MirrorPolicy.Strategy, "fallback", "round-robin", "fastest")
+	enum("mirror_policy.strategy", c.MirrorPolicy.Strategy, "fallback", "fastest", "mirror-only")
 	enum("cache.offline", c.Cache.Offline, "auto", "on", "off")
 	if c.Cache.MaxSizeGB < 0 {
 		add("cache.max_size_gb", "must be >= 0")
 	}
+	if u := c.Network.Proxy; u != "" && !validProxy(u) {
+		add("network.proxy", "must be an http://, https:// or socks5:// URL")
+	}
+	for _, n := range c.Policy.AllowedSources {
+		if _, ok := c.Sources[n]; !ok {
+			add("policy.allowed_sources", "unknown source %q", n)
+		}
+	}
 	for n, s := range c.Sources {
+		if s.Proxy != "" && s.Proxy != "direct" && !validProxy(s.Proxy) {
+			add("sources."+n+".proxy", "must be an http://, https:// or socks5:// URL or \"direct\"")
+		}
+		for _, m := range s.Mirrors {
+			if !isRemote(m) {
+				add("sources."+n+".mirrors", "mirror %q must be an http:// or https:// URL", m)
+			}
+		}
+		for _, rw := range s.Rewrite {
+			if rw.From == "" {
+				add("sources."+n+".rewrite", "from is required")
+			}
+		}
 		enum("sources."+n+".type", s.Type, "simplestreams", "oci-registry", "http", "local")
 		if s.URL == "" {
 			add("sources."+n+".url", "required")
@@ -140,6 +172,7 @@ func (r *Resolved) Validate() ErrorList {
 			add("image.snapshots.mode", "type %s requires overlayfs, got %q", img.Type, img.Snapshots.Mode)
 		}
 	}
+	validateRuntime(img.Runtime, add, enum)
 	if img.Base == "" {
 		add("image.base", "required")
 	} else if isRemote(img.Base) && !c.Policy.AllowOnline {
@@ -177,4 +210,61 @@ func (r *Resolved) Validate() ErrorList {
 		}
 	}
 	return errs
+}
+
+func validProxy(u string) bool {
+	return isRemote(u) || strings.HasPrefix(u, "socks5://") || strings.HasPrefix(u, "socks5h://")
+}
+
+var nameRe = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
+
+func badField(s string) bool { return strings.ContainsAny(s, ":\n\r\x00") }
+
+func validateRuntime(rt Runtime, add func(string, string, ...any), enum func(string, string, ...string)) {
+	if rt.DebugShell != "" {
+		enum("image.runtime.debug_shell", rt.DebugShell, "auto", "always", "never")
+	}
+	if rt.AutologinUser != "" && !nameRe.MatchString(rt.AutologinUser) {
+		add("image.runtime.autologin_user", "invalid user name %q", rt.AutologinUser)
+	}
+	if badField(rt.RootPasswordHash) || badField(rt.RootPassword) {
+		add("image.runtime.root_password", "must not contain ':' or newlines")
+	}
+	if rt.RootPassword != "" && rt.RootPasswordHash != "" {
+		add("image.runtime.root_password", "set either root_password or root_password_hash, not both")
+	}
+	seen := map[string]bool{}
+	for i, u := range rt.Users {
+
+		if !nameRe.MatchString(u.Name) {
+			add("image.runtime.users", "entry %d: invalid user name %q (want [a-z_][a-z0-9_-]{0,31})", i, u.Name)
+		}
+		if seen[u.Name] {
+			add("image.runtime.users", "entry %d: duplicate user %q", i, u.Name)
+		}
+		seen[u.Name] = true
+		if u.Password != "" && u.PasswordHash != "" {
+			add("image.runtime.users", "entry %d (%s): set either password or password_hash, not both", i, u.Name)
+		}
+		if badField(u.Password) || badField(u.PasswordHash) {
+			add("image.runtime.users", "entry %d (%s): password must not contain ':' or newlines", i, u.Name)
+		}
+		if u.PasswordHash != "" && !strings.HasPrefix(u.PasswordHash, "$") && u.PasswordHash != "!" && u.PasswordHash != "*" {
+			add("image.runtime.users", "entry %d (%s): password_hash must be a crypt hash ($6$...), '!' or '*'", i, u.Name)
+		}
+		if u.Shell != "" && (!strings.HasPrefix(u.Shell, "/") || badField(u.Shell)) {
+			add("image.runtime.users", "entry %d (%s): shell must be an absolute path", i, u.Name)
+		}
+		for _, g := range u.Groups {
+			if !nameRe.MatchString(g) {
+				add("image.runtime.users", "entry %d (%s): invalid group name %q", i, u.Name, g)
+			}
+		}
+		for _, k := range u.SSHKeys {
+			if strings.ContainsAny(k, "\n\r") || strings.TrimSpace(k) == "" {
+				add("image.runtime.users", "entry %d (%s): ssh_authorized_keys entries must be single non-empty lines", i, u.Name)
+			}
+		}
+
+	}
 }

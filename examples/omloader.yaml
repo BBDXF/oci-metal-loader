@@ -8,3 +8,11 @@ mirror_policy:
 # Docker/OCI images are experimental and off by default:
 # experimental:
 #   oci_images: true
+# Online pull (M4): mirrors, proxy, cache
+# sources:
+#   lxc-images:
+#     type: simplestreams
+#     url: https://images.linuxcontainers.org
+#     mirrors: [https://mirror.example.org/lxc-images]
+# network: {proxy: "http://proxy.lan:3128", no_proxy: ".lan"}
+# cache: {path: /OMLOADER/cache, offline: auto}
