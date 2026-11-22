@@ -1,0 +1,7 @@
+# Overrides on top of built-in defaults.
+snapshot:
+  max_chain_depth: 8
+boot:
+  timeout: 10
+mirror_policy:
+  region_preset: cn

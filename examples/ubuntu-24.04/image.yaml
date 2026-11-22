@@ -1,0 +1,26 @@
+name: ubuntu-24.04
+type: vm
+format: raw
+base: /images/ubuntu-24.04.raw
+sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+kernel:
+  path: /boot/vmlinuz
+  initrd: /boot/initrd.img
+  cmdline: quiet splash
+  inject_modules: [dm_snapshot, overlay]
+snapshots:
+  path: /snapshots/ubuntu-24.04
+  mode: dm-snapshot
+runtime:
+  hostname: ubuntu
+  network: dhcp
+  env:
+    LANG: en_US.UTF-8
+data:
+  - name: home
+    mount: /home
+    backend: ext4-file
+    path: /OMLOADER/data/ubuntu-home.img
+    size: 20G
+    snapshot: false
+    shared: false

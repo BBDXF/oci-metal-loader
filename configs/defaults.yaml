@@ -1,0 +1,54 @@
+storage:
+  images:
+    label: [VTOYDATA, OMLOADER]
+    path: /images
+  snapshots:
+    label: OMLOADER
+    path: /snapshots
+    fs_required: [ext4, btrfs, xfs]
+    fallback: tmpfs
+snapshot:
+  max_chain_depth: 5
+  persistent: true
+  auto_snapshot_on_boot: false
+  retention:
+    keep_last: 10
+    min_free_percent: 10
+    keep_tagged: true
+verify:
+  base_checksum: sha256
+boot:
+  timeout: 5
+  default_snapshot: current
+  kernel_cmdline_extra: ""
+data:
+  default_backend: dir
+  default_vm_backend: ext4-file
+  default_location: /OMLOADER/data
+  auto_home_volume: true
+  fallback_if_missing: system-layer
+devices:
+  policy: isolate
+  windows_ntfs: ro_or_hide
+  hibernated_fs: refuse
+network:
+  timeout_sec: 15
+  retries: 3
+mirror_policy:
+  strategy: fallback
+  health_check: true
+  cache_ttl_hours: 24
+  region_preset: global
+sources:
+  lxc-images:
+    type: simplestreams
+    url: https://images.linuxcontainers.org
+  dockerhub:
+    type: oci-registry
+    url: registry-1.docker.io
+cache:
+  path: /OMLOADER/cache
+  max_size_gb: 20
+  offline: auto   # auto | on (never go online) | off (always check upstream)
+policy:
+  allow_online: true

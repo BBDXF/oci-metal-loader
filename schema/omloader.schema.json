@@ -1,0 +1,298 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "images": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "path": {
+              "type": "string",
+              "not": {
+                "pattern": "(^|/)\\.\\.(/|$)"
+              }
+            }
+          }
+        },
+        "snapshots": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string",
+              "not": {
+                "pattern": "(^|/)\\.\\.(/|$)"
+              }
+            },
+            "fs_required": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "ext4",
+                  "btrfs",
+                  "xfs"
+                ]
+              }
+            },
+            "fallback": {
+              "type": "string",
+              "enum": [
+                "tmpfs",
+                "none"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_chain_depth": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "persistent": {
+          "type": "boolean"
+        },
+        "auto_snapshot_on_boot": {
+          "type": "boolean"
+        },
+        "retention": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "keep_last": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "min_free_percent": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 99
+            },
+            "keep_tagged": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "verify": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "base_checksum": {
+          "type": "string",
+          "enum": [
+            "sha256",
+            "skip"
+          ]
+        }
+      }
+    },
+    "boot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "timeout": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "default_snapshot": {
+          "type": "string"
+        },
+        "kernel_cmdline_extra": {
+          "type": "string"
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "default_backend": {
+          "type": "string",
+          "enum": [
+            "dir",
+            "ext4-file",
+            "partition",
+            "disk",
+            "network"
+          ]
+        },
+        "default_vm_backend": {
+          "type": "string",
+          "enum": [
+            "dir",
+            "ext4-file",
+            "partition",
+            "disk",
+            "network"
+          ]
+        },
+        "default_location": {
+          "type": "string",
+          "not": {
+            "pattern": "(^|/)\\.\\.(/|$)"
+          }
+        },
+        "auto_home_volume": {
+          "type": "boolean"
+        },
+        "fallback_if_missing": {
+          "type": "string",
+          "enum": [
+            "system-layer",
+            "fail",
+            "tmpfs"
+          ]
+        }
+      }
+    },
+    "devices": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "policy": {
+          "type": "string",
+          "enum": [
+            "isolate",
+            "passthrough",
+            "hide"
+          ]
+        },
+        "windows_ntfs": {
+          "type": "string",
+          "enum": [
+            "ro_or_hide",
+            "ro",
+            "hide",
+            "rw"
+          ]
+        },
+        "hibernated_fs": {
+          "type": "string",
+          "enum": [
+            "refuse",
+            "ro",
+            "ignore"
+          ]
+        }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "timeout_sec": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "retries": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "mirror_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": [
+            "fallback",
+            "round-robin",
+            "fastest"
+          ]
+        },
+        "health_check": {
+          "type": "boolean"
+        },
+        "cache_ttl_hours": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "region_preset": {
+          "type": "string"
+        }
+      }
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "simplestreams",
+              "oci-registry",
+              "http",
+              "local"
+            ]
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "url"
+        ]
+      }
+    },
+    "cache": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "not": {
+            "pattern": "(^|/)\\.\\.(/|$)"
+          }
+        },
+        "max_size_gb": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "offline": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "on",
+            "off"
+          ]
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allow_online": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "omloader.yaml"
+}

@@ -1,0 +1,235 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "vm",
+        "lxd-container",
+        "oci"
+      ]
+    },
+    "format": {
+      "type": "string",
+      "enum": [
+        "raw",
+        "squashfs"
+      ]
+    },
+    "base": {
+      "type": "string",
+      "not": {
+        "pattern": "(^|/)\\.\\.(/|$)"
+      }
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{64}$"
+    },
+    "kernel": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "not": {
+            "pattern": "(^|/)\\.\\.(/|$)"
+          }
+        },
+        "initrd": {
+          "type": "string",
+          "not": {
+            "pattern": "(^|/)\\.\\.(/|$)"
+          }
+        },
+        "cmdline": {
+          "type": "string"
+        },
+        "root_partition": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "inject_modules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "snapshots": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "not": {
+            "pattern": "(^|/)\\.\\.(/|$)"
+          }
+        },
+        "max_chain_depth": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "dm-snapshot",
+            "overlayfs"
+          ]
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "entrypoint": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cmd": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "workdir": {
+          "type": "string"
+        },
+        "autologin": {
+          "type": "boolean"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "network": {
+          "type": "string"
+        },
+        "hostname": {
+          "type": "string"
+        }
+      }
+    },
+    "data": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "mount": {
+            "type": "string",
+            "pattern": "^/"
+          },
+          "backend": {
+            "type": "string",
+            "enum": [
+              "dir",
+              "ext4-file",
+              "partition",
+              "disk",
+              "network"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "not": {
+              "pattern": "(^|/)\\.\\.(/|$)"
+            }
+          },
+          "size": {
+            "type": "string"
+          },
+          "snapshot": {
+            "type": "boolean"
+          },
+          "shared": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "mount",
+          "backend"
+        ]
+      }
+    }
+  },
+  "required": [
+    "name",
+    "type",
+    "format",
+    "base"
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "image.yaml",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "vm"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "format": {
+            "const": "raw"
+          },
+          "snapshots": {
+            "properties": {
+              "mode": {
+                "const": "dm-snapshot"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "enum": [
+              "lxd-container",
+              "oci"
+            ]
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "format": {
+            "const": "squashfs"
+          },
+          "snapshots": {
+            "properties": {
+              "mode": {
+                "const": "overlayfs"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
