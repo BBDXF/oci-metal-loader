@@ -1,11 +1,11 @@
-# Remote build/test harness (M1). Password via env OML_REMOTE_PASS (never stored).
+# Remote build/test harness. Password via env OML_REMOTE_PASS (never stored).
 OML_REMOTE ?= philips@192.168.8.26
 OML_RDIR   ?= omloader-test
 export SSHPASS := $(OML_REMOTE_PASS)
 SSH  = sshpass -e ssh -o StrictHostKeyChecking=no $(OML_REMOTE)
 RSH  = sshpass -e ssh -o StrictHostKeyChecking=no
 
-.PHONY: bin sync iso fixture disk e2e e2e-oci e2e-snap clean-remote
+.PHONY: bin sync iso fixture disk e2e e2e-oci e2e-snap e2e-live licenses clean-remote
 bin:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/omloader.bin ./cmd/omloader
 
@@ -26,5 +26,9 @@ e2e-oci: sync
 	$(SSH) 'cd ~/$(OML_RDIR) && test/e2e-oci.sh'
 e2e-snap: sync
 	$(SSH) 'cd ~/$(OML_RDIR) && test/e2e-snap.sh'
+e2e-live: sync
+	$(SSH) 'cd ~/$(OML_RDIR) && test/e2e-live.sh'
+licenses: sync
+	$(SSH) 'cd ~/$(OML_RDIR) && build/licenses.sh' && mkdir -p out && $(SSH) 'cat ~/$(OML_RDIR)/out/licenses.tsv' > out/licenses.tsv
 clean-remote:
 	-$(SSH) 'pkill -u $$USER -f "[o]mloader-test/.*qemu" || true; pkill -u $$USER -f "[o]mloader-test/test/" || true; rm -rf ~/$(OML_RDIR)/out ~/$(OML_RDIR)/work; true'

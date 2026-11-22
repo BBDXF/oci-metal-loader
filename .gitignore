@@ -11,3 +11,5 @@
 # local env / secrets
 .env
 *.pass
+/cache/
+/work/

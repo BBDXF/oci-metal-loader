@@ -157,6 +157,7 @@ t prune_dry omloader snapshot prune omlfixture --dry-run -c /mnt/stage/omloader.
 t gc_dry omloader snapshot gc omlfixture --dry-run $S
 t verify omloader snapshot verify omlfixture $S
 t qcow omloader snapshot export omlfixture v2 --qcow2 /mnt/snap/x.qcow2 $S
+t qcow_info sh -c 'qemu-img info /mnt/snap/x.qcow2 | head -3; rm -f /mnt/snap/x.qcow2'
 t flatten omloader snapshot flatten omlfixture v2 --name omlfixture-flat $S
 t flat_ls sh -c 'ls -ls /mnt/images/images/omlfixture-flat'
 BODY
@@ -165,7 +166,7 @@ BODY
 eq "$(rc hv2 discard3)" 0 "hv2: VM rollback --discard on leaf v3 (fresh COW)"
 sect hv2 prune_dry | grep -q 'would delete 1 snapshot(s): v2' && pass "hv2: VM prune --dry-run plans v2" || fail "hv2: prune: $(sect hv2 prune_dry | tr '\n' ' ')"
 eq "$(rc hv2 verify)" 0 "hv2: VM verify clean"
-[ "$(rc hv2 qcow)" != 0 ] && sect hv2 qcow | grep -q qemu-img && pass "hv2: qcow2 export gives qemu-img hint (not in loader)" || fail "hv2: qcow"
+[ "$(rc hv2 qcow)" = 0 ] && sect hv2 qcow_info | grep -q 'file format: qcow2' && pass "hv2: dm export --qcow2 (qemu-img in the Debian loader) produced a valid qcow2" || fail "hv2: qcow: $(sect hv2 qcow | tr '\n' ' ')"
 eq "$(rc hv2 flatten)" 0 "hv2: VM flatten v2 -> omlfixture-flat (dmsetup stack + dd)"
 sect hv2 flat_ls | grep -q base.raw && pass "hv2: flattened base.raw exists" || fail "hv2: flat_ls"
 guest v3 omlfixture-flat new:f1
