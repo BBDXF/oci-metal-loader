@@ -1,17 +1,53 @@
 # OCI Metal Loader (`omloader`)
 
-A UEFI x86_64 bare-metal (“metal”) loader ISO that boots LXD VM, LXD container and OCI images, with snapshots
-(dm-snapshot + kexec for VMs; squashfs + overlayfs on the loader's own kernel for containers).
+A Ventoy-style UEFI x86_64 bare-metal (“metal”) loader for **LXD images**: put LXD images on a USB stick/disk, boot the loader ISO and run them
+directly on the hardware, without installing anything.
 
-> Disclaimer: this project is not an official Open Container Initiative (OCI) project and is not affiliated with or endorsed by the OCI.
-> "OCI" here only refers to the image format it consumes.
+- **LXD VM images** (disk images): `dm-snapshot` stack over the read-only base + `kexec` into the guest's own kernel.
+- **LXD container images** (`rootfs.squashfs`): squashfs + overlayfs on the loader's kernel, then `switch-root` into the container's init.
+- Snapshots (tree, rollback, prune, flatten, export), persistent data volumes, and (planned, M4) mirrors/proxy, a cache and an offline mode.
 
-## Status
+**Docker/OCI images are experimental only**: the code exists (import of oci-dir/oci-archive/docker-archive, boot as a container) but it is
+**disabled by default**, not part of the project focus and not planned to be extended (there will be no registry client). Reason: Docker/OCI images are
+application-centric (no init system, no users/login/network setup, one process), whereas LXD images are full systems that boot like a distribution.
+To opt in: `experimental.oci_images: true` in `omloader.yaml`, `--experimental-oci` on `import`/`boot`, `OML_EXPERIMENTAL=oci` in the environment, or
+`omloader.experimental=oci` on the loader kernel command line. Without it, `type: oci` images are rejected by config validation, `omloader import oci-*|docker-archive` and `omloader boot` refuse.
 
-Early development (CLI only, UEFI x86_64 only). Implemented: M0 (config/schema/validation), M1 (VM boot via dm-snapshot + kexec),
-M2 (snapshot management, flatten/export, data volumes for containers), M3 (OCI / LXD container boot via squashfs + overlayfs).
-Planned: M4 (online pull with registry mirrors/proxy, simplestreams), M5 (device isolation, real-hardware testing, Secure Boot, LUKS),
-interactive TUI, Windows VHDX differencing disks (last).
+> Disclaimer: this project is not an official Open Container Initiative (OCI) project and is not affiliated with or endorsed by the OCI
+> (or by the LXD/Canonical projects). "OCI" in the name is historical; the supported focus is LXD images.
+
+## Project status / roadmap
+
+| Milestone | Scope | State |
+|---|---|---|
+| M0 | config layers, schemas, validation, snapshot tree metadata | ✅ done |
+| M1 | VM boot: dm-snapshot + kexec, guest-side reassembly | ✅ done (QEMU/OVMF-tested) |
+| M2 | snapshot management: list/create/rollback/delete/gc/prune/verify/flatten/export, space guard, container data volumes | ✅ done |
+| M3 | container boot: squashfs + overlayfs, firstboot adapter, `systemctl switch-root` handoff | ✅ done (the OCI part is now experimental, off by default) |
+| Live loader | Debian bookworm live system (systemd, networkd, resolved, tools, firmware), 254 MiB ISO | ✅ done |
+| M4 | online pull for LXD: simplestreams client, mirrors/proxy, cache/offline mode, LXD VM import (qcow2 → raw) | ⬜ next |
+| Usability | console login (tty1/users/passwords) and clean unmount of the OMLOADER partition | ⬜ after M4 |
+| M5 | device isolation, real-hardware testing, Secure Boot, LUKS | ⬜ |
+| TUI | interactive menu | ⬜ |
+| Windows | VHDX differencing disks | ⬜ last |
+
+Rough overall estimate: the core boot + snapshot pipeline is about **60-65 %** of the planned scope; what remains is mostly online pull (M4),
+real hardware and usability.
+
+## Known limitations
+
+- **No login on the physical console**: autologin is only configured on ttyS0 and only when `runtime.autologin` is set (the loader itself has root autologin on ttyS0 and tty1); there is no
+  tty1 setup for guests and no initial user/password support for container or VM guests.
+- **The OMLOADER partition is not cleanly unmounted** after the container root switch (and after `kexec`): an abrupt power-off can lose the last writes (journal replay on next mount; guests `sync` on poweroff).
+- **VM path has no independent data volumes**: all guest data lives in the COW layer of the snapshot node (data volumes exist for containers only).
+- **VM path is verified only on the Debian/initramfs-tools fixture.** The `rdinit` guest reassembly is generic in principle but untested elsewhere; no Windows guests, no LVM or encrypted (LUKS) root.
+- **Secure Boot is not supported** (unsigned GRUB/kernel chain); kexec has restrictions under Secure Boot / kernel lockdown.
+- **Only QEMU/OVMF has been tested, no real hardware yet** (NIC/disk/USB enumeration timing, firmware quirks and kexec on real drivers are unknown).
+- **The live system's upper layer is tmpfs (RAM)**: `/tmp`, flatten staging and the like use memory, so flattening big images needs enough RAM.
+- **Wi-Fi is not configured**: iwd and wireless-regdb are installed, nothing sets them up; wired DHCP only.
+- **No online pull yet (M4)**; **LXD VM import (qcow2 → raw) is manual** until M4 (convert with `qemu-img convert -O raw`).
+- **Data persistence rules**: data persists only when you boot the same snapshot node and the OMLOADER partition is writable. `--snapshot base` creates an ephemeral `tmp-*`
+  child (removed with `snapshot gc`), `new:<name>` starts a fresh child; volumes declared `snapshot: false` live outside the layers and survive rollback.
 
 ## Architecture of the loader ISO
 
@@ -98,7 +134,7 @@ Kernel/initrd paths are resolved *inside* the image root (absolute symlinks like
 
 `cache.offline`: `auto` | `on` (never go online) | `off` (always check upstream).
 
-## Containers: `type: oci` / `type: lxd-container` (M3: squashfs + overlayfs, loader kernel, no kexec)
+## Containers: `type: lxd-container` (and experimental `type: oci`) (M3: squashfs + overlayfs, loader kernel, no kexec)
 `omloader boot --image NAME` dispatches on `image.yaml` `type`. `vm` = M1 above. Container images (`format: squashfs`,
 `snapshots.mode: overlayfs`) run on **the loader's own kernel**; there is no kexec and no kernel/initrd in the image.
 
@@ -135,7 +171,7 @@ The guest runs the loader kernel, so it needs the loader's modules to `modprobe`
 The bind mountpoint dir is created in the upper layer. Other kernel versions in the guest are not supported.
 After the root switch the OMLOADER ext4 stays in use by the overlay (its old mount is detached) and is never cleanly unmounted (journal replay on next boot; guest `sync` on poweroff).
 
-### Import (rootless, build-time helper)
+### Import (rootless, build-time helper; `oci-*`/`docker-archive` need the experimental opt-in)
     omloader import oci-dir|oci-archive|docker-archive|lxd PATH --name N --out IMAGES_ROOT [--force] [--autologin]
 Writes `<out>/<name>/{base.squashfs,image.yaml}` (sha256 filled). OCI/docker layers (gzip or plain tar; zstd/xz layers are rejected) are merged
 in Go (whiteouts `.wh.*`, opaque `.wh..wh..opq`, dir<->file replacement, hardlinks, symlinks, devices, uid/gid + xattr PAX records preserved)
