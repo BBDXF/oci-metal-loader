@@ -1,0 +1,13 @@
+# build artifacts
+/build/omloader.bin
+/build/*.bin
+/out/
+*.iso
+*.raw
+*.qcow2
+*.img
+*.cow
+/omloader
+# local env / secrets
+.env
+*.pass
