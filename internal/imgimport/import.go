@@ -35,6 +35,8 @@ type Options struct {
 	Data []string
 	// ExperimentalOCI opts in to oci-dir/oci-archive/docker-archive (also OML_EXPERIMENTAL=oci).
 	ExperimentalOCI bool
+	// NoProbe (lxd-vm): skip the loop-attach kernel/initrd/root-partition detection (needs root); fill image.yaml kernel.* by hand.
+	NoProbe bool
 }
 
 // ParseData parses --data specs.
@@ -98,7 +100,7 @@ func sha256File(p string) (string, error) {
 
 // Import converts the image to <out>/<name>/{base.squashfs,image.yaml}.
 func Import(o Options) (string, error) {
-	if o.Kind != "lxd" && !o.ExperimentalOCI && !config.EnvOCI() {
+	if o.Kind != "lxd" && o.Kind != "lxd-vm" && !o.ExperimentalOCI && !config.EnvOCI() {
 		return "", fmt.Errorf("%s", config.OCIDisabledMsg)
 	}
 	if !nameRe.MatchString(o.Name) {
@@ -131,9 +133,15 @@ func Import(o Options) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if o.Kind == "lxd" {
+	switch o.Kind {
+	case "lxd":
 		yml, err = importLXD(o, sq)
-	} else {
+	case "lxd-vm":
+		if len(extra) > 0 {
+			return "", fmt.Errorf("data volumes are only supported for containers")
+		}
+		yml, err = importLXDVM(o, tmp)
+	default:
 		yml, err = importOCI(o, sq)
 	}
 	if err != nil {
@@ -143,7 +151,8 @@ func Import(o Options) (string, error) {
 		cur, _ := yml["data"].([]map[string]any)
 		yml["data"] = mergeData(cur, extra)
 	}
-	sum, err := sha256File(sq)
+	baseName, _ := yml["base"].(string)
+	sum, err := sha256File(filepath.Join(tmp, baseName))
 	if err != nil {
 		return "", err
 	}
@@ -257,7 +266,12 @@ func importLXD(o Options, sq string) (map[string]any, error) {
 	}
 	mb, err := readMetadata(o, meta)
 	if err != nil {
-		return nil, err
+		if !strings.HasSuffix(meta, ".xz") {
+			return nil, err
+		}
+		// e.g. no xz binary in the loader: the metadata is only used for an architecture sanity check
+		fmt.Fprintf(o.Warn, "warning: cannot read metadata from %s (%v); skipping the architecture check\n", filepath.Base(meta), err)
+		mb = []byte("{}")
 	}
 	var md struct {
 		Architecture string            `yaml:"architecture"`
