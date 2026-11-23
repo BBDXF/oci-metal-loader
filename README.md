@@ -131,6 +131,7 @@ Docker/OCI images are **experimental and off by default** (they are application 
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — architecture, status, roadmap, limitations, tests
 - [docs/ventoy.md](docs/ventoy.md) · [docs/store-file.md](docs/store-file.md) · [docs/tui.md](docs/tui.md) · [build/README.md](build/README.md)
 - Sources, mirrors (USTC/NJU/TUNA/CERNET/official), Deepin/Mint status: [docs/sources.md](docs/sources.md) — `omloader source list|test`, `pull --source S --mirror M`.
+- Desktop environments (Ubuntu GNOME / openSUSE KDE VMs, Mint, Deepin, ...) and where to get them: [docs/desktops.md](docs/desktops.md).
 
 ## License
 

@@ -113,6 +113,8 @@ Images live in `images/<name>/` (`image.yaml` + `base.raw` for `lxd-vm` or `base
    Imports can be run on any Linux PC with the `omloader` binary from the release tarball (`--out` = `images/` folder of the mounted stick), except the VM kernel probe which needs root; use `--no-probe` there and write `kernel:` in `image.yaml` yourself.
 3. **Copy a ready image folder** (`image.yaml` + base file, see [section 9.3](#93-imageyaml-per-image-config)) into `images/` of the stick.
 
+Desktop environments (which sources have ready desktop VMs, how to add one to a server image): [desktops.md](desktops.md).
+
 Validate a hand-written config: `omloader config validate -c omloader.yaml -i images/NAME/image.yaml`; `omloader config show --resolved` shows every value and the layer/line it came from.
 
 ## 6. Default account and security

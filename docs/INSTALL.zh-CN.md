@@ -109,6 +109,8 @@ NTFS 注意：存放 **ISO 本身**的 Ventoy 分区不能是 NTFS（加载器�
    导入也可在任意 Linux 电脑上用发布包里的 `omloader` 完成（`--out` 指向已挂载盘的 `images/`）；VM 的内核探测需要 root，此时用 `--no-probe` 并自己在 `image.yaml` 里写 `kernel:`。
 3. **直接拷贝现成的镜像目录**（`image.yaml` + 基础文件，见[9.3](#93-imageyaml单个镜像的配置)）到盘的 `images/`。
 
+桌面环境（哪些源有现成的桌面 VM、如何给服务器镜像加桌面）：[desktops.zh-CN.md](desktops.zh-CN.md)。
+
 校验手写配置：`omloader config validate -c omloader.yaml -i images/NAME/image.yaml`；`omloader config show --resolved` 会显示每个值及其来源层/行号。
 
 ## 6. 默认账号与安全

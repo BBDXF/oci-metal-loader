@@ -131,6 +131,7 @@ Docker/OCI 镜像是**实验性功能，默认关闭**（它们是应用镜像�
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — 架构、状态、路线图、限制、测试
 - [docs/ventoy.md](docs/ventoy.md) · [docs/store-file.md](docs/store-file.md) · [docs/tui.md](docs/tui.md) · [build/README.md](build/README.md)
 - 镜像源与 mirror（USTC/南大/清华/CERNET/官方）、Deepin/Mint 现状：[docs/sources.md](docs/sources.md) — `omloader source list|test`、`pull --source S --mirror M`。
+- 桌面环境（Ubuntu GNOME / openSUSE KDE 虚拟机、Mint、Deepin 等）从哪里获取：[docs/desktops.zh-CN.md](docs/desktops.zh-CN.md)。
 
 ## 许可
 

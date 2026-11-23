@@ -523,7 +523,7 @@ func (m *Model) drawPull(c *Canvas) {
 			kst = StFrozen
 		}
 		m.putSegs(c, 1, y+i, m.W-3, []seg{
-			{pad(it.Spec(), sw) + " ", StNormal}, {pad(it.Kind, 9) + " ", kst}, {pad(it.Version, 10) + " ", StFaint}, {human(it.Size), StFaint},
+			{pad(it.Spec(), sw) + " ", StNormal}, {pad(it.Kind, 9) + " ", kst}, {pad(shortVer(it.Version), 10) + " ", StFaint}, {human(it.Size), StFaint},
 		}, m.pullCat && m.ctop+i == m.csel)
 	}
 	m.drawScroll(c, m.W-1, y, vis, len(m.catalog), m.ctop)
@@ -814,4 +814,12 @@ func (m *Model) drawDialog(c *Canvas) {
 			c.Put(x+2, row, trunc(pad(lab, lw)+": "+val+cur, w-4), s)
 		}
 	}
+}
+
+// shortVer drops the time part of a simplestreams version (20261118_07:42 -> 20261118) so it fits its column.
+func shortVer(v string) string {
+	if i := strings.IndexByte(v, '_'); i > 0 {
+		return v[:i]
+	}
+	return v
 }
