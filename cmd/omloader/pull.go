@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -77,8 +78,18 @@ func defaultSource(c *config.Config, flagVal string) string {
 	return "lxc-images"
 }
 
+// opCtx is the parent context of the network operations; the TUI sets it so that a running pull/probe can be cancelled.
+var (
+	opCtxMu sync.Mutex
+	opCtx   = context.Background()
+)
+
+func setOpCtx(c context.Context) { opCtxMu.Lock(); opCtx = c; opCtxMu.Unlock() }
+
 func ctxTimeout() (context.Context, context.CancelFunc) {
-	return context.WithCancel(context.Background())
+	opCtxMu.Lock()
+	defer opCtxMu.Unlock()
+	return context.WithCancel(opCtx)
 }
 
 func humanSize(n int64) string {

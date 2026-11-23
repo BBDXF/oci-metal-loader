@@ -21,6 +21,7 @@ const usage = `usage:
   omloader boot --image NAME [--snapshot NAME|current|base|new:NAME] [-c global.yaml]
             [--images-root DIR] [--snap-root DIR] [--dry-run] [--no-kexec] [--exec-cmd-log FILE]
             [--force] [--ro] [--no-inject] [--data-root DIR]
+  omloader tui [-c omloader.yaml] [--images-root DIR] [--snap-root DIR] [--data-root DIR] [--ascii]   (interactive terminal UI; docs/tui.md)
   omloader guest-assemble --plan /omloader/plan.json   (runs inside the guest initramfs)
   omloader snapshot <op> ...   (run 'omloader snapshot' for the operations)
   omloader store create|info|check|grow|find ...   (ext4 store FILE on exFAT/NTFS: see docs/store-file.md)
@@ -48,12 +49,15 @@ func parse(fs *flag.FlagSet, args []string) ([]string, error) {
 
 func run(args []string, out, errw io.Writer) int {
 	fail := func(err error) int { fmt.Fprintln(errw, "error:", err); return 1 }
-	if len(args) < 1 || (len(args) < 2 && args[0] != "boot" && args[0] != "guest-assemble" && args[0] != "snapshot") {
+	if len(args) < 1 || (len(args) < 2 && args[0] != "boot" && args[0] != "guest-assemble" && args[0] != "snapshot" && args[0] != "tui") {
 		fmt.Fprint(errw, usage)
 		return 1
 	}
 	if h, ok := m4Commands[args[0]]; ok {
 		return h(args[1:], out, errw)
+	}
+	if args[0] == "tui" {
+		return runTUI(args[1:], out, errw)
 	}
 	if args[0] == "guest-assemble" {
 		return runGuest(args[1:], out, errw)

@@ -139,6 +139,13 @@
         "default_image": {
           "type": "string"
         },
+        "ui": {
+          "type": "string",
+          "enum": [
+            "tui",
+            "shell"
+          ]
+        },
         "extra_cmdline_flags": {
           "type": "array",
           "items": {

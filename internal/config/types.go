@@ -106,6 +106,9 @@ type Boot struct {
 	DefaultImage string `yaml:"default_image" json:"default_image"`
 	// ExtraCmdlineFlags: omloader.* equivalents without the prefix, e.g. ["poweroff_on_fail=1", "experimental=oci", "selftest=1"].
 	ExtraCmdlineFlags []string `yaml:"extra_cmdline_flags" json:"extra_cmdline_flags"`
+	// UI: what the console shows when nothing is booted automatically: "tui" (interactive terminal UI, default) or "shell".
+	// The kernel flag omloader.ui=shell|tui wins over this key.
+	UI string `yaml:"ui" json:"ui"`
 }
 type DataCfg struct {
 	DefaultBackend    string `yaml:"default_backend" json:"default_backend"`

@@ -30,6 +30,7 @@ boot:
   timeout: 5
   default_snapshot: current
   kernel_cmdline_extra: ""
+  ui: tui          # tui | shell (console at boot when nothing is booted automatically; omloader.ui= kernel flag wins)
 data:
   default_backend: dir
   default_vm_backend: ext4-file

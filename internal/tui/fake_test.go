@@ -1,0 +1,177 @@
+package tui
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"strings"
+	"sync"
+	"time"
+)
+
+type fakeSvc struct {
+	mu       sync.Mutex
+	trees    map[string]*TreeInfo
+	calls    []string
+	offline  bool
+	pullHold chan struct{}
+}
+
+func newFake() *fakeSvc {
+	return &fakeSvc{trees: map[string]*TreeInfo{
+		"alpine": {Image: "alpine", Mode: "overlayfs", Type: "lxd-container", Current: "b", Nodes: []NodeInfo{
+			{Name: "a", Created: "2026-01-01T10:00:00Z", Note: "first", Tags: []string{"golden"}, Alloc: 4096},
+			{Name: "b", Parent: "a", Created: "2026-01-02T10:00:00Z", Alloc: 8192},
+			{Name: "c", Parent: "a", Created: "2026-01-03T10:00:00Z"},
+		}},
+		"deb": {Image: "deb", Mode: "dm-snapshot", Type: "vm"},
+	}}
+}
+
+func (f *fakeSvc) rec(s string, a ...any) {
+	f.mu.Lock()
+	f.calls = append(f.calls, fmt.Sprintf(s, a...))
+	f.mu.Unlock()
+}
+func (f *fakeSvc) called(sub string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, c := range f.calls {
+		if strings.Contains(c, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *fakeSvc) Images() ([]ImageInfo, error) {
+	return []ImageInfo{
+		{Name: "alpine", Type: "lxd-container", Mode: "overlayfs", Size: 3 << 20, BaseOK: "ok", Snaps: 3, Current: "b", LastUsed: time.Date(2026, 1, 3, 11, 0, 0, 0, time.UTC)},
+		{Name: "deb", Type: "vm", Mode: "dm-snapshot", Size: 2 << 30, BaseOK: "-"},
+	}, nil
+}
+func (f *fakeSvc) Tree(i string) (*TreeInfo, error) {
+	t, ok := f.trees[i]
+	if !ok {
+		return nil, errors.New("no such image")
+	}
+	cp := *t
+	cp.Nodes = append([]NodeInfo{}, t.Nodes...)
+	return &cp, nil
+}
+func (f *fakeSvc) Create(i, n, from, note string, tags []string) error {
+	f.rec("create %s %s from=%s note=%q tags=%v", i, n, from, note, tags)
+	t := f.trees[i]
+	p := from
+	if p == "base" {
+		p = ""
+	}
+	t.Nodes = append(t.Nodes, NodeInfo{Name: n, Parent: p, Note: note, Tags: tags, Created: "2026-02-01T00:00:00Z"})
+	t.Current = n
+	return nil
+}
+func (f *fakeSvc) Rollback(i, n string, d bool) error {
+	f.rec("rollback %s %s discard=%v", i, n, d)
+	if n == "base" {
+		n = ""
+	}
+	f.trees[i].Current = n
+	return nil
+}
+func (f *fakeSvc) DeletePlan(i, n string, rec, force bool) ([]string, error) {
+	if n == f.trees[i].Current && !force {
+		return nil, errors.New("current snapshot: use --force")
+	}
+	if rec {
+		return []string{"c", n}, nil
+	}
+	return []string{n}, nil
+}
+func (f *fakeSvc) Delete(i, n string, rec, force bool) error {
+	f.rec("delete %s %s rec=%v force=%v", i, n, rec, force)
+	return nil
+}
+func (f *fakeSvc) Tag(i, n, tag string, rm bool) error {
+	f.rec("tag %s %s %s rm=%v", i, n, tag, rm)
+	return nil
+}
+func (f *fakeSvc) SetNote(i, n, note string) error { f.rec("note %s %s %q", i, n, note); return nil }
+func (f *fakeSvc) Prune(i string, gc, dry bool) ([]string, error) {
+	f.rec("prune gc=%v dry=%v", gc, dry)
+	return []string{"c"}, nil
+}
+func (f *fakeSvc) Verify(ctx context.Context, i string, deep bool, w io.Writer) error {
+	f.rec("verify %s deep=%v", i, deep)
+	fmt.Fprintln(w, "verify alpine: OK (3 snapshots)")
+	return nil
+}
+func (f *fakeSvc) Flatten(ctx context.Context, i, n, name string, w io.Writer) error {
+	f.rec("flatten %s %s %s", i, n, name)
+	fmt.Fprintln(w, "flattening")
+	return nil
+}
+func (f *fakeSvc) ExportDefault(i string) (string, string) {
+	return "squashfs", "/mnt/snap/export/" + i + ".squashfs"
+}
+func (f *fakeSvc) Export(ctx context.Context, i, n, p string, w io.Writer) error {
+	f.rec("export %s %s %s", i, n, p)
+	return nil
+}
+func (f *fakeSvc) BootArgs(i, s string, force bool) []string {
+	a := []string{"omloader", "boot", "--image", i, "--snapshot", s}
+	if force {
+		a = append(a, "--force")
+	}
+	return a
+}
+func (f *fakeSvc) BootPreview(ctx context.Context, i, s string, force bool, w io.Writer) error {
+	f.rec("preview %s %s", i, s)
+	fmt.Fprintln(w, "+ losetup ...")
+	return nil
+}
+func (f *fakeSvc) Sources() ([]SourceInfo, error) {
+	return []SourceInfo{{Name: "lxc-images", Type: "simplestreams", URL: "https://images.example", Usable: true}}, nil
+}
+func (f *fakeSvc) SourceTest(ctx context.Context, n string, w io.Writer) error {
+	fmt.Fprintln(w, "    OK      12ms  https://images.example")
+	return nil
+}
+func (f *fakeSvc) Catalog(ctx context.Context, s string, fl Filter) ([]CatalogItem, error) {
+	f.rec("catalog %s %+v", s, fl)
+	return []CatalogItem{{OS: "alpine", Release: "3.20", Variant: "default", Kind: "container", Version: "20260101", Size: 3 << 20}}, nil
+}
+func (f *fakeSvc) Pull(ctx context.Context, s string, it CatalogItem, name string, w io.Writer) error {
+	f.rec("pull %s %s %s", s, it.Spec(), name)
+	fmt.Fprintln(w, "pull: sha256 verified")
+	if f.pullHold != nil {
+		select {
+		case <-f.pullHold:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+func (f *fakeSvc) DefaultPullName(it CatalogItem) string { return it.OS + "-" + it.Release }
+func (f *fakeSvc) PullBytes() int64                      { return 1 << 20 }
+func (f *fakeSvc) Offline() bool                         { return f.offline }
+func (f *fakeSvc) Store() (StoreStatus, error) {
+	return StoreStatus{Kind: "store-file", Path: "/mnt/host/omloader/store.img", HostFS: "exfat", Size: 20 << 30, Alloc: 20 << 30, Total: 19 << 30, Free: 15 << 30, FreePct: 79, MinFreePct: 10, State: "clean"}, nil
+}
+func (f *fakeSvc) StoreDefaults() (string, string) { return "/mnt/host/omloader/store.img", "20G" }
+func (f *fakeSvc) StoreCreate(ctx context.Context, p, s string, w io.Writer) error {
+	f.rec("storecreate %s %s", p, s)
+	return nil
+}
+func (f *fakeSvc) StoreGrow(ctx context.Context, p, s string, w io.Writer) error {
+	f.rec("storegrow %s %s", p, s)
+	return nil
+}
+func (f *fakeSvc) NetStatus(ctx context.Context, probe bool, w io.Writer) error {
+	fmt.Fprintf(w, "interfaces:\n  eth0 up 10.0.2.15/24\ndefault route: via 10.0.2.2\nprobe=%v\n", probe)
+	return nil
+}
+func (f *fakeSvc) Settings() ([]string, error) {
+	return []string{"boot.ui = tui    [defaults]", "boot.timeout = 5    [defaults]"}, nil
+}

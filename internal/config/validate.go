@@ -114,6 +114,7 @@ func (r *Resolved) Validate() ErrorList {
 		add("snapshot.retention.min_free_percent", "must be 0..99")
 	}
 	enum("verify.base_checksum", c.Verify.BaseChecksum, "sha256", "skip")
+	enum("boot.ui", c.Boot.UI, "tui", "shell")
 	if c.Boot.Timeout < 0 {
 		add("boot.timeout", "must be >= 0")
 	}
