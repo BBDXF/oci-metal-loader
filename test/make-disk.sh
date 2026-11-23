@@ -20,7 +20,7 @@ mkdir -p $S
 cp --sparse=always $O/fixture.raw $S/base.raw
 cat > $S/image.yaml <<EOT
 name: $NAME
-type: vm
+type: lxd-vm
 format: raw
 base: base.raw
 kernel:

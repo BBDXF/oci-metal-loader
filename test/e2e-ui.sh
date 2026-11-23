@@ -60,7 +60,7 @@ fsv() { fsstate | tr ' ' '\n' | sed -n "s/^$1=//p"; }
 
 # ---------- 1. first boot of omlui: login, users, sudo, clean shutdown ----------
 echo "fs before any guest boot: $(fsstate)"
-guest ui1 omlui new:run1
+guest ui1 omlui ""
 grep -q OMLOADER_GUEST_OK $W/ui1.clean && pass "ui1: guest booted" || fail "ui1: no OMLOADER_GUEST_OK"
 grep -q 'OMLOADER_LOGIN_OK user=alice tty=/dev/tty1' $W/ui1.clean && pass "ui1: autologin on tty1 as runtime.autologin_user (alice)" || fail "ui1: no tty1 login marker"
 grep -q 'OMLOADER_LOGIN_OK user=alice tty=/dev/ttyS0' $W/ui1.clean && pass "ui1: autologin on ttyS0 as alice" || fail "ui1: no ttyS0 login marker"
@@ -86,7 +86,7 @@ eq "$(fsv ext4_valid)" yes "ui1: OMLOADER ext4 superblock state is clean"
 [ "$(fsv exfat_dirty)" = no ] && pass "ui1: VTOYDATA exfat not marked dirty" || fail "ui1: VTOYDATA exfat dirty flag: $(fsv exfat_dirty)"
 
 # ---------- 2. second boot: idempotent ----------
-guest ui2 omlui run1
+guest ui2 omlui ""
 grep -q OMLOADER_GUEST_OK $W/ui2.clean && pass "ui2: guest booted" || fail "ui2: no OMLOADER_GUEST_OK"
 grep -q 'firstboot adapter applied' $W/ui2.clean && fail "ui2: adapter re-applied on unchanged config" || pass "ui2: adapter not re-applied (config hash in marker)"
 eq "$(val ui2 OMLOADER_UI_USERS)" 3 "ui2: users not duplicated"
@@ -96,7 +96,7 @@ eq "$(val ui2 OMLOADER_UI_PW_ALICE)" ok "ui2: alice password unchanged-valid"
 eq "$(fsv needs_recovery)" no "ui2: OMLOADER ext4 clean after second poweroff"
 
 # ---------- 3. busybox-only image (no getty/login): debug shell + sync via inittab ----------
-guest bb1 omlbb new:r1
+guest bb1 omlbb ""
 grep -q OMLOADER_BB_GUEST_OK $W/bb1.clean && pass "bb1: busybox-init guest booted" || fail "bb1: no OMLOADER_BB_GUEST_OK"
 grep -q 'no usable getty/login' $W/bb1.clean && pass "bb1: loader detected missing getty/login" || fail "bb1: no detection warning"
 grep -q 'OMLOADER_DEBUG_SHELL' $W/bb1.clean && pass "bb1: debug shell spawned on the console from the omloader busybox" || fail "bb1: no debug shell banner"
@@ -112,7 +112,7 @@ rm -f $W/hk.img; truncate -s 16M $W/hk.img; mkfs.ext4 -q -L OMLSTAGE -d $W/hk $W
 DISK2=$W/hk.img EXTRA=omloader.hook=1 NAME= SNAP= LOG=$W/hook.log $T/run-kvm.sh > /dev/null; clean hook
 grep -q 'OMLOADER_HOOK_RC=0' $W/hook.clean && pass "hook: image.yaml patched (shutdown_sync: false)" || fail "hook: patch failed"
 eq "$(fsv needs_recovery)" no "hook: loader-side hook poweroff path (sync + remount ro) leaves OMLOADER clean"
-guest nosync omlui new:nosync
+guest nosync omlui ""
 grep -q OMLOADER_GUEST_OK $W/nosync.clean && pass "nosync: guest booted" || fail "nosync: no OMLOADER_GUEST_OK"
 grep -q 'flushed and remounted' $W/nosync.clean && fail "nosync: hook still active" || pass "nosync: hooks removed on config change (re-applied through the marker hash)"
 echo "fs after nosync (old behaviour): $(fsstate)"

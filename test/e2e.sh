@@ -14,12 +14,14 @@ boot() { # $1=snapshot arg  $2=logname
   SNAP="$1" LOG=$W/$2.log $T/run-kvm.sh; tr -d '\r' < $W/$2.log > $W/$2.clean
   GOT=$(grep -o 'OMLOADER_COUNTER=[0-9]*' $W/$2.clean | tail -1 | cut -d= -f2)
   echo "--- $2 (snapshot=$1) serial tail:"; tail -12 $W/$2.clean; }
-boot new:run1 boot1   # new child of base; guest rebuilds dm stack via appended initrd (absolute /boot/vmlinuz symlink in fixture)
+boot "" boot1   # continue current: lazily creates the live layer n1 over base; guest rebuilds the dm stack via the appended initrd
 grep -q OMLOADER_GUEST_OK $W/boot1.clean && pass "(a) guest booted via omloader (OMLOADER_GUEST_OK)" || fail "(a) no OMLOADER_GUEST_OK"
 [ "$GOT" = 1 ] && pass "(b) first boot counter==1" || fail "(b) counter='$GOT' expected 1"
-boot base boot2
-[ "$GOT" = 1 ] && pass "(c) --snapshot base (ephemeral tmp-* child) counter==1 (base untouched)" || fail "(c) base counter='$GOT' expected 1"
-boot run1 boot3
-[ "$GOT" = 2 ] && pass "(d) snapshot run1 (leaf) counter==2 (COW persisted)" || fail "(d) run1 counter='$GOT' expected 2"
+boot "" boot2
+[ "$GOT" = 2 ] && pass "(c) booting current again continues the same live layer: counter==2" || fail "(c) counter='$GOT' expected 2"
+boot base boot3
+[ "$GOT" = 1 ] && pass "(d) --snapshot base (ephemeral child) counter==1 (base untouched)" || fail "(d) base counter='$GOT' expected 1"
+boot "" boot4
+[ "$GOT" = 3 ] && pass "(e) current after the ephemeral boot: counter==3 (live state kept, ephemeral discarded)" || fail "(e) counter='$GOT' expected 3"
 [ $FAIL = 0 ] && echo "E2E: ALL PASS" || echo "E2E: FAILED"
 exit $FAIL

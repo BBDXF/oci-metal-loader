@@ -225,20 +225,51 @@ func (m *Model) reloadTree() {
 	m.RefreshImages()
 }
 
-// BuildRows lays the snapshot tree out depth first ("base" is the root).
+// rowTitle is the displayed name of a tree node.
+func rowTitle(n *NodeInfo) string {
+	switch {
+	case n.Live:
+		return L.CurrentNode
+	case n.Label != "":
+		return n.Label
+	case n.Ephemeral:
+		return L.EphemeralNode
+	}
+	return n.Name
+}
+
+// BuildRows lays the snapshot tree out depth first ("base" is the root; the live state is a leaf under its snapshot).
 func BuildRows(t *TreeInfo, th Theme) []TreeRow {
 	g := th.g()
 	kids := map[string][]string{}
 	nodes := map[string]*NodeInfo{}
-	for i := range t.Nodes {
-		n := &t.Nodes[i]
+	infos := append([]NodeInfo{}, t.Nodes...)
+	if t.Current == "" {
+		infos = append(infos, NodeInfo{Name: "(live)", Parent: t.Head, Live: true})
+	}
+	for i := range infos {
+		n := &infos[i]
 		nodes[n.Name] = n
 		kids[n.Parent] = append(kids[n.Parent], n.Name)
 	}
 	for _, v := range kids {
-		sort.Strings(v)
+		sort.Slice(v, func(i, j int) bool {
+			if len(v[i]) != len(v[j]) {
+				return len(v[i]) < len(v[j])
+			}
+			return v[i] < v[j]
+		})
 	}
-	rows := []TreeRow{{Name: "base", IsBase: true, Kids: len(kids[""])}}
+	persistent := func(id string) int {
+		c := 0
+		for _, k := range kids[id] {
+			if !nodes[k].Ephemeral {
+				c++
+			}
+		}
+		return c
+	}
+	rows := []TreeRow{{Name: "base", IsBase: true, Kids: persistent("")}}
 	var walk func(parent, prefix string)
 	walk = func(parent, prefix string) {
 		for i, n := range kids[parent] {
@@ -246,20 +277,12 @@ func BuildRows(t *TreeInfo, th Theme) []TreeRow {
 			if i == len(kids[parent])-1 {
 				br, next = g.last, g.blank
 			}
-			rows = append(rows, TreeRow{Name: n, Prefix: prefix + br, Node: nodes[n], Kids: len(kids[n])})
+			rows = append(rows, TreeRow{Name: n, Prefix: prefix + br, Node: nodes[n], Kids: persistent(n)})
 			walk(n, prefix+next)
 		}
 	}
 	walk("", "")
 	return rows
-}
-
-// selNode returns the selected node name ("" = base).
-func (m *Model) selNode() string {
-	if m.dsel < 0 || m.dsel >= len(m.rows) || m.rows[m.dsel].IsBase {
-		return ""
-	}
-	return m.rows[m.dsel].Name
 }
 
 func (m *Model) selRow() TreeRow {
@@ -269,11 +292,12 @@ func (m *Model) selRow() TreeRow {
 	return m.rows[m.dsel]
 }
 
-func nodeLabel(n string) string {
-	if n == "" {
-		return L.BaseNode
+// snapLabel returns the snapshot label of a row ("" when it is not a snapshot).
+func snapLabel(r TreeRow) string {
+	if r.IsBase || r.Node == nil {
+		return ""
 	}
-	return n
+	return r.Node.Label
 }
 
 func (m *Model) detailKey(k Key, act string) {
@@ -287,9 +311,9 @@ func (m *Model) detailKey(k Key, act string) {
 	case act == "select" || k.Rune == 'b':
 		m.bootMenu()
 	case k.Rune == 'r':
-		m.rollbackMenu(row)
+		m.revertMenu(row)
 	case k.Rune == 'c':
-		m.createForm(row)
+		m.createForm()
 	case k.Rune == 'd':
 		m.deleteFlow(row)
 	case k.Rune == 't':
@@ -313,70 +337,45 @@ func (m *Model) detailKey(k Key, act string) {
 // ---- boot ----
 
 func (m *Model) bootMenu() {
-	cur := nodeLabel(m.tree.Current)
-	items := []string{L.BootCurrent + " (" + cur + ")"}
-	targets := []string{"current"}
-	if n := m.selNode(); n != "" && n != m.tree.Current {
-		items = append(items, L.BootSelected+" ("+n+")")
-		targets = append(targets, n)
+	type tgt struct {
+		snap string
+		eph  bool
 	}
-	items = append(items, L.BootNew, L.BootBase)
-	targets = append(targets, "new:", "base")
-	m.menu(L.BootTitle+" "+m.image, items, func(i int) {
-		switch targets[i] {
-		case "new:":
-			m.form(L.BootTitle, []string{L.BootNewPrompt}, []string{L.FieldName}, []string{""}, func(v []string) {
-				if strings.TrimSpace(v[0]) == "" {
-					m.message(L.Error, true, "name required")
-					return
-				}
-				m.bootConfirm("new:" + strings.TrimSpace(v[0]))
-			})
-		default:
-			m.bootConfirm(targets[i])
-		}
-	})
+	items := []string{L.BootCurrent}
+	targets := []tgt{{"current", false}}
+	if l := snapLabel(m.selRow()); l != "" {
+		items = append(items, L.BootSelected+" ("+l+")")
+		targets = append(targets, tgt{l, true})
+	}
+	items = append(items, L.BootThrowaway, L.BootBase)
+	targets = append(targets, tgt{"current", true}, tgt{"base", true})
+	m.menu(L.BootTitle+" "+m.image, items, func(i int) { m.bootConfirm(targets[i].snap, targets[i].eph) })
 }
 
-func (m *Model) nodeHasKids(n string) bool {
-	for _, r := range m.rows {
-		if !r.IsBase && r.Name == n {
-			return r.Kids > 0
-		}
-	}
-	return false
-}
-
-func (m *Model) bootConfirm(target string) {
-	if target != "current" && target != "base" && !strings.HasPrefix(target, "new:") && m.nodeHasKids(target) {
-		m.confirm(L.BootForceTitle, true, []string{L.BootForceText}, func() { m.bootConfirm2(target, true) })
-		return
-	}
-	if target == "current" && m.tree.Current != "" && m.nodeHasKids(m.tree.Current) {
-		m.confirm(L.BootForceTitle, true, []string{L.BootForceText}, func() { m.bootConfirm2(target, true) })
-		return
-	}
-	m.bootConfirm2(target, false)
-}
-
-func (m *Model) bootConfirm2(target string, force bool) {
-	args := m.Svc.BootArgs(m.image, target, force)
+func (m *Model) bootConfirm(target string, eph bool) {
+	args := m.Svc.BootArgs(m.image, target, eph)
 	lines := []string{strings.Join(args, " ")}
-	if m.tree.Type == "vm" {
+	switch {
+	case target == "current" && !eph:
+		lines = append(lines, L.BootContinues)
+	default:
+		lines = append(lines, L.BootEphemeralNote)
+	}
+	if m.tree.Type == "lxd-vm" {
 		lines = append(lines, "VM image: the dm-snapshot stack is assembled and the kernel is started with kexec (no return).")
 	} else {
 		lines = append(lines, "Container image: root is mounted (squashfs + overlayfs), then the loader runs systemctl switch-root.")
 	}
 	lines = append(lines, "", L.BootPreview)
 	image := m.image
-	d := m.confirm(L.BootConfirm, force, lines, func() {
-		m.res, m.done = Result{Kind: ResBoot, Boot: BootRequest{Image: image, Snapshot: target, Force: force}}, true
+	d := m.confirm(L.BootConfirm, false, lines, func() {
+		m.res, m.done = Result{Kind: ResBoot, Boot: BootRequest{Image: image, Snapshot: target, Ephemeral: eph}}, true
 	})
 	d.Extra = map[rune]func(){'d': func() {
 		m.opResume = d
 		m.dlg = nil
 		m.startOp("boot preview (dry-run): "+image, func(ctx context.Context, w io.Writer) error {
-			return m.Svc.BootPreview(ctx, image, target, force, w)
+			return m.Svc.BootPreview(ctx, image, target, eph, w)
 		}, nil)
 	}}
 }
@@ -394,12 +393,8 @@ func (m *Model) after(what string) func(error) {
 	}
 }
 
-func (m *Model) createForm(row TreeRow) {
-	from := ""
-	if !row.IsBase {
-		from = row.Name
-	}
-	m.form(L.CreateTitle, []string{L.FieldFrom + ": " + nodeLabel(from)}, []string{L.FieldName, L.FieldNote, L.FieldTag}, []string{"", "", ""}, func(v []string) {
+func (m *Model) createForm() {
+	m.form(L.CreateTitle, []string{L.CreateHelp}, []string{L.FieldName, L.FieldNote, L.FieldTag}, []string{"", "", ""}, func(v []string) {
 		name := strings.TrimSpace(v[0])
 		if name == "" {
 			m.message(L.Error, true, "name required")
@@ -409,11 +404,7 @@ func (m *Model) createForm(row TreeRow) {
 		if t := strings.TrimSpace(v[2]); t != "" {
 			tags = strings.Fields(t)
 		}
-		from2 := from
-		if from == "" {
-			from2 = "base"
-		}
-		if err := m.Svc.Create(m.image, name, from2, v[1], tags); err != nil {
+		if err := m.Svc.Create(m.image, name, v[1], tags); err != nil {
 			m.reloadTree()
 			m.fail(err)
 			return
@@ -423,79 +414,110 @@ func (m *Model) createForm(row TreeRow) {
 	})
 }
 
-func (m *Model) rollbackMenu(row TreeRow) {
-	node := "base"
+func (m *Model) revertMenu(row TreeRow) {
+	target := "base"
 	if !row.IsBase {
-		node = row.Name
+		if target = snapLabel(row); target == "" {
+			m.message(L.Info, false, L.RevertSelect)
+			return
+		}
 	}
-	m.menu(L.RollbackTitle+" -> "+node, []string{L.RollbackKeep, L.RollbackDiscard, L.Cancel}, func(i int) {
-		do := func(discard bool) {
-			if err := m.Svc.Rollback(m.image, node, discard); err != nil {
+	items := []string{L.RevertDiscard, L.RevertKeep, L.Cancel}
+	m.menu(L.RevertTitle+" -> "+target, items, func(i int) {
+		do := func(keep string) {
+			if err := m.Svc.Revert(m.image, target, keep); err != nil {
+				m.reloadTree()
 				m.fail(err)
 				return
 			}
 			m.reloadTree()
-			m.sayf("rollback to %s: ok", node)
+			m.sayf("revert to %s: ok", target)
 		}
 		switch i {
 		case 0:
-			m.confirm(L.RollbackTitle, false, []string{"Rollback to " + node + "?"}, func() { do(false) })
+			m.confirm(L.RevertTitle, true, []string{"Revert to " + target + "?", L.RevertSure}, func() { do("") })
 		case 1:
-			m.confirm(L.RollbackTitle, true, []string{L.RollbackSure}, func() { do(true) })
+			m.form(L.RevertKeep, []string{L.RevertKeepHelp}, []string{L.FieldName}, []string{""}, func(v []string) {
+				if k := strings.TrimSpace(v[0]); k != "" {
+					do(k)
+				}
+			})
 		}
 	})
 }
 
+func (m *Model) subtreeHasLive(id string) bool {
+	if m.tree.Current == "" {
+		return false
+	}
+	for p := m.tree.Current; p != ""; {
+		if p == id {
+			return true
+		}
+		n := ""
+		for _, nd := range m.tree.Nodes {
+			if nd.Name == p {
+				n = nd.Parent
+			}
+		}
+		p = n
+	}
+	return false
+}
+
 func (m *Model) deleteFlow(row TreeRow) {
 	if row.IsBase {
-		m.message(L.Info, false, "The base image cannot be deleted here.")
+		m.message(L.Info, false, L.DeleteBase)
 		return
 	}
-	node := row.Name
-	rec := row.Kids > 0
+	label := snapLabel(row)
+	if label == "" {
+		m.message(L.Info, false, L.DeleteNotSnap)
+		return
+	}
+	rec := row.Kids > 1
 	force := false
 	run := func() {
-		plan, err := m.Svc.DeletePlan(m.image, node, rec, force)
+		plan, err := m.Svc.DeletePlan(m.image, label, rec, force)
 		if err != nil {
 			m.fail(err)
 			return
 		}
-		lines := []string{"Delete: " + strings.Join(plan, ", ")}
-		if rec {
-			lines = append([]string{L.DeleteRec}, lines...)
+		lines := append([]string{}, plan...)
+		if row.Kids == 1 {
+			lines = append(lines, "", L.DeleteMerge)
 		}
 		m.confirm(L.DeleteTitle, true, lines, func() {
-			if err := m.Svc.Delete(m.image, node, rec, force); err != nil {
+			if err := m.Svc.Delete(m.image, label, rec, force); err != nil {
+				m.reloadTree()
 				m.fail(err)
 				return
 			}
 			m.reloadTree()
-			m.sayf("deleted %s", strings.Join(plan, " "))
+			m.sayf("deleted %s", label)
 		})
 	}
-	if node == m.tree.Current {
-		m.confirm(L.DeleteTitle, true, []string{L.DeleteCurrent}, func() { force = true; run() })
+	if rec && m.subtreeHasLive(row.Name) {
+		m.confirm(L.DeleteTitle, true, []string{L.DeleteRec, L.DeleteCurrent}, func() { force = true; run() })
 		return
 	}
 	run()
 }
 
 func (m *Model) tagForm(row TreeRow) {
-	if row.IsBase {
-		m.message(L.Info, false, "Tags and notes apply to snapshots, not to the base image.")
+	label := snapLabel(row)
+	if label == "" {
+		m.message(L.Info, false, L.TagNotSnap)
 		return
 	}
-	cur := ""
-	if row.Node != nil {
-		cur = strings.Join(row.Node.Tags, ",")
-	}
-	m.form(L.TagTitle+" "+row.Name, []string{"current tags: " + cur}, []string{L.TagHelp}, []string{""}, func(v []string) {
+	cur := strings.Join(row.Node.Tags, ",")
+	m.form(L.TagTitle+" "+label, []string{"current tags: " + cur}, []string{L.TagHelp}, []string{""}, func(v []string) {
 		t := strings.TrimSpace(v[0])
 		if t == "" {
 			return
 		}
 		rm := strings.HasPrefix(t, "-")
-		if err := m.Svc.Tag(m.image, row.Name, strings.TrimPrefix(t, "-"), rm); err != nil {
+		if err := m.Svc.Tag(m.image, label, strings.TrimPrefix(t, "-"), rm); err != nil {
 			m.fail(err)
 			return
 		}
@@ -504,12 +526,13 @@ func (m *Model) tagForm(row TreeRow) {
 }
 
 func (m *Model) noteForm(row TreeRow) {
-	if row.IsBase || row.Node == nil {
-		m.message(L.Info, false, "Tags and notes apply to snapshots, not to the base image.")
+	label := snapLabel(row)
+	if label == "" {
+		m.message(L.Info, false, L.TagNotSnap)
 		return
 	}
-	m.form(L.NoteTitle+" "+row.Name, nil, []string{L.FieldNote}, []string{row.Node.Note}, func(v []string) {
-		if err := m.Svc.SetNote(m.image, row.Name, v[0]); err != nil {
+	m.form(L.NoteTitle+" "+label, nil, []string{L.FieldNote}, []string{row.Node.Note}, func(v []string) {
+		if err := m.Svc.SetNote(m.image, label, v[0]); err != nil {
 			m.fail(err)
 			return
 		}
@@ -532,44 +555,42 @@ func (m *Model) pruneMenu() {
 			m.message(L.Info, false, L.PruneNothing)
 			return
 		}
-		m.confirm(L.PruneAsk, true, []string{"dry-run result: would delete " + fmt.Sprint(len(plan)) + " snapshot(s):", strings.Join(plan, ", ")}, func() {
+		m.confirm(L.PruneAsk, true, []string{"dry-run result: would delete " + fmt.Sprint(len(plan)) + " layer(s):", strings.Join(plan, ", ")}, func() {
 			if _, err := m.Svc.Prune(m.image, gc, false); err != nil {
 				m.fail(err)
 			}
 			m.reloadTree()
-			m.sayf("deleted %d snapshot(s)", len(plan))
+			m.sayf("deleted %d layer(s)", len(plan))
 		})
 	})
 }
 
 func (m *Model) flattenForm(row TreeRow) {
-	node := "base"
-	if !row.IsBase {
-		node = row.Name
-	}
-	if row.IsBase {
-		m.message(L.Info, false, "Select a snapshot to flatten.")
+	label := snapLabel(row)
+	if label == "" {
+		m.message(L.Info, false, L.SelectSnap)
 		return
 	}
-	m.form(L.FlattenTitle+" "+node, []string{"Creates a new image with the snapshot merged into the base (needs root; may take a while)."},
-		[]string{L.FieldName}, []string{m.image + "-" + node}, func(v []string) {
+	m.form(L.FlattenTitle+" "+label, []string{"Creates a new image with the snapshot merged into the base (needs root; may take a while)."},
+		[]string{L.FieldName}, []string{m.image + "-flat-" + label}, func(v []string) {
 			name, img := strings.TrimSpace(v[0]), m.image
-			m.startOp("flatten "+img+"@"+node+" -> "+name, func(ctx context.Context, w io.Writer) error {
-				return m.Svc.Flatten(ctx, img, node, name, w)
+			m.startOp("flatten "+img+"@"+label+" -> "+name, func(ctx context.Context, w io.Writer) error {
+				return m.Svc.Flatten(ctx, img, label, name, w)
 			}, m.after("flatten"))
 		})
 }
 
 func (m *Model) exportForm(row TreeRow) {
-	if row.IsBase {
-		m.message(L.Info, false, "Select a snapshot to export.")
+	label := snapLabel(row)
+	if label == "" {
+		m.message(L.Info, false, L.SelectSnap)
 		return
 	}
 	kind, path := m.Svc.ExportDefault(m.image)
-	m.form(L.ExportTitle+" "+row.Name, []string{"Format: " + kind}, []string{L.FieldOut}, []string{path}, func(v []string) {
-		img, node, out := m.image, row.Name, strings.TrimSpace(v[0])
-		m.startOp("export "+img+"@"+node, func(ctx context.Context, w io.Writer) error {
-			return m.Svc.Export(ctx, img, node, out, w)
+	m.form(L.ExportTitle+" "+label, []string{"Format: " + kind}, []string{L.FieldOut}, []string{path}, func(v []string) {
+		img, out := m.image, strings.TrimSpace(v[0])
+		m.startOp("export "+img+"@"+label, func(ctx context.Context, w io.Writer) error {
+			return m.Svc.Export(ctx, img, label, out, w)
 		}, m.after("export"))
 	})
 }

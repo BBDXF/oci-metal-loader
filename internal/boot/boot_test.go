@@ -36,7 +36,7 @@ func setup(t *testing.T, sha string, tree *snapshot.Tree, extra string) (*fx, *c
 	if sha == "good" {
 		sha = f.sha
 	}
-	y := "name: u\ntype: vm\nformat: raw\nbase: " + base + "\n"
+	y := "name: u\ntype: lxd-vm\nformat: raw\nbase: " + base + "\n"
 	if sha != "" {
 		y += "sha256: " + sha + "\n"
 	}
@@ -57,14 +57,6 @@ func setup(t *testing.T, sha string, tree *snapshot.Tree, extra string) (*fx, *c
 	return f, res
 }
 
-func chain3() *snapshot.Tree {
-	t := snapshot.New("u", "")
-	t.Create("a", "")
-	t.Create("b", "")
-	t.Create("c", "")
-	return t
-}
-
 func run(t *testing.T, f *fx, res *config.Resolved) (*DryRunner, string, error) {
 	p, err := BuildPlan(f.o, res, f.dir)
 	if err != nil {
@@ -81,18 +73,18 @@ func TestChainOfThree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dev != "/dev/mapper/oml-u-c" {
+	if dev != "/dev/mapper/oml-u-n3" {
 		t.Fatal(dev)
 	}
 	all := strings.Join(r.Cmds, "\n")
 	for _, w := range []string{
 		"losetup -r -f --show " + filepath.Join(f.dir, "base.raw"),
-		"dmsetup create oml-u-a --table '0 2048 snapshot /dev/loop0 /dev/loop1 P 8'",
-		"dmsetup create oml-u-b --table '0 2048 snapshot /dev/mapper/oml-u-a /dev/loop2 P 8'",
-		"dmsetup create oml-u-c --table '0 2048 snapshot /dev/mapper/oml-u-b /dev/loop3 P 8'",
-		"truncate -s 1048576 " + filepath.Join(f.snap, "u", "c.cow"),
-		"kpartx -a -v /dev/mapper/oml-u-c",
-		"mount -o ro /dev/mapper/oml-u-c",
+		"dmsetup create oml-u-n1 --table '0 2048 snapshot /dev/loop0 /dev/loop1 P 8'",
+		"dmsetup create oml-u-n2 --table '0 2048 snapshot /dev/mapper/oml-u-n1 /dev/loop2 P 8'",
+		"dmsetup create oml-u-n3 --table '0 2048 snapshot /dev/mapper/oml-u-n2 /dev/loop3 P 8'",
+		"truncate -s 1048576 " + filepath.Join(f.snap, "u", "n3.cow"),
+		"kpartx -a -v /dev/mapper/oml-u-n3",
+		"mount -o ro /dev/mapper/oml-u-n3",
 		"--initrd=",
 		"kexec -e",
 	} {
@@ -100,21 +92,20 @@ func TestChainOfThree(t *testing.T) {
 			t.Errorf("missing %q in:\n%s", w, all)
 		}
 	}
-	if !strings.Contains(all, "'--command-line=root=/dev/mapper/oml-u-c1 rw rdinit=/omloader/preinit omloader.plan=/omloader/plan.json'") {
+	if !strings.Contains(all, "'--command-line=root=/dev/mapper/oml-u-n3p1 rw rdinit=/omloader/preinit omloader.plan=/omloader/plan.json'") {
 		t.Errorf("cmdline:\n%s", all)
 	}
 }
 
 func TestPartialChain(t *testing.T) {
 	f, res := setup(t, "good", chain3(), "")
-	f.o.Snapshot = "b"
-	f.o.Force = true
+	f.o.Snapshot = "b" // frozen snapshot: ephemeral child on top, snapshot itself untouched
 	r, dev, err := run(t, f, res)
-	if err != nil || dev != "/dev/mapper/oml-u-b" {
+	if err != nil || dev != "/dev/mapper/oml-u-n4" {
 		t.Fatal(dev, err)
 	}
-	if strings.Contains(strings.Join(r.Cmds, "\n"), "oml-u-c") {
-		t.Fatal("c must not be used")
+	if strings.Contains(strings.Join(r.Cmds, "\n"), "oml-u-n3") {
+		t.Fatal("live layer must not be part of the snapshot boot")
 	}
 }
 
@@ -139,23 +130,75 @@ func TestBaseEphemeralChild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(p.Layers) != 1 || !strings.HasPrefix(p.Layers[0].Node, "tmp-") || p.Tree.Nodes[p.Layers[0].Node].Parent != "" {
+	if len(p.Layers) != 1 || !p.Tree.Nodes[p.Layers[0].Node].Ephemeral || p.Tree.Nodes[p.Layers[0].Node].Parent != "" || !p.Ephemeral {
 		t.Fatalf("%+v", p.Layers)
 	}
-	if p.Tree.Current != "c" {
-		t.Fatalf("current must be unchanged, got %q", p.Tree.Current)
+	if p.Tree.Current != "n3" {
+		t.Fatalf("live node must be unchanged, got %q", p.Tree.Current)
 	}
 }
 
-func TestRefuseNonLeaf(t *testing.T) {
+func TestContinueCurrentNoNewLayer(t *testing.T) {
 	f, res := setup(t, "good", chain3(), "")
-	f.o.Snapshot = "a"
-	if _, err := BuildPlan(f.o, res, f.dir); err == nil || !strings.Contains(err.Error(), "has children") {
+	for i := 0; i < 2; i++ {
+		p, err := BuildPlan(f.o, res, f.dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p.Target != "n3" || len(p.Layers) != 3 || p.NewTree || len(p.Tree.Nodes) != 3 || p.Ephemeral {
+			t.Fatalf("booting current continues the live layer: %+v", p)
+		}
+	}
+}
+
+func TestLazyLiveAfterRevert(t *testing.T) {
+	f, res := setup(t, "good", mkTree("u", false, "a"), "")
+	p, err := BuildPlan(f.o, res, f.dir)
+	if err != nil {
 		t.Fatal(err)
 	}
-	f.o.Force = true
-	if _, err := BuildPlan(f.o, res, f.dir); err != nil {
+	if !p.NewTree || len(p.Layers) != 2 || p.Layers[0].Node != "n1" || p.Tree.Nodes[p.Target].Parent != "n1" || p.Tree.Current != p.Target {
+		t.Fatalf("%+v", p)
+	}
+}
+
+func TestEphemeralCurrentAndLeftoversGC(t *testing.T) {
+	tr := chain3()
+	tr.AddNode("n3", true) // stale ephemeral from an earlier boot
+	f, res := setup(t, "good", tr, "")
+	f.o.Ephemeral = true
+	p, err := BuildPlan(f.o, res, f.dir)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if len(p.Layers) != 4 || !p.Ephemeral || p.Tree.Nodes[p.Target].Parent != "n3" || len(p.Tree.Ephemerals()) != 1 {
+		t.Fatalf("dry-run drops stale ephemerals in memory and adds one: %+v", p.Tree.Nodes)
+	}
+}
+
+func TestRealBootGCsEphemeralLeftovers(t *testing.T) {
+	tr := chain3()
+	e := tr.AddNode("n3", true)
+	f, res := setup(t, "good", tr, "")
+	f.o.DryRun = false
+	os.WriteFile(filepath.Join(f.snap, "u", e+".cow"), []byte("x"), 0o644)
+	p, err := BuildPlan(f.o, res, f.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := p.Tree.Nodes[e]; ok || p.Target != "n3" {
+		t.Fatal("leftover must be gc'd before the plan")
+	}
+	if _, err := os.Stat(filepath.Join(f.snap, "u", e+".cow")); err == nil {
+		t.Fatal("leftover layer file must be deleted")
+	}
+}
+
+func TestRefuseReservedAndOldType(t *testing.T) {
+	f, res := setup(t, "good", chain3(), "")
+	f.o.Snapshot = "new:x"
+	if _, err := BuildPlan(f.o, res, f.dir); err == nil {
+		t.Fatal("new:<name> is gone")
 	}
 }
 
@@ -183,19 +226,19 @@ func TestSnapshotNotFound(t *testing.T) {
 
 func TestNewSnapshotAndRootPartition(t *testing.T) {
 	f, res := setup(t, "good", chain3(), "  root_partition: 2\n")
-	f.o.Snapshot = "new:d"
+	f.o.Ephemeral = true
 	p, err := BuildPlan(f.o, res, f.dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(p.Layers) != 4 || p.Layers[3].Node != "d" || !p.NewTree {
+	if len(p.Layers) != 4 || !p.NewTree {
 		t.Fatalf("%+v", p.Layers)
 	}
 	r := &DryRunner{}
 	if _, err := Execute(f.o, res, p, r); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(strings.Join(r.Cmds, "\n"), "mount -o ro /dev/mapper/oml-u-d2") {
+	if !strings.Contains(strings.Join(r.Cmds, "\n"), "mount -o ro /dev/mapper/oml-u-n4p2") {
 		t.Fatal(r.Cmds)
 	}
 }
@@ -241,7 +284,7 @@ func TestGuestInitrdAndSymlinks(t *testing.T) {
 		t.Errorf("kernel symlink not resolved inside root:\n%s", all)
 	}
 	gp := cap.Plan
-	if gp == nil || len(gp.Layers) != 3 || len(gp.Storages) != 1 && len(gp.Storages) != 2 || len(gp.Modules) != 1 || gp.RootIndex != 1 || gp.RootDev != "/dev/mapper/oml-u-c1" {
+	if gp == nil || len(gp.Layers) != 3 || len(gp.Storages) != 1 && len(gp.Storages) != 2 || len(gp.Modules) != 1 || gp.RootIndex != 1 || gp.RootDev != "/dev/mapper/oml-u-n3p1" {
 		t.Fatalf("%+v", gp)
 	}
 	if gp.Layers[0].Cow.Rel == "" || gp.Storages[0].UUID == "" && gp.Storages[0].Label == "" {
@@ -263,15 +306,15 @@ func TestGuestInitrdAndSymlinks(t *testing.T) {
 }
 
 func TestGuestAssemble(t *testing.T) {
-	gp := &GuestPlan{Version: 1, Image: "u", Sectors: 2048, BaseDM: "oml-u-base", RootIndex: 1, RootDev: "/dev/mapper/oml-u-b1",
+	gp := &GuestPlan{Version: 1, Image: "u", Sectors: 2048, BaseDM: "oml-u-base", RootIndex: 1, RootDev: "/dev/mapper/oml-u-n2p1",
 		Storages: []StorageRef{{ID: "s0", UUID: "U0", FSType: "exfat"}, {ID: "s1", UUID: "U1", FSType: "ext4", RW: true}},
 		Base:     FileRef{"s0", "images/u/base.raw"},
-		Layers:   []GuestLayer{{"a", "oml-u-a", FileRef{"s1", "snapshots/u/a.cow"}}, {"b", "oml-u-b", FileRef{"s1", "snapshots/u/b.cow"}}},
+		Layers:   []GuestLayer{{"a", "oml-u-n1", FileRef{"s1", "snapshots/u/a.cow"}}, {"b", "oml-u-n2", FileRef{"s1", "snapshots/u/b.cow"}}},
 		Modules:  []string{"/omloader/modules/000-x.ko"}}
 	r := &DryRunner{}
 	mr := t.TempDir()
 	root, err := GuestAssemble(gp, r, GuestOptions{MountPrefix: mr + "/m-", Tries: 1, Delay: time.Millisecond, DevExists: func(string) bool { return true }})
-	if err != nil || root != "/dev/mapper/oml-u-b1" {
+	if err != nil || root != "/dev/mapper/oml-u-n2p1" {
 		t.Fatal(root, err)
 	}
 	all := strings.Join(r.Cmds, "\n")
@@ -280,9 +323,9 @@ func TestGuestAssemble(t *testing.T) {
 		"blkid -U U0", "mount -t exfat -o ro /dev/dry-by-uuid " + mr + "/m-s0",
 		"mount -t ext4 -o rw /dev/dry-by-uuid " + mr + "/m-s1",
 		"losetup -r -f --show " + mr + "/m-s0/images/u/base.raw",
-		"dmsetup create oml-u-a --table '0 2048 snapshot /dev/loop0 /dev/loop1 P 8'",
-		"dmsetup create oml-u-b --table '0 2048 snapshot /dev/mapper/oml-u-a /dev/loop2 P 8'",
-		"kpartx -a -v /dev/mapper/oml-u-b",
+		"dmsetup create oml-u-n1 --table '0 2048 snapshot /dev/loop0 /dev/loop1 P 8'",
+		"dmsetup create oml-u-n2 --table '0 2048 snapshot /dev/mapper/oml-u-n1 /dev/loop2 P 8'",
+		"kpartx -a -v /dev/mapper/oml-u-n2",
 	} {
 		if !strings.Contains(all, w) {
 			t.Errorf("missing %q in:\n%s", w, all)

@@ -39,7 +39,7 @@ Disk: p1 exfat `VTOYDATA` (populated with exfat-fuse in rootless podman, ext4 fa
 ## M3 (container boot; OCI fixture = experimental, opt-in via omloader.experimental=oci)
 `make e2e-oci` -> `test/e2e-oci.sh`: ISO, `test/make-fixture-oci.sh` (podman build of `test/fixture-oci/Containerfile` on debian:bookworm-slim + systemd,
 `podman save --format oci-archive`, `omloader import oci-archive` -> `out/oci-images/omloci`), `NO_VM=1 test/make-disk.sh` (disk includes `out/oci-images/*`,
-and the VM fixture if present), then boots `new:run1`, `base`, `run1`. `autoboot.sh` does the `systemctl switch-root` handoff (see top-level README).
+and the VM fixture if present), then boots current, `base`, current again. `autoboot.sh` does the `systemctl switch-root` handoff (see top-level README).
 bookworm-slim is pulled via the daocloud mirror and tagged like bookworm (see above); falls back to bookworm.
 
 ## M2 (snapshot management)

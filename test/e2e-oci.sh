@@ -25,16 +25,19 @@ check_common() { # $1 = log
   grep -q 'OMLOADER_GUEST_NET=lease' $W/$1.clean && pass "$1: systemd-networkd got a DHCP lease" || fail "$1: no DHCP lease"
   grep -q 'OMLOADER_GUEST_HOSTNAME=omloci' $W/$1.clean && pass "$1: hostname from runtime.hostname" || fail "$1: hostname"
 }
-boot new:run1 oci1
+boot "" oci1
 check_common oci1
-grep -q 'firstboot adapter applied' $W/oci1.clean && pass "(a) firstboot adapter applied on new:run1" || fail "(a) adapter message missing"
-[ "$GOT" = 1 ] && pass "(b) new:run1 counter==1" || fail "(b) counter='$GOT' expected 1"
-boot base oci2
+grep -q 'firstboot adapter applied' $W/oci1.clean && pass "(a) firstboot adapter applied on the first boot of current" || fail "(a) adapter message missing"
+[ "$GOT" = 1 ] && pass "(b) first boot counter==1" || fail "(b) counter='$GOT' expected 1"
+boot "" oci2
 check_common oci2
-[ "$GOT" = 1 ] && pass "(c) --snapshot base (ephemeral tmp-* child) counter==1 (base untouched)" || fail "(c) base counter='$GOT' expected 1"
-boot run1 oci3
+grep -q 'firstboot adapter applied' $W/oci2.clean && fail "(c) adapter re-applied on the continued live state" || pass "(c) adapter marker honoured when current is booted again"
+[ "$GOT" = 2 ] && pass "(d) booting current again continues the same live layer: counter==2" || fail "(d) counter='$GOT' expected 2"
+boot base oci3
 check_common oci3
-grep -q 'firstboot adapter applied' $W/oci3.clean && fail "(d) adapter re-applied on run1" || pass "(d) adapter marker honoured on run1"
-[ "$GOT" = 2 ] && pass "(e) run1 (leaf) counter==2 (upper layer persisted)" || fail "(e) run1 counter='$GOT' expected 2"
+[ "$GOT" = 1 ] && pass "(e) --snapshot base (ephemeral child) counter==1 (base untouched)" || fail "(e) base counter='$GOT' expected 1"
+boot "" oci4
+check_common oci4
+[ "$GOT" = 3 ] && pass "(f) current after the ephemeral boot: counter==3 (upper layer persisted, ephemeral discarded)" || fail "(f) counter='$GOT' expected 3"
 [ $FAIL = 0 ] && echo "E2E-OCI: ALL PASS" || echo "E2E-OCI: FAILED"
 exit $FAIL

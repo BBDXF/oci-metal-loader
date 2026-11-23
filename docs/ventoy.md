@@ -32,7 +32,7 @@ Create `omloader/boot.yaml` on VTOYDATA (or `/omloader/boot.yaml` next to the IS
 ```yaml
 boot:
   default_image: myimage        # empty/absent = just the shell
-  default_snapshot: new:run1    # optional (default "current")
+  default_snapshot: current    # optional (default "current"; a snapshot label boots it ephemerally)
   timeout: 5                    # seconds countdown; press Enter on the serial console or keyboard to get a shell instead
   extra_cmdline_flags: [poweroff_on_fail=1]   # omloader.<flag> equivalents: poweroff_on_fail=1, experimental=oci, ...
 ```

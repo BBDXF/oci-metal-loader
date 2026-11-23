@@ -16,7 +16,7 @@ set -e; mkdir -p $W
 if [ -z "${SKIP_BUILD:-}" ]; then
   $ROOT/build/build-iso.sh; $T/make-fixture-oci.sh
   rm -rf $W/vtoy-extra; mkdir -p $W/vtoy-extra/omloader
-  printf 'boot:\n  default_image: omloci\n  default_snapshot: new:run1\n  timeout: 4\n  extra_cmdline_flags: [poweroff_on_fail=1, experimental=oci]\n' > $W/vtoy-extra/omloader/boot.yaml
+  printf 'boot:\n  default_image: omloci\n  default_snapshot: current\n  timeout: 4\n  extra_cmdline_flags: [poweroff_on_fail=1, experimental=oci]\n' > $W/vtoy-extra/omloader/boot.yaml
   VTOY_EXTRA=$W/vtoy-extra NO_VM=1 $T/make-disk.sh
 fi
 cat > $W/ventoy-test.json <<'JSON'
@@ -71,7 +71,7 @@ for mode in ${MODES:-normal grub2}; do
     echo "--- $mode auto: $(stage1line $tag)"; grep -a 'boot config\|booting .omloci\|auto boot image' $W/$tag.clean | head -4
     grep -aq 'OMLOADER_LOADER: boot config /mnt/images/omloader/boot.yaml: default_image=omloci' $W/$tag.clean && pass "Ventoy $mode mode: boot.yaml on VTOYDATA found, countdown printed" || fail "Ventoy $mode: boot config not announced"
     grep -aq 'OMLOADER_GUEST_OK' $W/$tag.clean && pass "Ventoy $mode mode: container fixture auto-booted from boot.yaml (OMLOADER_GUEST_OK)" || fail "Ventoy $mode: fixture did not boot"
-    [ "$(grep -ao 'OMLOADER_COUNTER=[0-9]*' $W/$tag.clean | tail -1)" = OMLOADER_COUNTER=1 ] && pass "Ventoy $mode mode: default_snapshot new:run1 -> counter==1" || fail "Ventoy $mode: counter"
+    [ "$(grep -ao 'OMLOADER_COUNTER=[0-9]*' $W/$tag.clean | tail -1)" = OMLOADER_COUNTER=1 ] && pass "Ventoy $mode mode: default_snapshot current -> counter==1" || fail "Ventoy $mode: counter"
   else fail "Ventoy $mode mode auto-boot: no marker (see $W/$tag.clean)"; grep -a 'STAGE1\|FATAL\|boot config\|OMLOADER_LOADER' $W/$tag.clean | tail -8; fi
   stop $tag
 done

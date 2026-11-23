@@ -89,10 +89,9 @@ type Retention struct {
 	KeepTagged     bool `yaml:"keep_tagged" json:"keep_tagged"`           // prune never deletes tagged snapshots
 }
 type SnapshotCfg struct {
-	MaxChainDepth      int       `yaml:"max_chain_depth" json:"max_chain_depth"`
-	Persistent         bool      `yaml:"persistent" json:"persistent"`
-	AutoSnapshotOnBoot bool      `yaml:"auto_snapshot_on_boot" json:"auto_snapshot_on_boot"`
-	Retention          Retention `yaml:"retention" json:"retention"`
+	MaxChainDepth int       `yaml:"max_chain_depth" json:"max_chain_depth"`
+	Persistent    bool      `yaml:"persistent" json:"persistent"`
+	Retention     Retention `yaml:"retention" json:"retention"`
 }
 type Verify struct {
 	BaseChecksum string `yaml:"base_checksum" json:"base_checksum"`

@@ -83,7 +83,7 @@ func TestProbeAndImportVM(t *testing.T) {
 		t.Fatal(err)
 	}
 	y, _ := os.ReadFile(filepath.Join(d, "image.yaml"))
-	for _, w := range []string{"type: vm", "format: raw", "base: base.raw", "root_partition: 2", "path: /boot/vmlinuz-6.8.0-10-generic", "initrd: /boot/initrd.img-6.8.0-10-generic", "mode: dm-snapshot", "sha256: "} {
+	for _, w := range []string{"type: lxd-vm", "format: raw", "base: base.raw", "root_partition: 2", "path: /boot/vmlinuz-6.8.0-10-generic", "initrd: /boot/initrd.img-6.8.0-10-generic", "mode: dm-snapshot", "sha256: "} {
 		if !strings.Contains(string(y), w) {
 			t.Errorf("image.yaml lacks %q:\n%s", w, y)
 		}

@@ -52,13 +52,17 @@ func ParseCowHeader(b []byte) (CowState, error) {
 }
 
 // Problem is one verify finding.
-type Problem struct{ Node, Msg string }
+type Problem struct {
+	Node, Msg string
+	Warn      bool // informational: does not fail verify
+}
 
 func (p Problem) String() string {
-	if p.Node == "" {
-		return p.Msg
+	m := p.Msg
+	if p.Node != "" {
+		m = p.Node + ": " + p.Msg
 	}
-	return p.Node + ": " + p.Msg
+	return m
 }
 
 // VerifyOptions tunes Verify.
@@ -69,21 +73,14 @@ type VerifyOptions struct {
 // Verify checks tree.json against the on-disk layers and the base checksum. Read-only.
 func (s *Store) Verify(o VerifyOptions) []Problem {
 	var ps []Problem
-	add := func(n, f string, a ...any) { ps = append(ps, Problem{n, fmt.Sprintf(f, a...)}) }
+	add := func(n, f string, a ...any) { ps = append(ps, Problem{Node: n, Msg: fmt.Sprintf(f, a...)}) }
 	t := s.Tree
-	for n, nd := range t.Nodes {
-		if nd.Parent != "" {
-			if _, ok := t.Nodes[nd.Parent]; !ok {
-				add(n, "missing parent %q", nd.Parent)
-			}
-		}
+	if err := t.Validate(); err != nil {
+		add("", "tree.json: %v", err)
 	}
-	if c := t.FindCycle(); c != "" {
-		add(c, "cycle in snapshot tree")
-	}
-	if t.Current != "" {
-		if _, ok := t.Nodes[t.Current]; !ok {
-			add("", "current %q does not exist", t.Current)
+	for _, n := range t.Names() {
+		if t.Nodes[n].Ephemeral {
+			ps = append(ps, Problem{Node: n, Msg: "ephemeral node left over from an ephemeral boot (removed automatically by the next boot/snapshot operation, or `omloader snapshot gc`)", Warn: true})
 		}
 	}
 	if s.BaseSHA != "" && t.BaseSHA256 != "" && !strings.EqualFold(s.BaseSHA, t.BaseSHA256) {
@@ -99,7 +96,7 @@ func (s *Store) Verify(o VerifyOptions) []Problem {
 	if s.Mode == ModeNone {
 		return ps
 	}
-	known := map[string]bool{"tree.json": true, "tree.json.tmp": true}
+	known := map[string]bool{"tree.json": true, "tree.json.tmp": true, "in-use.json": true}
 	for _, n := range t.Names() {
 		switch s.Mode {
 		case ModeDM:
@@ -163,4 +160,15 @@ func readHeader(p string) ([]byte, error) {
 		return nil, err
 	}
 	return b[:n], nil
+}
+
+// CountProblems counts the findings that fail verify (warnings do not).
+func CountProblems(ps []Problem) int {
+	n := 0
+	for _, p := range ps {
+		if !p.Warn {
+			n++
+		}
+	}
+	return n
 }

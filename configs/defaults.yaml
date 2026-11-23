@@ -19,7 +19,6 @@ storage:
 snapshot:
   max_chain_depth: 5
   persistent: true
-  auto_snapshot_on_boot: false
   retention:
     keep_last: 10
     min_free_percent: 10

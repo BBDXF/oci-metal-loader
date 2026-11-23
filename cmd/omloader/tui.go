@@ -108,7 +108,7 @@ func tuiBoot(s *realSvc, req tui.BootRequest, out, errw io.Writer) int {
 	}
 	udev := func(q string) { exec := &boot.ExecRunner{}; exec.Run("udevadm", "control", q) }
 	udev("--stop-exec-queue")
-	rc := runBoot(s.bootArgs(req.Image, req.Snapshot, req.Force), out, errw)
+	rc := runBoot(s.bootArgs(req.Image, req.Snapshot, req.Ephemeral), out, errw)
 	if rc != 0 {
 		udev("--start-exec-queue")
 	}
@@ -124,7 +124,7 @@ type realSvc struct {
 
 func (s *realSvc) cfg() (*config.Config, error) { return loadCfg(s.cfgPath) }
 
-func (s *realSvc) bootArgs(image, snap string, force bool) []string {
+func (s *realSvc) bootArgs(image, snap string, eph bool) []string {
 	a := []string{"--image", image}
 	if snap != "" {
 		a = append(a, "--snapshot", snap)
@@ -136,19 +136,19 @@ func (s *realSvc) bootArgs(image, snap string, force bool) []string {
 	if s.dataRoot != "" {
 		a = append(a, "--data-root", s.dataRoot)
 	}
-	if force {
-		a = append(a, "--force")
+	if eph {
+		a = append(a, "--ephemeral")
 	}
 	return a
 }
 
-func (s *realSvc) BootArgs(image, snap string, force bool) []string {
-	return append([]string{"omloader", "boot"}, s.bootArgs(image, snap, force)...)
+func (s *realSvc) BootArgs(image, snap string, eph bool) []string {
+	return append([]string{"omloader", "boot"}, s.bootArgs(image, snap, eph)...)
 }
 
-func (s *realSvc) BootPreview(ctx context.Context, image, snap string, force bool, w io.Writer) error {
+func (s *realSvc) BootPreview(ctx context.Context, image, snap string, eph bool, w io.Writer) error {
 	setOpCtx(ctx)
-	if rc := runBoot(append(s.bootArgs(image, snap, force), "--dry-run"), w, w); rc != 0 {
+	if rc := runBoot(append(s.bootArgs(image, snap, eph), "--dry-run"), w, w); rc != 0 {
 		return fmt.Errorf("dry-run failed (rc=%d)", rc)
 	}
 	return nil
@@ -214,7 +214,10 @@ func (s *realSvc) Images() ([]tui.ImageInfo, error) {
 		}
 		tp := filepath.Join(s.snapRoot, e.Name(), "tree.json")
 		if st, err := snapmgr.Open(s.snapRoot, e.Name(), false); err == nil {
-			im.Snaps, im.Current = len(st.Tree.Nodes), st.Tree.Current
+			im.Snaps = len(st.Tree.Labels())
+			if h := st.Tree.Head(); h != "" {
+				im.Current = st.Tree.Display(h)
+			}
 			im.BaseOK = "ok"
 			if t, sh := st.Tree.BaseSHA256, res.Image.SHA256; t != "" && sh != "" && !strings.EqualFold(t, sh) {
 				im.BaseOK = "MISMATCH"
@@ -224,11 +227,7 @@ func (s *realSvc) Images() ([]tui.ImageInfo, error) {
 				if res.Image.Snapshots.Mode == snapmgr.ModeOverlay {
 					p = filepath.Join(s.snapRoot, e.Name(), st.Tree.Current, "upper")
 				} else {
-					f := st.Tree.Nodes[st.Tree.Current].File
-					if f == "" {
-						f = st.Tree.Current + ".cow"
-					}
-					p = filepath.Join(s.snapRoot, e.Name(), f)
+					p = filepath.Join(s.snapRoot, e.Name(), st.Tree.Nodes[st.Tree.Current].File)
 				}
 			}
 			if fi, err := os.Stat(p); err == nil {
@@ -247,61 +246,65 @@ func (s *realSvc) Tree(image string) (*tui.TreeInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	t := &tui.TreeInfo{Image: image, Mode: st.Mode, Current: st.Tree.Current}
+	t := &tui.TreeInfo{Image: image, Mode: st.Mode, Current: st.Tree.Current, Head: st.Tree.Head()}
 	if res != nil {
 		t.Type = res.Image.Type
 	}
 	for _, n := range st.Tree.Names() {
 		nd := st.Tree.Nodes[n]
 		_, al := st.Usage(n)
-		t.Nodes = append(t.Nodes, tui.NodeInfo{Name: n, Parent: nd.Parent, Created: nd.Created, Note: nd.Note, Tags: nd.Tags,
-			Alloc: al, NoLayer: st.Mode != snapmgr.ModeNone && !st.LayerExists(n)})
+		t.Nodes = append(t.Nodes, tui.NodeInfo{Name: n, Parent: nd.Parent, Label: nd.Label, Created: nd.Created, Note: nd.Note, Tags: nd.Tags,
+			Alloc: al, NoLayer: st.Mode != snapmgr.ModeNone && !st.LayerExists(n), Live: n == st.Tree.Current, Ephemeral: nd.Ephemeral})
 	}
 	return t, nil
 }
 
-func (s *realSvc) Create(image, name, from, note string, tags []string) error {
+func (s *realSvc) Create(image, label, note string, tags []string) error {
 	st, _, err := s.open(image, true)
 	if err != nil {
 		return err
 	}
-	return st.Create(name, from, note, tags)
+	return st.Create(label, note, tags)
 }
 
-func (s *realSvc) Rollback(image, node string, discard bool) error {
+func (s *realSvc) Revert(image, target, keep string) error {
 	st, _, err := s.open(image, false)
 	if err != nil {
 		return err
 	}
-	return st.Rollback(node, discard)
+	return st.Revert(target, keep)
 }
 
-func (s *realSvc) DeletePlan(image, node string, rec, force bool) ([]string, error) {
+func (s *realSvc) DeletePlan(image, label string, rec, force bool) ([]string, error) {
 	st, _, err := s.open(image, false)
 	if err != nil {
 		return nil, err
 	}
-	return st.Tree.PlanDelete(node, rec, force)
+	pl, err := st.PlanDelete(label, rec, force)
+	if err != nil {
+		return nil, err
+	}
+	return pl.Desc, nil
 }
 
-func (s *realSvc) Delete(image, node string, rec, force bool) error {
+func (s *realSvc) Delete(image, label string, rec, force bool) error {
 	st, _, err := s.open(image, false)
 	if err != nil {
 		return err
 	}
-	_, err = st.Delete(node, rec, force)
+	_, err = st.Delete(label, rec, force)
 	return err
 }
 
-func (s *realSvc) Tag(image, node, tag string, remove bool) error {
+func (s *realSvc) Tag(image, label, tag string, remove bool) error {
 	st, _, err := s.open(image, false)
 	if err != nil {
 		return err
 	}
 	if remove {
-		err = st.Tree.Untag(node, tag)
+		err = st.Tree.Untag(label, tag)
 	} else {
-		err = st.Tree.Tag(node, tag)
+		err = st.Tree.Tag(label, tag)
 	}
 	if err != nil {
 		return err
@@ -309,12 +312,12 @@ func (s *realSvc) Tag(image, node, tag string, remove bool) error {
 	return st.Save()
 }
 
-func (s *realSvc) SetNote(image, node, note string) error {
+func (s *realSvc) SetNote(image, label, note string) error {
 	st, _, err := s.open(image, false)
 	if err != nil {
 		return err
 	}
-	if err := st.Tree.SetNote(node, note); err != nil {
+	if err := st.Tree.SetNote(label, note); err != nil {
 		return err
 	}
 	return st.Save()
@@ -326,7 +329,11 @@ func (s *realSvc) Prune(image string, gc, dry bool) ([]string, error) {
 		return nil, err
 	}
 	if gc {
-		return st.GC(24*time.Hour, dry)
+		ids, err := st.GCEphemeral(dry)
+		for i, id := range ids {
+			ids[i] = st.Tree.Display(id)
+		}
+		return ids, err
 	}
 	return st.Prune(dry)
 }
@@ -338,12 +345,16 @@ func (s *realSvc) Verify(ctx context.Context, image string, deep bool, w io.Writ
 	}
 	ps := st.Verify(snapmgr.VerifyOptions{Deep: deep})
 	for _, p := range ps {
-		fmt.Fprintln(w, "PROBLEM:", p)
+		if p.Warn {
+			fmt.Fprintln(w, "NOTE:", p)
+		} else {
+			fmt.Fprintln(w, "PROBLEM:", p)
+		}
 	}
-	if len(ps) > 0 {
-		return fmt.Errorf("verify %s: %d problem(s)", image, len(ps))
+	if n := snapmgr.CountProblems(ps); n > 0 {
+		return fmt.Errorf("verify %s: %d problem(s)", image, n)
 	}
-	fmt.Fprintf(w, "verify %s: OK (%d snapshots, mode=%q)\n", image, len(st.Tree.Nodes), st.Mode)
+	fmt.Fprintf(w, "verify %s: OK (%d snapshots, mode=%q)\n", image, len(st.Tree.Labels()), st.Mode)
 	return nil
 }
 
@@ -376,6 +387,9 @@ func (s *realSvc) Flatten(ctx context.Context, image, node, name string, w io.Wr
 	}
 	r := streamRunner{ctx, w, &boot.ExecRunner{}}
 	var d string
+	if node, err = st.Tree.ResolveSnapshot(node, false); err != nil {
+		return err
+	}
 	if st.Mode == snapmgr.ModeOverlay {
 		d, err = boot.FlattenOverlay(r, boot.FlattenOptions{SnapRoot: s.snapRoot, ImagesRoot: s.imagesRoot, Image: image, Node: node, NewName: name})
 	} else {
@@ -405,6 +419,9 @@ func (s *realSvc) Export(ctx context.Context, image, node, path string, w io.Wri
 		return err
 	}
 	r := streamRunner{ctx, w, &boot.ExecRunner{}}
+	if node, err = st.Tree.ResolveSnapshot(node, false); err != nil {
+		return err
+	}
 	if st.Mode == snapmgr.ModeOverlay {
 		err = boot.ExportSquashfs(r, s.snapRoot, image, node, path)
 	} else {

@@ -16,8 +16,8 @@ the current screen. UI text: English only, all strings live in `internal/tui/str
 
 | Screen | What it does |
 |---|---|
-| Images | name, type (`vm` / `lxd-container` / `oci (exp.)`), base size, base sha state (`ok`/`MISMATCH`/`-`), snapshot count, current snapshot, last use; `r` refresh, Enter opens the image |
-| Image detail | snapshot **tree** (current marker, `[frozen]`/`[leaf]`, `tmp-` ephemeral, tags, on-disk size) plus a pane with parent/created/tags/note. Actions: `b`/Enter **Boot** (current / selected / new named / base ephemeral), `c` create (name, note, tag), `r` rollback (`--discard` asks a warning), `d` delete (recursive + current need explicit confirmation), `t` tag (`-tag` removes), `n` note, `p` prune/GC (dry-run first, then confirm), `f` flatten, `e` export, `v` verify (optional deep) |
+| Images | name, type (`lxd-vm` / `lxd-container` / `oci (exp.)`), base size, base sha state (`ok`/`MISMATCH`/`-`), snapshot count, current snapshot, last use; `r` refresh, Enter opens the image |
+| Image detail | snapshot **tree**: root `base (original image)`, snapshots by label (`[frozen]`, tags, on-disk size), the live state as `● current (you are here)` (the snapshot it sits on is marked too; a live state that does not exist yet is shown as a placeholder and created at the next boot), ephemeral leftovers as `(ephemeral boot)`; a pane shows parent/created/tags/note. Actions: `b`/Enter **Boot** (menu: *continue current*; the selected snapshot read-only (ephemeral); current throwaway (ephemeral); base ephemeral), `c` **create snapshot** (label, note, tag), `r` **revert** to the selected snapshot or base (confirmation; alternative "keep the current live state as a snapshot..." asks for a label), `d` **delete** (confirmation; explains the merge into the child, refuses dm-snapshot merges with the flatten hint, extra confirmation when the whole subtree incl. the live state goes), `t` tag (`-tag` removes), `n` note, `p` prune/GC (dry-run first, then confirm; GC removes ephemeral leftovers), `f` flatten, `e` export, `v` verify (optional deep) |
 | Pull | configured sources (policy shown), `t` = `source test` with timings, Enter loads the catalog (`images list` backend), `/` filter (os / release / type), Enter on an image: name, confirm, background pull with streamed output, byte progress and speed (partial files in the cache), sha256 verification line. Offline / policy settings are honoured (`policy.allow_online`, `cache.offline`, `allowed_sources`) |
 | Storage | snapshot store: partition or store file (host fs, size, allocated, ext4 clean/dirty, attached), free space, space guard (`snapshot.retention.min_free_percent`); `c` create / grow store-file wizard (reuses `snapmgr` store code) |
 | Network | like `omloader net status` (`r` refresh, `t` also probes the sources) |
@@ -25,8 +25,9 @@ the current screen. UI text: English only, all strings live in `internal/tui/str
 
 ### Boot handoff
 
-Boot confirmation shows the exact `omloader boot ...` command, what it will do, and `d` streams a **dry-run preview**. Booting a
-snapshot that has children needs `--force`; the TUI shows an explicit warning dialog first. After the confirmation the TUI restores
+**Snapshots are created, reverted and deleted from the loader (CLI/TUI) before the image is booted; a running system cannot be snapshotted or reverted — shut it down, return to the loader, then manage snapshots (hot snapshots are not supported).**
+Booting *current* continues the live state (no new layer per boot); booting a snapshot or base is an ephemeral boot (`--snapshot <label>` / `--ephemeral`): nothing is kept and the snapshot is never modified.
+Boot confirmation shows the exact `omloader boot ...` command, what it will do, and `d` streams a **dry-run preview**. After the confirmation the TUI restores
 the terminal and runs `runBoot` in the foreground, i.e. **exactly the code path of `omloader boot`**: VM = dm-snapshot + kexec
 (never returns), container = mounts the root and writes `/run/omloader-switch`, then `omloader tui` exits 0 and
 `switch-root.sh` (the code formerly inline in `autoboot.sh`) runs `systemctl switch-root`. If the boot fails the error is printed and the TUI comes back after Enter.

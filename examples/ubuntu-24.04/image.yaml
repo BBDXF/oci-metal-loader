@@ -1,5 +1,5 @@
 name: ubuntu-24.04
-type: vm
+type: lxd-vm
 format: raw
 base: /images/ubuntu-24.04.raw
 sha256: "0000000000000000000000000000000000000000000000000000000000000000"

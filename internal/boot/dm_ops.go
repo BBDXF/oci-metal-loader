@@ -47,8 +47,8 @@ func loadDMImage(o DMOptions) (*dmImage, error) {
 	if err := yaml.Unmarshal(yb, &d.yaml); err != nil {
 		return nil, err
 	}
-	if d.yaml["type"] != "vm" {
-		return nil, fmt.Errorf("image %s is not a vm image (type %v)", o.Image, d.yaml["type"])
+	if d.yaml["type"] != "lxd-vm" {
+		return nil, fmt.Errorf("image %s is not an lxd-vm image (type %v)", o.Image, d.yaml["type"])
 	}
 	base, _ := d.yaml["base"].(string)
 	if base == "" {

@@ -171,19 +171,23 @@ func (r *Resolved) Validate() ErrorList {
 	if img.Name == "" {
 		add("image.name", "required")
 	}
-	enum("image.type", img.Type, "vm", "lxd-container", "oci")
+	if img.Type == "vm" {
+		add("image.type", "\"vm\" is no longer valid: use \"lxd-vm\"")
+	} else {
+		enum("image.type", img.Type, "lxd-vm", "lxd-container", "oci")
+	}
 	if img.Type == "oci" && !c.OCIEnabled() {
 		add("image.type", "%s", OCIDisabledMsg)
 	}
 	enum("image.format", img.Format, "raw", "squashfs")
 	enum("image.snapshots.mode", img.Snapshots.Mode, "dm-snapshot", "overlayfs")
 	switch img.Type {
-	case "vm":
+	case "lxd-vm":
 		if img.Format != "raw" {
-			add("image.format", "type vm requires format raw, got %q", img.Format)
+			add("image.format", "type lxd-vm requires format raw, got %q", img.Format)
 		}
 		if img.Snapshots.Mode != "dm-snapshot" {
-			add("image.snapshots.mode", "type vm requires dm-snapshot, got %q", img.Snapshots.Mode)
+			add("image.snapshots.mode", "type lxd-vm requires dm-snapshot, got %q", img.Snapshots.Mode)
 		}
 	case "lxd-container", "oci":
 		if img.Format != "squashfs" {
@@ -209,7 +213,7 @@ func (r *Resolved) Validate() ErrorList {
 	if img.Snapshots.MaxChainDepth < 1 {
 		add("image.snapshots.max_chain_depth", "must be >= 1")
 	}
-	if img.Type == "vm" && img.Kernel.Path == "" && img.Kernel.Initrd != "" {
+	if img.Type == "lxd-vm" && img.Kernel.Path == "" && img.Kernel.Initrd != "" {
 		add("image.kernel.path", "required when initrd is set")
 	}
 	for i, d := range img.Data {

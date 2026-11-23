@@ -18,7 +18,7 @@ const usage = `usage:
   omloader config validate [-c omloader.yaml] [-i image.yaml]
   omloader config show --resolved [-c omloader.yaml] [-i image.yaml]
   omloader config get [-c omloader.yaml] KEY   (print one resolved value, e.g. boot.default_image; for scripts)
-  omloader boot --image NAME [--snapshot NAME|current|base|new:NAME] [-c global.yaml]
+  omloader boot --image NAME [--snapshot current|base|LABEL] [--ephemeral] [-c global.yaml]
             [--images-root DIR] [--snap-root DIR] [--dry-run] [--no-kexec] [--exec-cmd-log FILE]
             [--force] [--ro] [--no-inject] [--data-root DIR]
   omloader tui [-c omloader.yaml] [--images-root DIR] [--snap-root DIR] [--data-root DIR] [--ascii]   (interactive terminal UI; docs/tui.md)
@@ -107,15 +107,15 @@ func runBoot(args []string, out, errw io.Writer) int {
 	fs := flag.NewFlagSet("boot", flag.ContinueOnError)
 	fs.SetOutput(errw)
 	image := fs.String("image", "", "image name")
-	snap := fs.String("snapshot", "", "name|current|base|new:<name>")
+	snap := fs.String("snapshot", "", "current (default: continue the live state) | base | <snapshot label> (the latter two boot an ephemeral child)")
+	eph := fs.Bool("ephemeral", false, "throwaway boot: nothing is kept (also valid with current)")
 	cfg := fs.String("c", "", "global omloader.yaml")
 	ir := fs.String("images-root", "", "images root (default storage.images.path)")
 	sr := fs.String("snap-root", "", "snapshots root (default storage.snapshots.path)")
 	dry := fs.Bool("dry-run", false, "print commands, change nothing")
 	nok := fs.Bool("no-kexec", false, "do everything except kexec -e")
 	cl := fs.String("exec-cmd-log", "", "append executed commands to FILE")
-	force := fs.Bool("force", false, "allow booting a snapshot that has children")
-	ro := fs.Bool("ro", false, "boot base read-only (no ephemeral COW child)")
+	ro := fs.Bool("ro", false, "with --snapshot base: mount the original read-only (no ephemeral COW child)")
 	dataRoot := fs.String("data-root", "", "data volumes root (default <snap-root>/../data)")
 	expOCI := fs.Bool("experimental-oci", false, "enable experimental Docker/OCI image support")
 	noInj := fs.Bool("no-inject", false, "do not append the guest-assemble initrd")
@@ -144,16 +144,21 @@ func runBoot(args []string, out, errw io.Writer) int {
 		return fail(err)
 	}
 	o := boot.Options{Image: *image, Snapshot: *snap, ImagesRoot: *ir, SnapRoot: *sr,
-		DryRun: *dry, NoKexec: *nok, Force: *force, RO: *ro, NoInject: *noInj, DataRoot: *dataRoot, Global: *cfg, Out: out, Warn: errw}
+		DryRun: *dry, NoKexec: *nok, Ephemeral: *eph, RO: *ro, NoInject: *noInj, DataRoot: *dataRoot, Global: *cfg, Out: out, Warn: errw}
 	plan, err := boot.BuildPlan(o, res, dir)
 	if err != nil {
 		return fail(err)
 	}
+	desc := "continuing the live state"
+	if plan.Ephemeral {
+		desc = "ephemeral boot (nothing is kept)"
+	}
+	fmt.Fprintf(out, "omloader: booting %s: %s [layer %s]\n", *image, desc, plan.Target)
 	var r boot.Runner = &boot.ExecRunner{LogFile: *cl}
 	if *dry {
 		r = &boot.DryRunner{Out: out}
 	}
-	if res.Image.Type != "vm" {
+	if res.Image.Type != "lxd-vm" {
 		if _, err := boot.ExecuteOverlay(o, res, plan, r); err != nil {
 			return fail(err)
 		}

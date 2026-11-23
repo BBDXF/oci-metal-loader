@@ -17,7 +17,7 @@ if [ $HAVE_VM = 1 ]; then
   VM_MB=$(du -m --apparent-size $S/base.raw | cut -f1)
   cat > $S/image.yaml <<EOT
 name: $NAME
-type: vm
+type: lxd-vm
 format: raw
 base: base.raw
 kernel:

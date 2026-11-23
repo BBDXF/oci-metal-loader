@@ -208,6 +208,7 @@ func ExecuteOverlay(o Options, res *config.Resolved, p *Plan, r Runner) (*Switch
 	if err := os.WriteFile(o.SwitchFile, []byte(spec.Encode()), 0o600); err != nil {
 		return fail(err)
 	}
+	(&snapmgr.Store{Root: o.SnapRoot, Image: o.Image}).MarkInUse(p.Target)
 	fmt.Fprintf(out, "OMLOADER: overlay root ready at %s (layers=%d), init=%s\n", o.NewRoot, len(p.Layers), strings.Join(spec.Init, " "))
 	return spec, nil
 }

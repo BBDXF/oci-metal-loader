@@ -71,7 +71,7 @@ func importLXDVM(o Options, tmp string) (map[string]any, error) {
 	if _, err := o.Runner.Run("qemu-img", "convert", "-O", "raw", disk, raw); err != nil {
 		return nil, err
 	}
-	y := map[string]any{"name": o.Name, "type": "vm", "format": "raw", "base": "base.raw",
+	y := map[string]any{"name": o.Name, "type": "lxd-vm", "format": "raw", "base": "base.raw",
 		"snapshots": map[string]any{"mode": "dm-snapshot"}}
 	k := map[string]any{"cmdline": vmCmdline}
 	y["kernel"] = k

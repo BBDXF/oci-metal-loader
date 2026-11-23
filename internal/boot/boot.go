@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	"omloader/internal/config"
 	"omloader/internal/snapmgr"
@@ -20,13 +19,13 @@ import (
 // Options for Boot.
 type Options struct {
 	Image      string
-	Snapshot   string // "", name, current, base, new:<name>
+	Snapshot   string // "" (= boot.default_snapshot, normally current), current, base, or a snapshot label
+	Ephemeral  bool   // boot a throwaway child even for current
 	ImagesRoot string
 	SnapRoot   string
 	DryRun     bool
 	NoKexec    bool
-	Force      bool // allow booting a snapshot that has children
-	RO         bool // boot base read-only instead of an ephemeral child
+	RO         bool // --snapshot base: mount the base read-only instead of an ephemeral child
 	NoInject   bool // do not append the guest-assemble initrd
 
 	// overlay (oci / lxd-container) handoff; empty = loader defaults
@@ -74,9 +73,11 @@ type Plan struct {
 	Layers   []Layer
 	Tree     *snapshot.Tree
 	TreePath string
-	NewTree  bool // tree must be saved
-	ReadOnly bool // base booted read-only (no COW)
-	Target   string
+	NewTree  bool   // tree must be saved
+	ReadOnly bool   // base booted read-only (no COW)
+	Target   string // node id booted ("" = base read-only)
+	// Ephemeral: Target is a throwaway child (discarded by the next boot/snapshot operation).
+	Ephemeral bool
 }
 
 var devRe = regexp.MustCompile(`^[A-Za-z0-9_.+-]+$`)
@@ -87,13 +88,13 @@ func BuildPlan(o Options, res *config.Resolved, imageDir string) (*Plan, error) 
 	if !devRe.MatchString(o.Image) {
 		return nil, fmt.Errorf("invalid image name %q", o.Image)
 	}
-	if img.Type != "vm" && img.Type != "oci" && img.Type != "lxd-container" {
-		return nil, fmt.Errorf("boot supports types vm, oci, lxd-container; got %q", img.Type)
+	if img.Type != "lxd-vm" && img.Type != "oci" && img.Type != "lxd-container" {
+		return nil, fmt.Errorf("boot supports types lxd-vm, oci, lxd-container; got %q", img.Type)
 	}
 	if img.Type == "oci" && !res.Config.OCIEnabled() {
 		return nil, fmt.Errorf("%s", config.OCIDisabledMsg)
 	}
-	isVM := img.Type == "vm"
+	isVM := img.Type == "lxd-vm"
 	base := img.Base
 	if strings.Contains(base, "://") {
 		return nil, fmt.Errorf("remote base %q not supported by boot", base)
@@ -101,7 +102,7 @@ func BuildPlan(o Options, res *config.Resolved, imageDir string) (*Plan, error) 
 	if !filepath.IsAbs(base) {
 		base = filepath.Join(imageDir, base)
 	}
-	st, err := os.Stat(base)
+	bst, err := os.Stat(base)
 	if err != nil {
 		return nil, fmt.Errorf("base image: %w", err)
 	}
@@ -110,66 +111,70 @@ func BuildPlan(o Options, res *config.Resolved, imageDir string) (*Plan, error) 
 			return nil, err
 		}
 	}
-	p := &Plan{BaseFile: base, BaseSize: st.Size(), Sectors: st.Size() / 512}
+	p := &Plan{BaseFile: base, BaseSize: bst.Size(), Sectors: bst.Size() / 512}
 	if isVM && p.Sectors == 0 {
 		return nil, fmt.Errorf("base image %s is empty", base)
 	}
 	p.TreePath = filepath.Join(o.SnapRoot, o.Image, "tree.json")
-	if _, serr := os.Stat(p.TreePath); os.IsNotExist(serr) {
-		p.Tree = snapshot.New(o.Image, img.SHA256)
-		p.NewTree = true
-	} else if p.Tree, err = snapshot.Load(p.TreePath); err != nil {
+	st, err := snapmgr.Open(o.SnapRoot, o.Image, true)
+	if err != nil {
 		return nil, err
 	}
+	if err := st.WithImage(res, imageDir); err != nil {
+		return nil, err
+	}
+	st.Statfs, st.IgnoreLock = o.SpaceFn, true
+	_, terr := os.Stat(p.TreePath)
+	p.NewTree = os.IsNotExist(terr)
+	if o.DryRun {
+		// plan only: forget leftover ephemeral nodes in memory, change nothing on disk
+		st.Tree = st.Tree.Clone()
+		st.Tree.Remove(st.Tree.Ephemerals()...)
+	} else if !p.NewTree {
+		if _, err := st.GCEphemeral(false); err != nil {
+			return nil, err
+		}
+	}
+	p.Tree = st.Tree
 	target := o.Snapshot
 	if target == "" {
 		target = res.Config.Boot.DefaultSnapshot
 	}
 	if target == "" {
-		target = "current"
+		target = snapshot.Current
 	}
-	switch {
-	case target == "base":
-		target = ""
-	case target == "current":
-		target = p.Tree.Current
-	case strings.HasPrefix(target, "new:"):
-		name := strings.TrimPrefix(target, "new:")
-		if !devRe.MatchString(name) {
-			return nil, fmt.Errorf("invalid snapshot name %q", name)
+	eph := o.Ephemeral
+	parent := ""
+	switch target {
+	case snapshot.Base:
+		eph, parent = true, ""
+	case snapshot.Current:
+		if eph {
+			parent = p.Tree.Current
+			if parent == "" {
+				parent = p.Tree.LiveParent
+			}
+		} else {
+			var created bool
+			if target, created = p.Tree.EnsureLive(); created {
+				p.NewTree = true
+			}
 		}
-		if err := p.Tree.Create(name, ""); err != nil {
+	default:
+		id, err := p.Tree.ResolveSnapshot(target, false)
+		if err != nil {
 			return nil, err
 		}
-		p.NewTree = true
-		target = name
-	default:
-		if _, ok := p.Tree.Nodes[target]; !ok {
-			return nil, fmt.Errorf("snapshot %q not found", target)
-		}
-		if ch := p.Tree.Children(target); len(ch) > 0 && !o.Force {
-			return nil, fmt.Errorf("snapshot %q has children %v: booting it would modify a layer they depend on; boot a leaf, use new:<name>, or pass --force", target, ch)
-		}
+		eph, parent = true, id
 	}
-	if target == "" {
-		if o.RO {
+	p.Ephemeral = eph
+	if eph {
+		if target == snapshot.Base && o.RO {
 			p.ReadOnly = true
+			target = ""
 		} else {
-			// base is never written: boot an ephemeral child of base instead
-			prev := p.Tree.Current
-			name := "tmp-" + time.Now().UTC().Format("20060102-150405")
-			for i := 2; ; i++ {
-				if _, ok := p.Tree.Nodes[name]; !ok {
-					break
-				}
-				name = fmt.Sprintf("tmp-%s-%d", time.Now().UTC().Format("20060102-150405"), i)
-			}
-			if err := p.Tree.Create(name, "base"); err != nil {
-				return nil, err
-			}
-			p.Tree.Current = prev
+			target = p.Tree.AddNode(parent, true)
 			p.NewTree = true
-			target = name
 		}
 	}
 	p.Target = target
@@ -179,7 +184,7 @@ func BuildPlan(o Options, res *config.Resolved, imageDir string) (*Plan, error) 
 			return nil, err
 		}
 		if max := img.Snapshots.MaxChainDepth; max > 0 && len(chain) > max {
-			return nil, fmt.Errorf("chain depth %d exceeds max_chain_depth %d", len(chain), max)
+			return nil, fmt.Errorf("chain depth %d exceeds max_chain_depth %d: delete or prune snapshots, or flatten (`omloader snapshot flatten %s <label>` builds a flat copy)", len(chain), max, o.Image)
 		}
 		for _, n := range chain {
 			if !devRe.MatchString(n) {

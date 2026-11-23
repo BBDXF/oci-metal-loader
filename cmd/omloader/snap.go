@@ -16,17 +16,19 @@ import (
 )
 
 const snapUsage = `usage: omloader snapshot <op> [flags] <image> [args]   common flags: --root SNAPROOT --images-root IMGROOT -c omloader.yaml
+Snapshots are managed here, in the loader, before the image is booted (no hot snapshots).
+Model: base = the original image (read-only), current = your live state; snapshots are labelled frozen points in between.
   list <image> [--tree] [--sizes]
-  create <image> <name> [--from NODE|base] [--note TEXT] [--tag T]...
-  rollback <image> <node|base> [--discard]
-  delete <image> <node> [--recursive] [--force]
-  gc <image> [--tmp] [--older-than 24h] [--dry-run]
-  prune <image> [--dry-run]                 (snapshot.retention.keep_last / keep_tagged)
-  tag <image> <node> <tag>...   untag <image> <node> <tag>...   note <image> <node> <text>
+  create <image> <label> [--note TEXT] [--tag T]...       freeze the live state as <label>
+  revert <image> <label|base> [--keep LABEL]              discard the live state, continue from <label>/base (alias: rollback)
+  delete <image> <label> [--recursive] [--force]          leaf: removed; one child: merged into it (overlay only); --recursive: subtree
+  gc <image> [--ephemeral] [--dry-run]                    remove leftovers of ephemeral boots
+  prune <image> [--dry-run]                               snapshot.retention.keep_last / keep_tagged
+  tag <image> <label> <tag>...   untag <image> <label> <tag>...   note <image> <label> <text>
   df <image>        verify <image> [--deep]
-  export <image> <node> --squashfs OUT (overlay) | --raw OUT | --qcow2 OUT (dm; root, run in the loader)
-  flatten <image> <node> [--name NEW]       (needs root: run in the loader)
-  merge <image> <node>                      (unsupported in v1: validates only)
+  export <image> <label> --squashfs OUT (overlay) | --raw OUT | --qcow2 OUT (dm; root, run in the loader)
+  flatten <image> <label> [--name NEW]                    new image NEW (default <image>-flat-<label>); needs root
+Boot: omloader boot --image <image> [--snapshot current|base|<label>] [--ephemeral]   (current continues the live state)
 `
 
 type multi []string
@@ -59,15 +61,13 @@ func runSnap(args []string, out, errw io.Writer) int {
 	cfg := fs.String("c", "", "global omloader.yaml")
 	tree := fs.Bool("tree", false, "tree view")
 	sizes := fs.Bool("sizes", false, "show on-disk sizes")
-	from := fs.String("from", "", "parent snapshot (default current; 'base')")
+	keep := fs.String("keep", "", "revert: first freeze the live state as this snapshot")
 	note := fs.String("note", "", "note")
 	var tags multi
 	fs.Var(&tags, "tag", "tag (repeatable)")
-	discard := fs.Bool("discard", false, "rollback: wipe the leaf's own data")
 	rec := fs.Bool("recursive", false, "delete: include descendants")
 	force := fs.Bool("force", false, "allow deleting the current snapshot")
-	_ = fs.Bool("tmp", true, "gc: ephemeral tmp-* snapshots (default)")
-	older := fs.String("older-than", "24h", "gc: minimum age (e.g. 90m, 24h, 2d)")
+	_ = fs.Bool("ephemeral", true, "gc: remove ephemeral boot leftovers (default)")
 	dry := fs.Bool("dry-run", false, "plan only")
 	deep := fs.Bool("deep", false, "verify: hash the base image")
 	sq := fs.String("squashfs", "", "export (overlay): output squashfs")
@@ -78,8 +78,8 @@ func runSnap(args []string, out, errw io.Writer) int {
 	if err != nil {
 		return 1
 	}
-	need := map[string]int{"list": 1, "create": 2, "rollback": 2, "delete": 2, "gc": 1, "prune": 1, "df": 1, "verify": 1,
-		"export": 2, "flatten": 2, "merge": 2}
+	need := map[string]int{"list": 1, "create": 2, "revert": 2, "rollback": 2, "delete": 2, "gc": 1, "prune": 1, "df": 1, "verify": 1,
+		"export": 2, "flatten": 2}
 	minPos, ok := need[op]
 	if !ok && (op == "tag" || op == "untag" || op == "note") {
 		minPos, ok = 3, true
@@ -102,7 +102,7 @@ func runSnap(args []string, out, errw io.Writer) int {
 	if *ir == "" {
 		*ir = g.Config.Storage.Images.Path
 	}
-	st, err := snapmgr.Open(*root, image, op == "create")
+	st, err := snapmgr.Open(*root, image, op == "create" || op == "list")
 	if err != nil {
 		return fail(err)
 	}
@@ -134,33 +134,36 @@ func runSnap(args []string, out, errw io.Writer) int {
 	case "list":
 		fmt.Fprint(out, st.List(snapmgrList(*tree, *sizes)))
 	case "create":
-		if err := st.Create(pos[1], *from, *note, tags); err != nil {
+		if err := st.Create(pos[1], *note, tags); err != nil {
 			return fail(err)
 		}
-		fmt.Fprintf(out, "create %s: ok (current=%q)\n", pos[1], st.Tree.Current)
-	case "rollback":
-		if err := st.Rollback(pos[1], *discard); err != nil {
+		fmt.Fprintf(out, "create %s: ok (the live state continues in a new empty layer on top)\n", pos[1])
+	case "revert", "rollback":
+		if err := st.Revert(pos[1], *keep); err != nil {
 			return fail(err)
 		}
-		fmt.Fprintf(out, "rollback %s: ok (current=%q)%s\n", pos[1], st.Tree.Current, map[bool]string{true: " data discarded", false: ""}[*discard])
+		msg := "the old live state was discarded"
+		if *keep != "" {
+			msg = "the old live state was kept as " + *keep
+		}
+		fmt.Fprintf(out, "revert %s: ok (%s; the next boot starts from %s)\n", pos[1], msg, pos[1])
 	case "delete":
-		del, err := st.Delete(pos[1], *rec, *force)
+		what, err := st.Delete(pos[1], *rec, *force)
 		if err != nil {
 			return fail(err)
 		}
-		fmt.Fprintf(out, "delete: removed %s (current=%q)\n", strings.Join(del, " "), st.Tree.Current)
+		fmt.Fprintf(out, "delete: %s\n", what)
 	case "gc", "prune":
 		var del []string
 		if op == "gc" {
-			age, err := parseAge(*older)
-			if err != nil {
-				return fail(fmt.Errorf("--older-than: %w", err))
+			del, err = st.GCEphemeral(*dry)
+			for i, d := range del {
+				del[i] = st.Tree.Display(d)
 			}
-			del, err = st.GC(age, *dry)
-			if err != nil {
-				return fail(err)
-			}
-		} else if del, err = st.Prune(*dry); err != nil {
+		} else {
+			del, err = st.Prune(*dry)
+		}
+		if err != nil {
 			return fail(err)
 		}
 		verb := "deleted"
@@ -182,36 +185,39 @@ func runSnap(args []string, out, errw io.Writer) int {
 		fmt.Fprint(out, s)
 	case "verify":
 		ps := st.Verify(snapmgr.VerifyOptions{Deep: *deep})
+		bad := snapmgr.CountProblems(ps)
 		for _, p := range ps {
-			fmt.Fprintln(out, "PROBLEM:", p)
+			if p.Warn {
+				fmt.Fprintln(out, "NOTE:", p)
+			} else {
+				fmt.Fprintln(out, "PROBLEM:", p)
+			}
 		}
-		if len(ps) > 0 {
-			fmt.Fprintf(errw, "verify %s: %d problem(s)\n", image, len(ps))
+		if bad > 0 {
+			fmt.Fprintf(errw, "verify %s: %d problem(s)\n", image, bad)
 			return 1
 		}
-		fmt.Fprintf(out, "verify %s: OK (%d snapshots, mode=%q)\n", image, len(st.Tree.Nodes), st.Mode)
-	case "merge":
-		p, err := st.Tree.PlanMerge(pos[1])
-		if err != nil {
-			return fail(err)
-		}
-		return fail(fmt.Errorf("snapshot merge (%s into %s) is not supported in v1; use `omloader snapshot flatten %s %s`", p.Node, p.Into, image, pos[1]))
+		fmt.Fprintf(out, "verify %s: OK (%d snapshots, mode=%q)\n", image, len(st.Tree.Labels()), st.Mode)
 	case "export", "flatten":
 		if res == nil {
 			return fail(fmt.Errorf("image.yaml of %q not found under %s (use --images-root)", image, *ir))
 		}
-		if _, ok := st.Tree.Nodes[pos[1]]; !ok {
-			return fail(fmt.Errorf("snapshot %q not found", pos[1]))
+		id, rerr := st.Tree.ResolveSnapshot(pos[1], false)
+		if rerr != nil {
+			return fail(rerr)
 		}
-		o := boot.DMOptions{SnapRoot: *root, ImagesRoot: *ir, Image: image, Node: pos[1], NewName: *nn, Raw: *raw, Qcow2: *qc}
+		if *nn == "" {
+			*nn = image + "-flat-" + pos[1]
+		}
+		o := boot.DMOptions{SnapRoot: *root, ImagesRoot: *ir, Image: image, Node: id, NewName: *nn, Raw: *raw, Qcow2: *qc}
 		switch {
 		case op == "export" && st.Mode == snapmgr.ModeOverlay:
-			err = boot.ExportSquashfs(r, *root, image, pos[1], *sq)
+			err = boot.ExportSquashfs(r, *root, image, id, *sq)
 		case op == "export":
 			err = boot.ExportDM(r, o)
 		case st.Mode == snapmgr.ModeOverlay:
 			var d string
-			if d, err = boot.FlattenOverlay(r, boot.FlattenOptions{SnapRoot: *root, ImagesRoot: *ir, Image: image, Node: pos[1], NewName: *nn, DryRun: *dry}); err == nil {
+			if d, err = boot.FlattenOverlay(r, boot.FlattenOptions{SnapRoot: *root, ImagesRoot: *ir, Image: image, Node: id, NewName: *nn, DryRun: *dry}); err == nil {
 				fmt.Fprintln(out, "flattened into new image:", d)
 			}
 		default:

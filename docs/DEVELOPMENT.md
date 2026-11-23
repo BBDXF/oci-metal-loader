@@ -7,9 +7,9 @@ directly on the hardware, without installing anything.
 
 - **LXD VM images** (disk images): `dm-snapshot` stack over the read-only base + `kexec` into the guest's own kernel.
 - **LXD container images** (`rootfs.squashfs`): squashfs + overlayfs on the loader's kernel, then `switch-root` into the container's init.
-- Snapshots (tree, rollback, prune, flatten, export), persistent data volumes, and online pull (M4) with mirrors/proxy, a content-addressed cache and an offline mode.
+- Snapshots (VM-style tree: base + labelled snapshots + one live "current"; create, revert, delete, prune, flatten, export), persistent data volumes, and online pull (M4) with mirrors/proxy, a content-addressed cache and an offline mode.
 
-> **Terminology: "VM" means the image format, not virtualisation.** `type: vm` (and `pull --vm`, `images list --type vm`) follows LXD's name for *virtual-machine images*:
+> **Terminology: "VM" means the image format, not virtualisation.** `type: lxd-vm` (the CLI flags `pull --vm` and `images list --type vm` keep LXD's own spelling) follows LXD's name for *virtual-machine images*:
 > a whole-disk image (EFI partition + kernel + root filesystem) as published for LXD VMs. omloader does **not** run a virtual machine: it assembles the image with its snapshot layers
 > and hands the real hardware over to the image's own kernel with `kexec`. `type: lxd-container` images contain only a root filesystem and boot on the loader's kernel.
 > QEMU appears only in the tests (to emulate a PC) and `qemu-img` only converts disk formats.
@@ -29,7 +29,7 @@ To opt in: `experimental.oci_images: true` in `omloader.yaml`, `--experimental-o
 |---|---|---|
 | M0 | config layers, schemas, validation, snapshot tree metadata | ✅ done |
 | M1 | VM boot: dm-snapshot + kexec, guest-side reassembly | ✅ done (QEMU/OVMF-tested) |
-| M2 | snapshot management: list/create/rollback/delete/gc/prune/verify/flatten/export, space guard, container data volumes | ✅ done |
+| M2 | snapshot management: list/create/revert/delete/gc/prune/verify/flatten/export, space guard, container data volumes | ✅ done |
 | M3 | container boot: squashfs + overlayfs, firstboot adapter, `systemctl switch-root` handoff | ✅ done (the OCI part is now experimental, off by default) |
 | Live loader | Debian bookworm live system (systemd, networkd, resolved, tools, firmware), 254 MiB ISO | ✅ done |
 | M4 | online pull for LXD: simplestreams client, mirrors/proxy, cache/offline mode, LXD VM import (qcow2 → raw) | ✅ done (QEMU-tested: `make e2e-pull`) |
@@ -76,8 +76,11 @@ If someone wants to pick it up later: the only realistic route to snapshots for 
 - **The live system's upper layer is tmpfs (RAM)**: `/tmp`, flatten staging and the like use memory, so flattening big images needs enough RAM.
 - **Wi-Fi is not configured**: iwd and wireless-regdb are installed, nothing sets them up; wired DHCP only.
 - **Online pull**: only Simplestreams sources (images.linuxcontainers.org layout); SHA256 verification only (no GPG: the index/catalog is not signed-checked, blobs are digest-checked against it; a malicious *mirror* could therefore lie in the index when the primary is unreachable — a warning is printed). No Wi-Fi, no registry/Docker pull. The VM kernel probe needs root (losetup/kpartx/mount) — inside the loader, or use `--no-probe`.
-- **Data persistence rules**: data persists only when you boot the same snapshot node and the OMLOADER partition is writable. `--snapshot base` creates an ephemeral `tmp-*`
-  child (removed with `snapshot gc`), `new:<name>` starts a fresh child; volumes declared `snapshot: false` live outside the layers and survive rollback.
+- **Data persistence rules**: data persists in the live state ("current") when the OMLOADER partition is writable. `--snapshot base|<label>` and `--ephemeral` boot a throwaway
+  child (removed automatically before the next boot/snapshot operation, or by `snapshot gc`); volumes declared `snapshot: false` live outside the layers and survive revert.
+- **No hot snapshots, snapshots only before boot.** Snapshots are created, reverted and deleted from the loader (CLI/TUI) before the image is booted; a running system cannot be snapshotted or reverted —
+  shut it down, return to the loader, then manage snapshots. As a best-effort guard, a container boot leaves `<snap-root>/<image>/in-use.json` (kernel boot id); mutating snapshot commands refuse while it matches the running kernel's boot id.
+- **dm-snapshot images cannot merge-delete**: deleting a snapshot that has a child would merge COW layers, which is not supported; use `snapshot flatten` or delete the whole branch (`--recursive`).
 
 ## Architecture of the loader ISO
 
@@ -116,33 +119,50 @@ Validation errors include `file:line`. Schemas: `schema/*.schema.json`.
     go run ./cmd/omloader config validate -c examples/omloader.yaml -i examples/ubuntu-24.04/image.yaml
     go run ./cmd/omloader config show --resolved -c examples/omloader.yaml   # value  # layer (file:line)
 
-    go run ./cmd/omloader snapshot create --root /tmp/r ubuntu snap1 [--from base|<name>]
-    go run ./cmd/omloader snapshot list|rollback|delete --root /tmp/r ubuntu [name]
+    go run ./cmd/omloader snapshot list --root /tmp/r ubuntu --tree
 
-Tree is stored at `<root>/<image>/tree.json`. Exit codes: 0 ok, 1 error.
+Tree is stored at `<root>/<image>/tree.json` (format below). Exit codes: 0 ok, 1 error.
 
 ## Test
     gofmt -l . && go vet ./... && go test ./...
 
 ## Boot (M1: VM, dm-snapshot, UEFI x86_64)
-    omloader boot --image NAME [--snapshot NAME|current|base|new:NAME] [-c global.yaml]
+    omloader boot --image NAME [--snapshot current|base|LABEL] [--ephemeral] [-c global.yaml]
         [--images-root DIR] [--snap-root DIR] [--dry-run] [--no-kexec] [--exec-cmd-log FILE]
 
-Image dir `<images-root>/<name>/image.yaml`; tree at `<snap-root>/<name>/tree.json` (created with base only if missing).
+Image dir `<images-root>/<name>/image.yaml`; tree at `<snap-root>/<name>/tree.json` (created on first boot).
 Flow: verify base sha256 (skipped if `verify.base_checksum: skip` or no sha256) -> `losetup -r` base ->
-per chain node: sparse COW file (truncate to base size if missing) + `losetup` + `dmsetup create oml-<image>-<node>`
+per chain node (node ids `n1`, `n2`, ...): sparse COW file (truncate to base size if missing) + `losetup` + `dmsetup create oml-<image>-<node>`
 (`0 <sectors> snapshot <origin> <cow> P 8`, origin = previous layer) -> `kpartx -a` -> pick root partition
 (`kernel.root_partition` N, else first ext4/xfs via blkid) -> mount ro -> `kexec -l` (`{ROOT}` in cmdline is
 replaced by the root partition device) -> `kexec -e` unless `--no-kexec`/`--dry-run`.
 `--dry-run` prints the exact command list; `--exec-cmd-log` appends executed commands to a file.
-`new:<name>` creates a child of the current snapshot (metadata saved) and boots it with a fresh COW.
-Base-only boot uses the read-only loop device directly.
+Booting `current` continues the live node (its COW file is created at the first boot after create/revert). `--snapshot base --ro` uses the read-only loop device directly.
 
-### Snapshot targets and writability
-Only the top layer of the stack is written; lower COW files are frozen. Therefore:
-- booting an existing snapshot that has children is refused (clear error) unless `--force`;
-- `--snapshot base` (or `current` resolving to base) boots an **ephemeral child of base** named `tmp-<UTC timestamp>` (metadata `current` is left unchanged; remove with `snapshot delete`), unless `--ro`, which boots the base read-only through a `linear` readonly dm map;
-- `--snapshot new:<name>` creates a child of `current` and boots it.
+### Snapshot model, boot targets and writability
+Every image has a tree rooted at `base` (the original read-only image, always present, never modified or deletable). Nodes are layers with a stable id (`n1`, `n2`, ...; never reused) that names
+their files (`<id>.cow` / `<id>/{upper,work}`). A node with a **label** is a *snapshot* (frozen). The single writable **live state** is the node `current` (unlabelled, a leaf below some snapshot or base);
+if none exists yet (fresh image, after `create` or `revert`) it is created lazily as the first empty child of its parent at the next boot (`live_parent` in tree.json says where). Only the live node is ever written.
+- `boot` (default `--snapshot current`) **continues** the live node: no new layer per boot.
+- `--snapshot <label>` boots a frozen snapshot without modifying it: an `ephemeral` child is added on top. `--snapshot base` does the same on the original image (`--ro` mounts it read-only with no COW).
+  `--ephemeral` with `current` is a throwaway boot on top of the live state. Ephemeral nodes are deleted automatically at the start of the next boot/create/revert/delete/prune, or with `snapshot gc [--dry-run]`;
+  `verify` only notes them. `--dry-run` never changes anything on disk.
+- `snapshot create <image> <label> [--note] [--tag]...` freezes the live state under the label (labels are unique; `base` and `current` are reserved; refused when the live state has no changes since its parent). Costs one extra sparse layer per snapshot, not per boot.
+- `snapshot revert <image> <label|base> [--keep NAME]` (alias `rollback`) discards the live state (its files are deleted) and continues from the target; `--keep NAME` first freezes it as a sibling branch.
+- `snapshot delete <image> <label> [--recursive] [--force]`: a leaf snapshot is removed; a snapshot with exactly one child is **merged into that child** (overlay: entries of the snapshot's upper are moved into the child's upper unless the child
+  overrides them; whiteouts and opaque directories are handled, ownership/xattrs are preserved because entries are renamed, not copied); in dm-snapshot mode this is refused with a hint to use `flatten`; several children need `--recursive`
+  (removes the subtree, `--force` if the live state is inside or based on it). `base` cannot be deleted.
+- **Limits**: hot snapshots are not supported (snapshots are managed from the loader before boot, see above); dm delete-with-merge is not supported; `snapshot.auto_snapshot_on_boot` was removed.
+
+#### tree.json (version 2)
+```json
+{"version": 2, "image": "ubuntu", "base_sha256": "...", "current": "n3", "live_parent": "", "next_id": 4,
+ "nodes": {"n1": {"parent": "", "label": "clean", "file": "n1.cow", "created": "...", "note": "...", "tags": ["keep"]},
+           "n2": {"parent": "n1", "label": "upgraded", "file": "n2.cow", "created": "..."},
+           "n3": {"parent": "n2", "file": "n3.cow", "created": "..."}}}
+```
+`current` = id of the live node ("" = none yet; then `live_parent` is the id it will be created under, "" = base). `ephemeral: true` marks throwaway nodes. Version 1 files are rejected with a message (delete the file and the layers, or recreate).
+Guest-side reassembly (`plan.json`) uses node ids as file keys; dm devices are `oml-<image>-<id>`.
 
 ### Surviving kexec: guest-side reassembly (v1: Debian/Ubuntu, initramfs-tools)
 The loader's loop/dm devices die at `kexec -e`, so `boot` appends an extra gzip'd newc cpio to the guest initrd
@@ -165,7 +185,7 @@ Kernel/initrd paths are resolved *inside* the image root (absolute symlinks like
 `cache.offline`: `auto` | `on` (never go online) | `off` (always check upstream).
 
 ## Containers: `type: lxd-container` (and experimental `type: oci`) (M3: squashfs + overlayfs, loader kernel, no kexec)
-`omloader boot --image NAME` dispatches on `image.yaml` `type`. `vm` = M1 above. Container images (`format: squashfs`,
+`omloader boot --image NAME` dispatches on `image.yaml` `type`. `lxd-vm` = M1 above. Container images (`format: squashfs`,
 `snapshots.mode: overlayfs`) run on **the loader's own kernel**; there is no kexec and no kernel/initrd in the image.
 
 Flow: verify sha256 -> `mount -t squashfs -o loop,ro base.squashfs /run/omloader/base` -> per tree node
@@ -177,8 +197,7 @@ it writes a tiny wrapper `/.omloader/switch-init` into the new root (`#!/.omload
 and calls `systemctl switch-root /newroot /.omloader/switch-init`. PID 1 kills the live system's processes, moves /proc /sys /dev into the new root,
 pivots (the old live root is detached; the overlay holds private clones of its lower/upper mounts, so the OMLOADER partition stays in use) and execs the wrapper,
 which execs the guest's init. Using a wrapper as "init" makes systemd start the guest init *fresh* (otherwise a systemd guest would `--deserialize` the live system's state).
-Snapshot semantics are the same as M1: `new:<name>` creates a child, `base` boots an ephemeral `tmp-<ts>` child, booting a node
-that has children is refused unless `--force` (its upper is a lower layer of the children), `--ro` boots the squashfs read-only.
+Snapshot semantics are the same as M1 (see "Snapshot model"): `current` continues the live upper, labels/`base` boot an ephemeral child, `--ro` with base boots the squashfs read-only.
 Limits: kernel allows 500 lower layers and the mount option string must fit one page: `omloader` refuses (> `snapshots.max_chain_depth`,
 > 500 lowers or > 4000 option bytes) and suggests `omloader snapshot flatten`.
 `data:` entries with `backend: dir` are bind-mounted from `<snap-root>/<image>/data/<name>` (other backends: TODO).
@@ -246,32 +265,33 @@ and `data:` (declared VOLUMEs -> `backend: dir`). `lxd`: PATH = directory (or `l
 dm-snapshot = `<node>.cow` sparse files (sized to the base), overlayfs = `<node>/{upper,work}`. If no `image.yaml` is found only the metadata is managed.
 Common flags: `--root SNAPROOT --images-root IMGROOT -c omloader.yaml` (defaults from `storage.*.path`).
 
-    omloader snapshot list <image> [--tree] [--sizes]     # current '*', frozen (has children), ephemeral, tags, note, created, apparent/allocated size
-    omloader snapshot create <image> <name> [--from NODE|base] [--note T] [--tag X]...   # metadata + empty layer; parent data untouched
-    omloader snapshot rollback <image> <node|base> [--discard]   # moves 'current'; --discard wipes a LEAF's own layer; frozen nodes are never wiped
-    omloader snapshot delete <image> <node> [--recursive] [--force]   # refuses nodes with children / the current one; removes layers
-    omloader snapshot gc <image> [--tmp] [--older-than 24h] [--dry-run]   # ephemeral tmp-* nodes (from `--snapshot base`)
-    omloader snapshot prune <image> [--dry-run]     # snapshot.retention.keep_last newest leaves + tagged (keep_tagged) + current + all their ancestors survive
-    omloader snapshot tag|untag <image> <node> <tag>...    omloader snapshot note <image> <node> <text>
+    omloader snapshot list <image> [--tree] [--sizes]     # base (original image) root, labels, '● current (you are here)', tags, note, ephemeral, sizes
+    omloader snapshot create <image> <label> [--note T] [--tag X]...   # freeze the live state; the next boot continues in a fresh layer
+    omloader snapshot revert <image> <label|base> [--keep LABEL]       # alias: rollback
+    omloader snapshot delete <image> <label> [--recursive] [--force]   # leaf: remove; one child: merge into it (overlay only)
+    omloader snapshot gc <image> [--ephemeral] [--dry-run]             # ephemeral boot leftovers
+    omloader snapshot prune <image> [--dry-run]     # keep_last newest tip snapshots + tagged (keep_tagged) + the live node/head + all their ancestors survive; ephemerals are gc's business
+    omloader snapshot tag|untag <image> <label> <tag>...    omloader snapshot note <image> <label> <text>
     omloader snapshot df <image>      omloader snapshot verify <image> [--deep]
-    omloader snapshot export <image> <node> --squashfs OUT | --raw OUT | --qcow2 OUT
-    omloader snapshot flatten <image> <node> [--name NEW]
-    omloader snapshot merge <image> <node>          # unsupported in v1 (validates leaf-only, then points to flatten)
+    omloader snapshot export <image> <label> --squashfs OUT | --raw OUT | --qcow2 OUT
+    omloader snapshot flatten <image> <label> [--name NEW]
 
-- **Frozen nodes**: a node with children is a lower layer of them; it can be rolled back to (metadata) but `--discard`, boot (without `--force`) and writes are refused.
-- **Chain depth**: `create` and boot refuse beyond `max_chain_depth` and suggest `flatten`.
+**Snapshots are created, reverted and deleted from the loader (CLI/TUI) before the image is booted; a running system cannot be snapshotted or reverted — shut it down, return to the loader, then manage snapshots (hot snapshots are not supported).**
+
+- **Frozen snapshots**: a labelled node is a lower layer of what sits on it and is never written; booting one uses an ephemeral child.
+- **Chain depth**: `create` (the new live layer) and boot refuse beyond `max_chain_depth` and suggest `flatten`/prune.
 - **Space guard**: `create` and `boot` (not `--dry-run`) refuse when the snapshot partition has less than `snapshot.retention.min_free_percent` free (statfs); nothing is created before the check. `snapshot df` shows the numbers.
   (The config key is the existing `snapshot.retention.min_free_percent`; there is no separate `snapshot.min_free_percent`.)
-- **verify** (read-only, exit 1 on any problem): tree consistency (parents, cycles, current), `tree.json base_sha256` vs `image.yaml sha256` (`--deep` also hashes the base),
-  missing/orphan layers, and for dm the COW header (`SnAp` magic, version 1, valid=1, power-of-two chunk size; an all-zero header is a fresh COW).
+- **verify** (read-only, exit 1 on any problem): tree consistency (ids, parents, cycles, unique labels, live node), `tree.json base_sha256` vs `image.yaml sha256` (`--deep` also hashes the base),
+  missing/orphan layers, leftover ephemeral nodes (a note, not a failure), and for dm the COW header (`SnAp` magic, version 1, valid=1, power-of-two chunk size; an all-zero header is a fresh COW).
   `boot` runs a lite check first (base sha consistency + existence of all frozen ancestor layers) and refuses with a hint.
 - **flatten** (needs root: loop/dm/mount, run it in the loader shell or via the hook mechanism): overlay = read-only overlay of base+uppers -> `mksquashfs`;
   dm = loop+dm snapshot stack (`oml-x-<image>-<node>`) -> sparse copy of the top device (Go, skips zero blocks; the loader's busybox `dd` has no `conv=sparse`) -> `base.raw`.
-  Both create a NEW image `<images-root>/<image>-flat-<node>` (or `--name`) with a copy of `image.yaml` (new name + sha256) and an empty snapshot tree; the original is untouched.
-- **export**: overlay -> squashfs of the node's own upper; dm -> raw disk image of base+chain, or qcow2 via `qemu-img convert` (shipped in the Debian loader; without it: clear error with a hint).
+  Both create a NEW image `<images-root>/<image>-flat-<label>` (or `--name`) with a copy of `image.yaml` (new name + sha256) and an empty snapshot tree; the original is untouched.
+- **export**: overlay -> squashfs of the snapshot's own upper; dm -> raw disk image of base+chain, or qcow2 via `qemu-img convert` (shipped in the Debian loader; without it: clear error with a hint).
 
 ### Data volumes (containers)
-`data:` entries of `type: oci|lxd-container` images are mounted into the new root *after* the overlay, outside the snapshot layers, so they survive rollback, delete, prune and flatten
+`data:` entries of `type: oci|lxd-container` images are mounted into the new root *after* the overlay, outside the snapshot layers, so they survive revert, delete, prune and flatten
 (`snapshot: false`; `snapshot: true` is not implemented and warns). Backends: `dir` (bind of `<data-root>/<image>/<name>/`) and `ext4-file` (sparse `<data-root>/<image>/<name>.img`,
 `mkfs.ext4` on first use, size from `size`, default 1G, loop-mounted). `<data-root>` = `--data-root`, default `<dirname snap-root>/data` (same partition). A flattened image gets its own, new data volumes.
 `import --data name:/mount:backend[:size[:snapshot]]` declares/overrides volumes. **VM images: data volumes are not implemented (TODO)** (the boot warns): the guest is kexec'd
@@ -315,8 +335,8 @@ policy: {allow_online: true, allowed_sources: [lxc-images]}
 then server stopped and `--offline` / `cache.offline: on` pulls from the cache that boot again.
 
 ## Tests (remote KVM)
-`make e2e-snap` (`test/e2e-snap.sh`): snapshot management on the OCI fixture (create/list/stacking/rollback with data still on disk/delete refusal/gc/prune/verify/export/space guard/overlay flatten + boot of the flattened image/data volumes surviving rollback)
-and on the VM fixture (create/list/verify/discard/prune --dry-run/qcow2 export/dm flatten + boot of the flattened VM). Snapshot commands that need root run in the loader through the `omloader.hook=1` stage disk.
+`make e2e-snap` (`test/e2e-snap.sh`): snapshot management on the OCI fixture (continue-current (no new layer per boot)/create/list/stacking/delete with overlay merge/revert + --keep/ephemeral boots and gc/prune/verify/export/space guard/overlay flatten + boot of the flattened image/data volumes surviving revert)
+and on the VM fixture (continue-current/create/list/verify/dm delete-merge refusal/revert/ephemeral base boot/qcow2 export/dm flatten + boot of the flattened VM). Snapshot commands that need root run in the loader through the `omloader.hook=1` stage disk.
 
 ## Usability test (remote KVM)
     make e2e-ui      # test/e2e-ui.sh: users/autologin on tty1+ttyS0, password+sudo checks, 2nd boot idempotency, busybox-only image (debug shell), ext4/exfat clean-state check, shutdown_sync:false baseline
@@ -324,5 +344,5 @@ The clean-state check reads the ext4 superblock (`s_state`, `needs_recovery`) an
 
 ## M3 test (remote KVM)
     export OML_REMOTE_PASS=...   # never stored
-    make e2e-oci                # builds ISO, OCI fixture (podman, rootless), disk, then boots 3 times
-See `test/make-fixture-oci.sh` and `test/e2e-oci.sh`; assertions: guest kernel == loader kernel, overlay root, counter 1 / 1 (ephemeral base) / 2 (persisted `run1`), adapter applied once, DHCP lease, modules visible.
+    make e2e-oci                # builds ISO, OCI fixture (podman, rootless), disk, then boots 4 times
+See `test/make-fixture-oci.sh` and `test/e2e-oci.sh`; assertions: guest kernel == loader kernel, overlay root, counter 1 / 2 (current continued) / 1 (ephemeral base) / 3 (current again), adapter applied once, DHCP lease, modules visible.

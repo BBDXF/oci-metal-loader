@@ -57,21 +57,17 @@ func systemdRoot(nr string) {
 }
 
 func chainTree() *snapshot.Tree {
-	t := snapshot.New("c", "")
-	t.Create("a", "base")
-	t.Create("b", "a")
-	t.Create("c", "b")
-	return t
+	return mkTree("c", true, "a", "b")
 }
 
 func TestOverlayBootNewAndFrozen(t *testing.T) {
 	f := osetup(t, chainTree(), "runtime:\n  hostname: hh\n  network: dhcp\n  autologin: true\n  env:\n    K: v\n")
 	systemdRoot(f.o.NewRoot)
-	f.o.Snapshot = "b"
-	if _, err := BuildPlan(f.o, f.res, f.img); err == nil || !strings.Contains(err.Error(), "children") {
-		t.Fatalf("non-leaf must be refused: %v", err)
+	f.o.Snapshot = "b" // frozen snapshot: allowed, boots an ephemeral child (never writes b)
+	if pb, err := BuildPlan(f.o, f.res, f.img); err != nil || !pb.Ephemeral || len(pb.Layers) != 3 || pb.Layers[1].Node != "n2" {
+		t.Fatalf("frozen snapshot boot: %v", err)
 	}
-	f.o.Snapshot = "c"
+	f.o.Snapshot = ""
 	p, err := BuildPlan(f.o, f.res, f.img)
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +76,7 @@ func TestOverlayBootNewAndFrozen(t *testing.T) {
 	if _, err := ExecuteOverlay(f.o, f.res, p, r); err == nil || !strings.Contains(err.Error(), "missing on disk") {
 		t.Fatalf("missing ancestor layers must be refused: %v", err)
 	}
-	for _, n := range []string{"a", "b"} {
+	for _, n := range []string{"n1", "n2"} {
 		os.MkdirAll(filepath.Join(f.o.SnapRoot, "c", n, "upper"), 0o755)
 	}
 	tiny := f.o
@@ -97,8 +93,8 @@ func TestOverlayBootNewAndFrozen(t *testing.T) {
 	}
 	cmds := strings.Join(r.Cmds, "\n")
 	up := func(n string) string { return filepath.Join(f.o.SnapRoot, "c", n, "upper") }
-	wantOpt := "lowerdir=" + up("b") + ":" + up("a") + ":" + filepath.Join(f.o.RunDir, "base") +
-		",upperdir=" + up("c") + ",workdir=" + filepath.Join(f.o.SnapRoot, "c", "c", "work")
+	wantOpt := "lowerdir=" + up("n2") + ":" + up("n1") + ":" + filepath.Join(f.o.RunDir, "base") +
+		",upperdir=" + up("n3") + ",workdir=" + filepath.Join(f.o.SnapRoot, "c", "n3", "work")
 	if !strings.Contains(cmds, wantOpt) || !strings.Contains(cmds, "-t squashfs -o loop,ro") {
 		t.Errorf("cmds:\n%s\nwant %s", cmds, wantOpt)
 	}
@@ -140,7 +136,7 @@ func TestOverlayBootNewAndFrozen(t *testing.T) {
 	if rd("etc/hostname") != "custom\n" {
 		t.Error("hostname overwritten")
 	}
-	if b, _ := os.ReadFile(f.o.SnapRoot + "/c/tree.json"); !strings.Contains(string(b), `"c"`) {
+	if b, _ := os.ReadFile(f.o.SnapRoot + "/c/tree.json"); !strings.Contains(string(b), `"version": 2`) {
 		t.Error("tree")
 	}
 }
@@ -150,12 +146,12 @@ func TestOverlayBaseEphemeralAndNew(t *testing.T) {
 	systemdRoot(f.o.NewRoot)
 	f.o.Snapshot = "base"
 	p, err := BuildPlan(f.o, f.res, f.img)
-	if err != nil || !strings.HasPrefix(p.Target, "tmp-") || len(p.Layers) != 1 {
+	if err != nil || !p.Ephemeral || !p.Tree.Nodes[p.Target].Ephemeral || len(p.Layers) != 1 {
 		t.Fatalf("%v %+v", err, p)
 	}
-	f.o.Snapshot = "new:run1"
+	f.o.Snapshot = ""
 	p, err = BuildPlan(f.o, f.res, f.img)
-	if err != nil || p.Target != "run1" || p.Layers[0].Dir != filepath.Join(f.o.SnapRoot, "c", "run1") {
+	if err != nil || p.Target != "n1" || p.Ephemeral || p.Layers[0].Dir != filepath.Join(f.o.SnapRoot, "c", "n1") {
 		t.Fatalf("%v %+v", err, p)
 	}
 }
@@ -216,16 +212,16 @@ func TestSelectInitWrapper(t *testing.T) {
 func TestExportAndFlatten(t *testing.T) {
 	f := osetup(t, chainTree(), "")
 	snap := f.o.SnapRoot
-	os.MkdirAll(filepath.Join(snap, "c", "b", "upper"), 0o755)
+	os.MkdirAll(filepath.Join(snap, "c", "n2", "upper"), 0o755)
 	r := &DryRunner{}
 	out := filepath.Join(f.root, "b.squashfs")
-	if err := ExportSquashfs(r, snap, "c", "b", out); err != nil {
+	if err := ExportSquashfs(r, snap, "c", "n2", out); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(r.Cmds[0], "mksquashfs "+filepath.Join(snap, "c", "b", "upper")+" "+out) {
+	if !strings.HasPrefix(r.Cmds[0], "mksquashfs "+filepath.Join(snap, "c", "n2", "upper")+" "+out) {
 		t.Errorf("%v", r.Cmds)
 	}
-	if err := ExportSquashfs(r, snap, "c", "a", out); err == nil {
+	if err := ExportSquashfs(r, snap, "c", "n1", out); err == nil {
 		t.Error("a has no upper")
 	}
 	// flatten: the fake creates the staged file when mksquashfs runs
@@ -239,13 +235,13 @@ func TestExportAndFlatten(t *testing.T) {
 		}
 		return "", false
 	}
-	d, err := FlattenOverlay(r, FlattenOptions{SnapRoot: snap, ImagesRoot: filepath.Join(f.root, "images"), Image: "c", Node: "b"})
+	d, err := FlattenOverlay(r, FlattenOptions{SnapRoot: snap, ImagesRoot: filepath.Join(f.root, "images"), Image: "c", Node: "n2", NewName: "c-flat-b"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	cmds := strings.Join(r.Cmds, "\n")
 	up := func(n string) string { return filepath.Join(snap, "c", n, "upper") }
-	if !strings.Contains(cmds, "lowerdir="+up("b")+":"+up("a")+":"+filepath.Join(tmp, "base")+" overlay") ||
+	if !strings.Contains(cmds, "lowerdir="+up("n2")+":"+up("n1")+":"+filepath.Join(tmp, "base")+" overlay") ||
 		!strings.Contains(cmds, "mksquashfs "+filepath.Join(tmp, "merged")) {
 		t.Errorf("cmds:\n%s", cmds)
 	}
@@ -254,8 +250,8 @@ func TestExportAndFlatten(t *testing.T) {
 		t.Errorf("%v %+v", err, res)
 	}
 	// vm flatten is a TODO
-	os.WriteFile(filepath.Join(f.img, "image.yaml"), []byte("name: c\ntype: vm\nformat: raw\nbase: b.raw\nsnapshots:\n  mode: dm-snapshot\n"), 0o644)
-	if _, err := FlattenOverlay(&DryRunner{}, FlattenOptions{SnapRoot: snap, ImagesRoot: filepath.Join(f.root, "images"), Image: "c", Node: "b"}); err == nil || !strings.Contains(err.Error(), "TODO") {
+	os.WriteFile(filepath.Join(f.img, "image.yaml"), []byte("name: c\ntype: lxd-vm\nformat: raw\nbase: b.raw\nsnapshots:\n  mode: dm-snapshot\n"), 0o644)
+	if _, err := FlattenOverlay(&DryRunner{}, FlattenOptions{SnapRoot: snap, ImagesRoot: filepath.Join(f.root, "images"), Image: "c", Node: "n2", NewName: "c-flat-b"}); err == nil || !strings.Contains(err.Error(), "TODO") {
 		t.Errorf("%v", err)
 	}
 }
@@ -266,7 +262,7 @@ func TestBindModulesDirect(t *testing.T) {
 	src := filepath.Join(f.root, "libmods", "6.1.0-test")
 	os.MkdirAll(src, 0o755)
 	f.o.ModulesSrc = src
-	f.o.Snapshot = "new:m"
+	f.o.Ephemeral = true
 	p, err := BuildPlan(f.o, f.res, f.img)
 	if err != nil {
 		t.Fatal(err)
@@ -298,7 +294,7 @@ func TestOCIDisabledByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.o.Snapshot = "new:x"
+	f.o.Ephemeral = true
 	if _, err := BuildPlan(f.o, res, f.img); err != nil {
 		t.Fatalf("enabled: %v", err)
 	}

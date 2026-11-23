@@ -1,10 +1,10 @@
 #!/bin/bash
 # Run ON THE REMOTE. TUI e2e over the QEMU serial console (driver: test/tui-drive.py, pty + tiny VT emulator):
-#  run1: loader boots into the TUI (no kernel flags) -> images list from the fixture disk -> detail/tree -> create 2 snapshots,
-#        rollback -> Pull tab: `source test` + filtered catalog + pull of a container from the local fake simplestreams
-#        (10.0.2.2:PORT) -> boot it (dry-run preview, then new:run1) -> container boots via switch-root, counter 1
-#  run2: second boot, state persisted; Reboot from the TUI ends the VM
-#  run3: Esc -> shell -> `exit` -> TUI again; boot the same snapshot (current): counter 2
+#  run1: loader boots into the TUI (no kernel flags) -> images list from the fixture disk -> detail/tree (base + live state; snapshot create refused on a never-booted image)
+#        -> Pull tab: `source test` + filtered catalog + pull of a container from the local fake simplestreams
+#        (10.0.2.2:PORT) -> boot it (dry-run preview, then continue current) -> container boots via switch-root, counter 1
+#  run2: second loader boot, live state persisted; create snapshot s1 (note+tag) and revert to it from the TUI; Reboot from the TUI ends the VM
+#  run3: Esc -> shell -> `exit` -> TUI again; boot current again (on top of s1): counter 2
 # Env: SKIP_BUILD=1 reuse out/ and the disk built earlier by this script
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; O=$ROOT/out; W=$ROOT/work; T=$ROOT/test
 export W EXPERIMENTAL_OCI=1

@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"omloader/internal/config"
-	"omloader/internal/snapshot"
 )
 
 func dmFixture(t *testing.T) (snap, images string) {
@@ -16,12 +15,10 @@ func dmFixture(t *testing.T) (snap, images string) {
 	os.MkdirAll(filepath.Join(images, "vm"), 0o755)
 	os.MkdirAll(filepath.Join(snap, "vm"), 0o755)
 	os.WriteFile(filepath.Join(images, "vm", "base.raw"), make([]byte, 1<<20), 0o644)
-	os.WriteFile(filepath.Join(images, "vm", "image.yaml"), []byte("name: vm\ntype: vm\nformat: raw\nbase: base.raw\nkernel:\n  path: /boot/vmlinuz\nsnapshots:\n  mode: dm-snapshot\n"), 0o644)
-	tr := snapshot.New("vm", "")
-	tr.Create("v1", "base")
-	tr.Create("v2", "v1")
+	os.WriteFile(filepath.Join(images, "vm", "image.yaml"), []byte("name: vm\ntype: lxd-vm\nformat: raw\nbase: base.raw\nkernel:\n  path: /boot/vmlinuz\nsnapshots:\n  mode: dm-snapshot\n"), 0o644)
+	tr := mkTree("vm", false, "v1", "v2")
 	tr.Save(filepath.Join(snap, "vm", "tree.json"))
-	for _, n := range []string{"v1", "v2"} {
+	for _, n := range []string{"n1", "n2"} {
 		os.WriteFile(filepath.Join(snap, "vm", n+".cow"), make([]byte, 4096), 0o644)
 	}
 	return
@@ -35,40 +32,40 @@ func TestFlattenDM(t *testing.T) {
 		copied = src + " -> " + dst
 		return os.WriteFile(dst, []byte("flat-disk"), 0o644)
 	}
-	d, err := FlattenDM(r, DMOptions{SnapRoot: snap, ImagesRoot: images, Image: "vm", Node: "v2", Copy: cp})
+	d, err := FlattenDM(r, DMOptions{SnapRoot: snap, ImagesRoot: images, Image: "vm", Node: "n2", Copy: cp})
 	if err != nil {
 		t.Fatal(err)
 	}
 	cmds := strings.Join(r.Cmds, "\n")
 	for _, want := range []string{
-		"dmsetup create oml-x-vm-v1 --table '0 2048 snapshot /dev/loop0 /dev/loop1 P 8'",
-		"dmsetup create oml-x-vm-v2 --table '0 2048 snapshot /dev/mapper/oml-x-vm-v1 /dev/loop2 P 8'",
-		"dmsetup remove oml-x-vm-v2", "losetup -d /dev/loop0",
+		"dmsetup create oml-x-vm-n1 --table '0 2048 snapshot /dev/loop0 /dev/loop1 P 8'",
+		"dmsetup create oml-x-vm-n2 --table '0 2048 snapshot /dev/mapper/oml-x-vm-n1 /dev/loop2 P 8'",
+		"dmsetup remove oml-x-vm-n2", "losetup -d /dev/loop0",
 	} {
 		if !strings.Contains(cmds, want) {
 			t.Errorf("missing %q in\n%s", want, cmds)
 		}
 	}
-	if copied != "/dev/mapper/oml-x-vm-v2 -> "+filepath.Join(d, "base.raw") {
+	if copied != "/dev/mapper/oml-x-vm-n2 -> "+filepath.Join(d, "base.raw") {
 		t.Errorf("copy: %q", copied)
 	}
-	if strings.Index(cmds, "dmsetup remove oml-x-vm-v2") > strings.Index(cmds, "dmsetup remove oml-x-vm-v1") {
+	if strings.Index(cmds, "dmsetup remove oml-x-vm-n2") > strings.Index(cmds, "dmsetup remove oml-x-vm-n1") {
 		t.Error("teardown must be top-down")
 	}
 	res, err := config.Load("", filepath.Join(d, "image.yaml"))
-	if err != nil || res.Image.Name != "vm-flat-v2" || res.Image.Base != "base.raw" || len(res.Image.SHA256) != 64 {
+	if err != nil || res.Image.Name != "vm-flat-n2" || res.Image.Base != "base.raw" || len(res.Image.SHA256) != 64 {
 		t.Fatalf("%v %+v", err, res)
 	}
-	if _, err := os.Stat(filepath.Join(snap, "vm-flat-v2")); err == nil {
+	if _, err := os.Stat(filepath.Join(snap, "vm-flat-n2")); err == nil {
 		t.Error("new image must start with an empty tree dir")
 	}
-	if _, err := FlattenDM(r, DMOptions{SnapRoot: snap, ImagesRoot: images, Image: "vm", Node: "v2", Copy: cp}); err == nil {
+	if _, err := FlattenDM(r, DMOptions{SnapRoot: snap, ImagesRoot: images, Image: "vm", Node: "n2", Copy: cp}); err == nil {
 		t.Error("existing target must be refused")
 	}
 	// missing layer is refused before anything runs
-	os.Remove(filepath.Join(snap, "vm", "v1.cow"))
+	os.Remove(filepath.Join(snap, "vm", "n1.cow"))
 	r2 := &DryRunner{}
-	if _, err := FlattenDM(r2, DMOptions{SnapRoot: snap, ImagesRoot: images, Image: "vm", Node: "v2", NewName: "x"}); err == nil || len(r2.Cmds) != 0 {
+	if _, err := FlattenDM(r2, DMOptions{SnapRoot: snap, ImagesRoot: images, Image: "vm", Node: "n2", NewName: "x"}); err == nil || len(r2.Cmds) != 0 {
 		t.Fatalf("%v %v", err, r2.Cmds)
 	}
 }
@@ -79,23 +76,23 @@ func TestExportDM(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "o.img")
 	var copied string
 	cp := func(src, dst string) error { copied = src + " -> " + dst; return nil }
-	if err := ExportDM(r, DMOptions{SnapRoot: snap, ImagesRoot: images, Image: "vm", Node: "v1", Raw: out, Copy: cp}); err != nil {
+	if err := ExportDM(r, DMOptions{SnapRoot: snap, ImagesRoot: images, Image: "vm", Node: "n1", Raw: out, Copy: cp}); err != nil {
 		t.Fatal(err)
 	}
-	if copied != "/dev/mapper/oml-x-vm-v1 -> "+out {
+	if copied != "/dev/mapper/oml-x-vm-n1 -> "+out {
 		t.Error(copied, r.Cmds)
 	}
 	no := func(string) (string, error) { return "", os.ErrNotExist }
-	err := ExportDM(&DryRunner{}, DMOptions{SnapRoot: snap, ImagesRoot: images, Image: "vm", Node: "v1", Qcow2: out, Which: no})
+	err := ExportDM(&DryRunner{}, DMOptions{SnapRoot: snap, ImagesRoot: images, Image: "vm", Node: "n1", Qcow2: out, Which: no})
 	if err == nil || !strings.Contains(err.Error(), "--raw") {
 		t.Fatalf("qemu-img hint: %v", err)
 	}
 	yes := func(s string) (string, error) { return "/usr/bin/" + s, nil }
 	r = &DryRunner{}
-	if err := ExportDM(r, DMOptions{SnapRoot: snap, ImagesRoot: images, Image: "vm", Node: "v1", Qcow2: out, Which: yes}); err != nil || !strings.Contains(strings.Join(r.Cmds, "\n"), "qemu-img convert -f raw -O qcow2 /dev/mapper/oml-x-vm-v1") {
+	if err := ExportDM(r, DMOptions{SnapRoot: snap, ImagesRoot: images, Image: "vm", Node: "n1", Qcow2: out, Which: yes}); err != nil || !strings.Contains(strings.Join(r.Cmds, "\n"), "qemu-img convert -f raw -O qcow2 /dev/mapper/oml-x-vm-n1") {
 		t.Fatal(err, r.Cmds)
 	}
-	if ExportDM(r, DMOptions{Image: "vm", Node: "v1"}) == nil {
+	if ExportDM(r, DMOptions{Image: "vm", Node: "n1"}) == nil {
 		t.Fatal("needs a target")
 	}
 }
@@ -103,7 +100,7 @@ func TestExportDM(t *testing.T) {
 func TestDataVolumes(t *testing.T) {
 	f := osetup(t, nil, "data:\n  - {name: e, mount: /var/lib/e, backend: ext4-file, size: 64M, snapshot: false}\n  - {name: d, mount: /srv/d, backend: dir}\n  - {name: n, mount: /mnt/n, backend: partition}\n")
 	systemdRoot(f.o.NewRoot)
-	f.o.Snapshot = "new:x"
+	f.o.Ephemeral = true
 	p, err := BuildPlan(f.o, f.res, f.img)
 	if err != nil {
 		t.Fatal(err)

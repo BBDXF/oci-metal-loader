@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -40,6 +39,8 @@ type Store struct {
 	TreePath string
 	Statfs   StatfsFunc
 	Now      func() time.Time
+	// IgnoreLock skips the "image is in use" check of mutating operations (boot-time auto-gc).
+	IgnoreLock bool
 }
 
 // Open loads <root>/<image>/tree.json. With create, a missing tree becomes an empty one (not saved until Save).
@@ -100,6 +101,9 @@ func (s *Store) cowPath(n string) string {
 	}
 	return filepath.Join(s.dir(), f)
 }
+
+// Dir is <root>/<image>.
+func (s *Store) Dir() string { return s.dir() }
 
 func (s *Store) layerDesc(n string) string {
 	if s.Mode == ModeOverlay {
@@ -224,125 +228,273 @@ func fileSHA(p string) (string, error) {
 // Guard runs the space guard against the snapshot partition.
 func (s *Store) Guard() error { return CheckSpace(s.Root, s.Ret.MinFreePercent, s.Statfs) }
 
-// Create adds a snapshot (metadata + empty layer). The parent's data is never touched.
-func (s *Store) Create(name, from, note string, tags []string) error {
-	if !nameRe.MatchString(name) {
-		return fmt.Errorf("invalid snapshot name %q", name)
+func (s *Store) checkIdle() error {
+	if s.IgnoreLock {
+		return nil
+	}
+	if busy, why := s.InUse(); busy {
+		return fmt.Errorf("image %s is in use (%s): snapshots are managed from the loader before the image is booted: shut the system down and return to the loader first", s.Image, why)
+	}
+	return nil
+}
+
+func (s *Store) removeNodes(ids []string) error { return s.removeNodesHead(ids, false, "") }
+
+// removeNodesHead removes nodes; with setHead the live state's base is moved to head afterwards.
+func (s *Store) removeNodesHead(ids []string, setHead bool, head string) error {
+	s.Tree.Remove(ids...)
+	if setHead {
+		s.Tree.SetHead(head)
+	}
+	if err := s.Save(); err != nil {
+		return err
+	}
+	for _, n := range ids {
+		if err := s.removeLayerID(n); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// removeLayerID removes the data of a node that is no longer in the tree (file name derived from the id).
+func (s *Store) removeLayerID(id string) error {
+	switch s.Mode {
+	case ModeDM:
+		return removeIfExists(filepath.Join(s.dir(), id+".cow"))
+	case ModeOverlay:
+		return os.RemoveAll(filepath.Join(s.dir(), id))
+	}
+	return nil
+}
+
+// GCEphemeral removes all ephemeral nodes (leftovers of ephemeral boots). dry only plans. Returns their ids.
+func (s *Store) GCEphemeral(dry bool) ([]string, error) {
+	plan := s.Tree.Ephemerals()
+	if dry || len(plan) == 0 {
+		return plan, nil
+	}
+	return plan, s.removeNodes(plan)
+}
+
+func (s *Store) depthGuard(parent, label string) error {
+	d, err := s.Tree.Depth(parent)
+	if err != nil {
+		return err
+	}
+	if s.MaxDepth > 0 && d+1 > s.MaxDepth {
+		return fmt.Errorf("chain depth %d would exceed max_chain_depth %d: delete or prune snapshots, or flatten first (`omloader snapshot flatten %s %s` builds a new flat image)", d+1, s.MaxDepth, s.Image, orLabel(label))
+	}
+	return nil
+}
+
+func orLabel(l string) string {
+	if l == "" {
+		return "<label>"
+	}
+	return l
+}
+
+// Create freezes the live state as snapshot label; the next boot continues in a fresh empty live layer on top.
+func (s *Store) Create(label, note string, tags []string) error {
+	if _, err := s.GCEphemeral(false); err != nil {
+		return err
+	}
+	if err := s.checkIdle(); err != nil {
+		return err
 	}
 	if err := s.Guard(); err != nil {
 		return err
 	}
-	if from != "" && from != "base" {
-		if _, ok := s.Tree.Nodes[from]; !ok {
-			return fmt.Errorf("parent snapshot %q not found", from)
-		}
-	}
-	parent := from
-	if parent == "" {
-		parent = s.Tree.Current
-	} else if parent == "base" {
-		parent = ""
-	}
-	depth := 1
-	if parent != "" {
-		d, err := s.Tree.Depth(parent)
-		if err != nil {
+	if s.Tree.Current != "" {
+		if err := s.depthGuard(s.Tree.Current, label); err != nil {
 			return err
 		}
-		depth = d + 1
 	}
-	if s.MaxDepth > 0 && depth > s.MaxDepth {
-		return fmt.Errorf("chain depth %d would exceed max_chain_depth %d: flatten first (`omloader snapshot flatten %s %s`)", depth, s.MaxDepth, s.Image, orBase(parent))
-	}
-	prev := *s.Tree
-	prevNodes := map[string]snapshot.Node{}
-	for k, v := range s.Tree.Nodes {
-		prevNodes[k] = v
-	}
-	if err := s.Tree.CreateWith(name, from, note, tags); err != nil {
-		return err
-	}
-	undo := func() { s.Tree.Nodes, s.Tree.Current = prevNodes, prev.Current }
-	if err := s.CreateLayer(name); err != nil {
-		s.RemoveLayer(name)
-		undo()
+	prev := s.Tree.Clone()
+	if _, err := s.Tree.Freeze(label, note, tags); err != nil {
 		return err
 	}
 	if err := s.Save(); err != nil {
-		s.RemoveLayer(name)
-		undo()
+		s.Tree = prev
 		return err
 	}
 	return nil
 }
 
-func orBase(n string) string {
-	if n == "" {
-		return "<node>"
+// Revert discards the live state and continues from target (a label or "base"). With keep, the old live state is
+// first frozen as snapshot keep (a sibling branch); otherwise its data is deleted.
+func (s *Store) Revert(target, keep string) error {
+	if _, err := s.GCEphemeral(false); err != nil {
+		return err
 	}
-	return n
-}
-
-// Rollback moves current to node ("base" = base image). With discard, the node's own data is wiped
-// (only allowed for leaves: frozen layers are lower layers of their children and are never touched).
-func (s *Store) Rollback(node string, discard bool) error {
-	if node == "base" {
-		if discard {
-			return fmt.Errorf("--discard needs a snapshot, not base")
-		}
-		s.Tree.Current = ""
-		return s.Save()
+	if err := s.checkIdle(); err != nil {
+		return err
 	}
-	if _, ok := s.Tree.Nodes[node]; !ok {
-		return fmt.Errorf("snapshot %q not found", node)
+	id, err := s.Tree.ResolveSnapshot(target, true)
+	if err != nil {
+		return err
 	}
-	if discard {
-		if ch := s.Tree.Children(node); len(ch) > 0 {
-			return fmt.Errorf("snapshot %q is frozen (children %v): its data is part of their stack and is not discarded; create a new child instead", node, ch)
-		}
-		if err := s.WipeLayer(node); err != nil {
+	prev := s.Tree.Clone()
+	old := s.Tree.Current
+	if keep != "" {
+		if err := s.Guard(); err != nil {
 			return err
 		}
+		if _, err := s.Tree.Freeze(keep, "", nil); err != nil {
+			return err
+		}
+		old = ""
+	} else if old != "" {
+		if ch := s.Tree.Children(old); len(ch) > 0 {
+			return fmt.Errorf("live state %s unexpectedly has children %v", old, ch)
+		}
+		s.Tree.Remove(old)
 	}
-	s.Tree.Current = node
-	return s.Save()
+	s.Tree.SetHead(id)
+	if err := s.Save(); err != nil {
+		s.Tree = prev
+		return err
+	}
+	if old != "" {
+		return s.removeLayerID(old)
+	}
+	return nil
 }
 
-// Delete removes a snapshot (and with recursive its subtree) including on-disk layers.
-func (s *Store) Delete(node string, recursive, force bool) ([]string, error) {
-	plan, err := s.Tree.PlanDelete(node, recursive, force)
+// DeletePlan is what Delete would do.
+type DeletePlan struct {
+	Kind  string   // leaf | merge | subtree
+	IDs   []string // layers removed (deepest first)
+	Node  string   // the snapshot's node id
+	Child string   // merge: the child that receives the snapshot's changes
+	Desc  []string // human-readable description
+	Head  bool     // the live state is based on this snapshot with no changes yet
+}
+
+// PlanDelete validates deleting snapshot label without changing anything.
+func (s *Store) PlanDelete(label string, recursive, force bool) (*DeletePlan, error) {
+	if label == snapshot.Base {
+		return nil, fmt.Errorf("base is the read-only original image and cannot be deleted")
+	}
+	t := s.Tree
+	id, err := t.ResolveSnapshot(label, false)
 	if err != nil {
 		return nil, err
 	}
-	return plan, s.apply(plan)
+	var kids []string
+	for _, k := range t.PersistentChildren(id) {
+		kids = append(kids, k)
+	}
+	pl := &DeletePlan{Node: id, Head: t.Current == "" && t.LiveParent == id}
+	if pl.Head && !force {
+		return nil, fmt.Errorf("snapshot %q is what the live state is based on (no changes since): use --force to move the live state to %s, or revert elsewhere first", label, t.Display(t.Nodes[id].Parent))
+	}
+	switch {
+	case len(kids) == 1 && !recursive:
+		if s.Mode != ModeOverlay {
+			return nil, fmt.Errorf("snapshot %q has a child (%s): deleting it would merge its changes into that child, which is not supported in %s mode (stacked COW layers cannot be merged). "+
+				"Use `omloader snapshot flatten %s %s` to build a standalone image, or delete the whole branch with --recursive", label, t.Display(kids[0]), orMode(s.Mode), s.Image, label)
+		}
+		pl.Kind, pl.IDs, pl.Child = "merge", []string{id}, kids[0]
+		pl.Desc = []string{fmt.Sprintf("merge %s into %s, then remove %s", label, t.Display(kids[0]), label)}
+	case len(kids) == 0:
+		pl.Kind, pl.IDs = "leaf", []string{id}
+		pl.Desc = []string{"remove " + label}
+	default:
+		if !recursive {
+			var names []string
+			for _, k := range kids {
+				names = append(names, t.Display(k))
+			}
+			return nil, fmt.Errorf("snapshot %q has several children %v; use --recursive to delete the whole subtree", label, names)
+		}
+		all := append(t.Descendants(id), id)
+		for _, n := range all {
+			if n == t.Current && !force {
+				return nil, fmt.Errorf("the live state is inside the subtree of %q; use --force to delete it too", label)
+			}
+		}
+		pl.Kind, pl.IDs = "subtree", all
+		var names []string
+		for _, n := range all {
+			names = append(names, t.Display(n))
+		}
+		pl.Desc = []string{"remove the subtree: " + strings.Join(names, ", ")}
+	}
+	return pl, nil
 }
 
-func (s *Store) apply(names []string) error {
-	for _, n := range names {
-		if err := s.RemoveLayer(n); err != nil {
-			return err
+// Delete removes snapshot label. A leaf branch tip is removed; a snapshot with exactly one child is merged into that
+// child (overlay mode only); with recursive the whole subtree goes. Returns what was removed/merged (description).
+func (s *Store) Delete(label string, recursive, force bool) (string, error) {
+	if _, err := s.GCEphemeral(false); err != nil {
+		return "", err
+	}
+	if err := s.checkIdle(); err != nil {
+		return "", err
+	}
+	pl, err := s.PlanDelete(label, recursive, force)
+	if err != nil {
+		return "", err
+	}
+	t := s.Tree
+	if pl.Kind == "merge" {
+		if err := MergeUpper(filepath.Join(s.dir(), pl.Node, "upper"), filepath.Join(s.dir(), pl.Child, "upper")); err != nil {
+			return "", fmt.Errorf("merging %s into %s: %w", label, t.Display(pl.Child), err)
+		}
+		cn := t.Nodes[pl.Child]
+		cn.Parent = t.Nodes[pl.Node].Parent
+		t.Nodes[pl.Child] = cn
+		if pl.Head {
+			t.LiveParent = cn.Parent
 		}
 	}
-	s.Tree.Remove(names...)
-	return s.Save()
-}
-
-// GC removes tmp-* ephemerals older than olderThan. dry only plans.
-func (s *Store) GC(olderThan time.Duration, dry bool) ([]string, error) {
-	plan := s.Tree.PlanGC(s.Now(), olderThan)
-	if dry || len(plan) == 0 {
-		return plan, nil
+	oldParent := t.Nodes[pl.Node].Parent
+	liveGone := pl.Head
+	for _, n := range pl.IDs {
+		if t.Current != "" && n == t.Current {
+			liveGone = true
+		}
 	}
-	return plan, s.apply(plan)
+	if pl.Kind == "merge" {
+		liveGone = false
+		if pl.Head {
+			t.LiveParent = oldParent
+		}
+	}
+	if err := s.removeNodesHead(pl.IDs, liveGone, oldParent); err != nil {
+		return "", err
+	}
+	return strings.Join(pl.Desc, "; "), nil
 }
 
-// Prune applies the retention policy. dry only plans.
+func orMode(m string) string {
+	if m == "" {
+		return "this"
+	}
+	return m
+}
+
+// Prune applies the retention policy to the snapshots (never the live node, tagged or ancestors of kept ones).
 func (s *Store) Prune(dry bool) ([]string, error) {
-	plan := s.Tree.PlanPrune(s.Ret.KeepLast, s.Ret.KeepTagged)
-	if dry || len(plan) == 0 {
-		return plan, nil
+	if !dry {
+		if _, err := s.GCEphemeral(false); err != nil {
+			return nil, err
+		}
+		if err := s.checkIdle(); err != nil {
+			return nil, err
+		}
 	}
-	return plan, s.apply(plan)
+	plan := s.Tree.PlanPrune(s.Ret.KeepLast, s.Ret.KeepTagged)
+	var names []string
+	for _, n := range plan {
+		names = append(names, s.Tree.Display(n))
+	}
+	if dry || len(plan) == 0 {
+		return names, nil
+	}
+	return names, s.removeNodes(plan)
 }
 
 // ListOptions for List.
@@ -350,13 +502,19 @@ type ListOptions struct{ Tree, Sizes bool }
 
 func (s *Store) flags(n string) string {
 	var f []string
+	nd := s.Tree.Nodes[n]
 	if n == s.Tree.Current {
 		f = append(f, "current")
+	} else if nd.Label != "" {
+		f = append(f, "snapshot")
 	}
-	if len(s.Tree.Children(n)) > 0 {
+	if n != "" && n == s.Tree.Head() {
+		f = append(f, "live-state-based-here")
+	}
+	if len(s.Tree.PersistentChildren(n)) > 0 {
 		f = append(f, "frozen")
 	}
-	if strings.HasPrefix(n, "tmp-") {
+	if nd.Ephemeral {
 		f = append(f, "ephemeral")
 	}
 	if s.Mode != ModeNone && !s.LayerExists(n) {
@@ -367,20 +525,26 @@ func (s *Store) flags(n string) string {
 
 func (s *Store) line(n string, o ListOptions) string {
 	nd := s.Tree.Nodes[n]
-	p := nd.Parent
-	if p == "" {
-		p = "base"
-	}
-	mark := " "
-	if n == s.Tree.Current {
-		mark = "*"
-	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s %s", mark, n)
-	if !o.Tree {
-		fmt.Fprintf(&b, "\tparent=%s", p)
+	name := nd.Label
+	mark := " "
+	switch {
+	case n == s.Tree.Current:
+		mark, name = "●", "current (you are here)"
+	case n == s.Tree.Head():
+		mark = "●"
 	}
-	fmt.Fprintf(&b, "\tcreated=%s", nd.Created)
+	if name == "" {
+		name = n
+		if nd.Ephemeral {
+			name = "(ephemeral boot)"
+		}
+	}
+	fmt.Fprintf(&b, "%s %s", mark, name)
+	if !o.Tree {
+		fmt.Fprintf(&b, "\tparent=%s", s.Tree.Display(nd.Parent))
+	}
+	fmt.Fprintf(&b, "\tid=%s\tcreated=%s", n, nd.Created)
 	if fl := s.flags(n); fl != "" {
 		fmt.Fprintf(&b, "\t[%s]", fl)
 	}
@@ -400,24 +564,36 @@ func (s *Store) line(n string, o ListOptions) string {
 // List renders the snapshots (flat or as a tree).
 func (s *Store) List(o ListOptions) string {
 	var b strings.Builder
+	t := s.Tree
+	virtualLive := t.Current == ""
+	liveLine := func() string {
+		return "● current (you are here)\t[no changes yet: created at the next boot]"
+	}
 	if !o.Tree {
-		for _, n := range s.Tree.Names() {
+		fmt.Fprintf(&b, "%s base (original image)\t[read-only]\n", map[bool]string{true: "●", false: " "}[t.Head() == ""])
+		for _, n := range t.Names() {
 			b.WriteString(s.line(n, o) + "\n")
+		}
+		if virtualLive {
+			b.WriteString(liveLine() + "\tparent=" + t.Display(t.LiveParent) + "\n")
 		}
 		return b.String()
 	}
-	fmt.Fprintf(&b, "base%s\n", map[bool]string{true: "  *", false: ""}[s.Tree.Current == ""])
+	fmt.Fprintf(&b, "%s base (original image)\n", map[bool]string{true: "●", false: " "}[t.Head() == ""])
 	var walk func(parent, prefix string)
 	walk = func(parent, prefix string) {
-		ch := s.Tree.Children(parent)
-		sort.Strings(ch)
+		ch := t.Children(parent)
+		virt := virtualLive && t.LiveParent == parent
 		for i, n := range ch {
 			br, next := "├── ", "│   "
-			if i == len(ch)-1 {
+			if i == len(ch)-1 && !virt {
 				br, next = "└── ", "    "
 			}
 			b.WriteString(prefix + br + s.line(n, o) + "\n")
 			walk(n, prefix+next)
+		}
+		if virt {
+			b.WriteString(prefix + "└── " + liveLine() + "\n")
 		}
 	}
 	walk("", "")
@@ -437,6 +613,6 @@ func (s *Store) DF() (string, error) {
 		a, al := s.Usage(n)
 		sa, sb = sa+a, sb+al
 	}
-	fmt.Fprintf(&b, "image %s: %d snapshots, %s apparent, %s allocated\n", s.Image, len(s.Tree.Nodes), Human(sa), Human(sb))
+	fmt.Fprintf(&b, "image %s: %d layers (%d snapshots), %s apparent, %s allocated\n", s.Image, len(s.Tree.Nodes), len(s.Tree.Labels()), Human(sa), Human(sb))
 	return b.String(), nil
 }

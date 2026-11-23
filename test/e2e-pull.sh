@@ -87,14 +87,14 @@ eq "$(rc p1 pullct)" 0 "pull container via mirror fallback (rc)"
 eq "$(rc p1 pullvm)" 0 "pull VM via mirror fallback (rc)"
 sect p1 pullct | grep -q 'sha256 verified' && pass "container download digest-verified" || fail "no verification line"
 sect p1 ctyaml | grep -q 'type: lxd-container' && pass "pullct/image.yaml type lxd-container" || fail "ct image.yaml"
-sect p1 vmyaml | grep -q 'type: vm' && sect p1 vmyaml | grep -q 'root_partition: 1' && sect p1 vmyaml | grep -q 'path: /boot/vmlinuz' && sect p1 vmyaml | grep -q 'initrd: /boot/initrd.img' \
+sect p1 vmyaml | grep -q 'type: lxd-vm' && sect p1 vmyaml | grep -q 'root_partition: 1' && sect p1 vmyaml | grep -q 'path: /boot/vmlinuz' && sect p1 vmyaml | grep -q 'initrd: /boot/initrd.img' \
   && pass "VM probe filled kernel.path/initrd/root_partition: $(sect p1 vmyaml | grep -E 'path:|initrd:|root_partition:' | tr -s ' \n' ' ')" || fail "vm image.yaml: $(sect p1 vmyaml | tr '\n' '|')"
 sect p1 cachels | grep -q '^blob ' && pass "cache ls lists content-addressed blobs" || fail "cache ls"
 
-guest g1 pullct new:run1
-grep -q OMLOADER_GUEST_OK $W/g1.clean && eq "$GOT" 1 "pulled container boots (new:run1), counter" || fail "pulled container did not boot"
-guest g2 pullvm new:run1
-grep -q OMLOADER_GUEST_OK $W/g2.clean && eq "$GOT" 1 "pulled VM boots via kexec + guest reassembly (new:run1), counter" || fail "pulled VM did not boot"
+guest g1 pullct ""
+grep -q OMLOADER_GUEST_OK $W/g1.clean && eq "$GOT" 1 "pulled container boots (current), counter" || fail "pulled container did not boot"
+guest g2 pullvm ""
+grep -q OMLOADER_GUEST_OK $W/g2.clean && eq "$GOT" 1 "pulled VM boots via kexec + guest reassembly (current), counter" || fail "pulled VM did not boot"
 
 # ================= offline: server stopped, builds come from the cache only =================
 kill $SRVPID; wait $SRVPID 2>/dev/null; SRVPID=
@@ -109,9 +109,9 @@ eq "$(rc p2 pullct2)" 0 "offline pull of the container from the cache (--offline
 eq "$(rc p2 pullvm2)" 0 "offline pull of the VM from the cache (cache.offline: on), server down"
 [ "$(rc p2 miss)" != 0 ] && [ -n "$(rc p2 miss)" ] && pass "offline pull of an unknown image fails" || fail "offline miss rc=$(rc p2 miss)"
 sect p2 srctest | grep -q 'skipped: offline' && pass "source test skips the network in offline mode" || fail "source test offline"
-guest g3 pullct2 new:run1
+guest g3 pullct2 ""
 grep -q OMLOADER_GUEST_OK $W/g3.clean && eq "$GOT" 1 "offline-pulled container boots" || fail "offline container did not boot"
-guest g4 pullvm2 new:run1
+guest g4 pullvm2 ""
 grep -q OMLOADER_GUEST_OK $W/g4.clean && eq "$GOT" 1 "offline-pulled VM boots" || fail "offline VM did not boot"
 rm -f $D
 [ $FAIL = 0 ] && echo "E2E-PULL: ALL PASS" || echo "E2E-PULL: FAILED"

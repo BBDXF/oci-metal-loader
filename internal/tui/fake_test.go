@@ -20,12 +20,13 @@ type fakeSvc struct {
 
 func newFake() *fakeSvc {
 	return &fakeSvc{trees: map[string]*TreeInfo{
-		"alpine": {Image: "alpine", Mode: "overlayfs", Type: "lxd-container", Current: "b", Nodes: []NodeInfo{
-			{Name: "a", Created: "2026-01-01T10:00:00Z", Note: "first", Tags: []string{"golden"}, Alloc: 4096},
-			{Name: "b", Parent: "a", Created: "2026-01-02T10:00:00Z", Alloc: 8192},
-			{Name: "c", Parent: "a", Created: "2026-01-03T10:00:00Z"},
+		"alpine": {Image: "alpine", Mode: "overlayfs", Type: "lxd-container", Current: "n3", Head: "n2", Nodes: []NodeInfo{
+			{Name: "n1", Label: "a", Created: "2026-01-01T10:00:00Z", Note: "first", Tags: []string{"golden"}, Alloc: 4096},
+			{Name: "n2", Label: "b", Parent: "n1", Created: "2026-01-02T10:00:00Z", Alloc: 8192},
+			{Name: "n3", Parent: "n2", Created: "2026-01-02T12:00:00Z", Live: true, Alloc: 1024},
+			{Name: "n4", Label: "c", Parent: "n1", Created: "2026-01-03T10:00:00Z"},
 		}},
-		"deb": {Image: "deb", Mode: "dm-snapshot", Type: "vm"},
+		"deb": {Image: "deb", Mode: "dm-snapshot", Type: "lxd-vm"},
 	}}
 }
 
@@ -48,7 +49,7 @@ func (f *fakeSvc) called(sub string) bool {
 func (f *fakeSvc) Images() ([]ImageInfo, error) {
 	return []ImageInfo{
 		{Name: "alpine", Type: "lxd-container", Mode: "overlayfs", Size: 3 << 20, BaseOK: "ok", Snaps: 3, Current: "b", LastUsed: time.Date(2026, 1, 3, 11, 0, 0, 0, time.UTC)},
-		{Name: "deb", Type: "vm", Mode: "dm-snapshot", Size: 2 << 30, BaseOK: "-"},
+		{Name: "deb", Type: "lxd-vm", Mode: "dm-snapshot", Size: 2 << 30, BaseOK: "-"},
 	}, nil
 }
 func (f *fakeSvc) Tree(i string) (*TreeInfo, error) {
@@ -60,33 +61,19 @@ func (f *fakeSvc) Tree(i string) (*TreeInfo, error) {
 	cp.Nodes = append([]NodeInfo{}, t.Nodes...)
 	return &cp, nil
 }
-func (f *fakeSvc) Create(i, n, from, note string, tags []string) error {
-	f.rec("create %s %s from=%s note=%q tags=%v", i, n, from, note, tags)
-	t := f.trees[i]
-	p := from
-	if p == "base" {
-		p = ""
-	}
-	t.Nodes = append(t.Nodes, NodeInfo{Name: n, Parent: p, Note: note, Tags: tags, Created: "2026-02-01T00:00:00Z"})
-	t.Current = n
+func (f *fakeSvc) Create(i, label, note string, tags []string) error {
+	f.rec("create %s %s note=%q tags=%v", i, label, note, tags)
 	return nil
 }
-func (f *fakeSvc) Rollback(i, n string, d bool) error {
-	f.rec("rollback %s %s discard=%v", i, n, d)
-	if n == "base" {
-		n = ""
-	}
-	f.trees[i].Current = n
+func (f *fakeSvc) Revert(i, target, keep string) error {
+	f.rec("revert %s %s keep=%q", i, target, keep)
 	return nil
 }
 func (f *fakeSvc) DeletePlan(i, n string, rec, force bool) ([]string, error) {
-	if n == f.trees[i].Current && !force {
-		return nil, errors.New("current snapshot: use --force")
-	}
 	if rec {
-		return []string{"c", n}, nil
+		return []string{"remove the subtree: c, b, " + n}, nil
 	}
-	return []string{n}, nil
+	return []string{"merge " + n + " into current, then remove " + n}, nil
 }
 func (f *fakeSvc) Delete(i, n string, rec, force bool) error {
 	f.rec("delete %s %s rec=%v force=%v", i, n, rec, force)
@@ -118,14 +105,14 @@ func (f *fakeSvc) Export(ctx context.Context, i, n, p string, w io.Writer) error
 	f.rec("export %s %s %s", i, n, p)
 	return nil
 }
-func (f *fakeSvc) BootArgs(i, s string, force bool) []string {
+func (f *fakeSvc) BootArgs(i, s string, eph bool) []string {
 	a := []string{"omloader", "boot", "--image", i, "--snapshot", s}
-	if force {
-		a = append(a, "--force")
+	if eph {
+		a = append(a, "--ephemeral")
 	}
 	return a
 }
-func (f *fakeSvc) BootPreview(ctx context.Context, i, s string, force bool, w io.Writer) error {
+func (f *fakeSvc) BootPreview(ctx context.Context, i, s string, eph bool, w io.Writer) error {
 	f.rec("preview %s %s", i, s)
 	fmt.Fprintln(w, "+ losetup ...")
 	return nil

@@ -68,7 +68,7 @@ func FlattenOverlay(r Runner, o FlattenOptions) (string, error) {
 	if err := yaml.Unmarshal(yb, &y); err != nil {
 		return "", err
 	}
-	if m, _ := y["snapshots"].(map[string]any); y["type"] == "vm" || (m != nil && m["mode"] == "dm-snapshot") {
+	if m, _ := y["snapshots"].(map[string]any); y["type"] == "lxd-vm" || (m != nil && m["mode"] == "dm-snapshot") {
 		return "", fmt.Errorf("flatten of dm-snapshot (vm) images is not implemented (TODO)")
 	}
 	base, _ := y["base"].(string)

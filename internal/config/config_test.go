@@ -16,7 +16,7 @@ func write(t *testing.T, name, s string) string {
 }
 
 const goodImage = `name: u
-type: vm
+type: lxd-vm
 format: raw
 base: /images/u.raw
 snapshots:
@@ -63,7 +63,7 @@ func TestValidationErrors(t *testing.T) {
 }
 
 func TestTypeConsistency(t *testing.T) {
-	i := write(t, "image.yaml", strings.Replace(goodImage, "type: vm", "type: oci", 1))
+	i := write(t, "image.yaml", strings.Replace(goodImage, "type: lxd-vm", "type: oci", 1))
 	_, err := Load("", i)
 	if err == nil || !strings.Contains(err.Error(), "requires format squashfs") {
 		t.Fatalf("got %v", err)
@@ -124,5 +124,16 @@ func TestRuntimeUsers(t *testing.T) {
 		if !strings.Contains(e, w) {
 			t.Errorf("missing %q in:\n%s", w, e)
 		}
+	}
+}
+
+func TestOldVMTypeRejected(t *testing.T) {
+	i := write(t, "image.yaml", strings.Replace(goodImage, "type: lxd-vm", "type: vm", 1))
+	if _, err := Load("", i); err == nil || !strings.Contains(err.Error(), "use \"lxd-vm\"") {
+		t.Fatalf("got %v", err)
+	}
+	i = write(t, "image2.yaml", strings.Replace(goodImage, "format: raw", "format: squashfs", 1))
+	if _, err := Load("", i); err == nil || !strings.Contains(err.Error(), "type lxd-vm requires format raw") {
+		t.Fatalf("got %v", err)
 	}
 }

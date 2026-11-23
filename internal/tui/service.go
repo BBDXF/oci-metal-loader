@@ -8,30 +8,35 @@ import (
 
 // ImageInfo is one row of the images list.
 type ImageInfo struct {
-	Name, Type string // type: vm | lxd-container | oci (experimental)
+	Name, Type string // type: lxd-vm | lxd-container | oci (experimental)
 	Mode       string // dm-snapshot | overlayfs
 	Size       int64  // base image size (bytes)
 	BaseOK     string // "ok" | "MISMATCH" | "-" (no tree.json yet)
 	Snaps      int
-	Current    string // "" = base
+	Current    string // label of the snapshot the live state sits on ("" = base)
 	LastUsed   time.Time
 	Err        string // image.yaml / tree.json problem
 }
 
-// NodeInfo is one snapshot.
+// NodeInfo is one layer of the snapshot tree: a snapshot (Label set), the live state (Live) or an ephemeral boot.
 type NodeInfo struct {
-	Name, Parent string // Parent "" = on the base image
+	Name, Parent string // Name = node id; Parent "" = on the base image
+	Label        string // snapshot label ("" for the live state / ephemeral nodes)
 	Created      string
 	Note         string
 	Tags         []string
 	Alloc        int64 // on-disk bytes
 	NoLayer      bool  // layer missing on disk
+	Live         bool  // the live state ("current")
+	Ephemeral    bool
 }
 
 // TreeInfo is the snapshot tree of one image.
 type TreeInfo struct {
-	Image, Mode, Type, Current string
-	Nodes                      []NodeInfo
+	Image, Mode, Type string
+	Current           string // id of the live node, "" = none yet (it is created at the next boot)
+	Head              string // id of the snapshot the live state sits on, "" = base
+	Nodes             []NodeInfo
 }
 
 // SourceInfo is one configured online source.
@@ -73,20 +78,24 @@ type StoreStatus struct {
 type Service interface {
 	Images() ([]ImageInfo, error)
 	Tree(image string) (*TreeInfo, error)
-	Create(image, name, from, note string, tags []string) error
-	Rollback(image, node string, discard bool) error
-	DeletePlan(image, node string, recursive, force bool) ([]string, error)
-	Delete(image, node string, recursive, force bool) error
-	Tag(image, node, tag string, remove bool) error
-	SetNote(image, node, note string) error
+	// Create freezes the live state as snapshot label. Revert discards the live state and continues from target (label or
+	// "base"); keep != "" first freezes the old live state under that label.
+	Create(image, label, note string, tags []string) error
+	Revert(image, target, keep string) error
+	// DeletePlan describes what deleting a snapshot would do (lines) or why it is refused.
+	DeletePlan(image, label string, recursive, force bool) ([]string, error)
+	Delete(image, label string, recursive, force bool) error
+	Tag(image, label, tag string, remove bool) error
+	SetNote(image, label, note string) error
+	// Prune applies the retention policy, or (gc) removes ephemeral boot leftovers.
 	Prune(image string, gc, dry bool) ([]string, error)
 	Verify(ctx context.Context, image string, deep bool, w io.Writer) error
 	Flatten(ctx context.Context, image, node, name string, w io.Writer) error
 	ExportDefault(image string) (kind, path string)
 	Export(ctx context.Context, image, node, path string, w io.Writer) error
 	// BootArgs is the `omloader boot` command line that will be run (display only).
-	BootArgs(image, snapshot string, force bool) []string
-	BootPreview(ctx context.Context, image, snapshot string, force bool, w io.Writer) error
+	BootArgs(image, snapshot string, ephemeral bool) []string
+	BootPreview(ctx context.Context, image, snapshot string, ephemeral bool, w io.Writer) error
 
 	Sources() ([]SourceInfo, error)
 	SourceTest(ctx context.Context, name string, w io.Writer) error
@@ -109,7 +118,7 @@ type Service interface {
 // BootRequest asks the caller to run `omloader boot` after the TUI has restored the terminal.
 type BootRequest struct {
 	Image, Snapshot string
-	Force           bool
+	Ephemeral       bool
 }
 
 // ResultKind is how the model ended.

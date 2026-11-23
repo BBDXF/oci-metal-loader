@@ -3,9 +3,32 @@ package main
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"omloader/internal/snapmgr"
 )
+
+// simBoot simulates what `omloader boot` does to the tree: continue (lazily create) the live node and its layer.
+func simBoot(t *testing.T, snap, image, imgs, marker string) {
+	t.Helper()
+	st, err := snapmgr.Open(snap, image, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Mode = snapmgr.ModeOverlay
+	id, created := st.Tree.EnsureLive()
+	if created {
+		if err := st.CreateLayer(id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	os.WriteFile(filepath.Join(snap, image, id, "upper", marker), []byte(marker), 0o644)
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestSnapshotCLI(t *testing.T) {
 	root := t.TempDir()
@@ -16,14 +39,11 @@ func TestSnapshotCLI(t *testing.T) {
 		}
 		return o.String()
 	}
-	do(0, "snapshot", "create", "u", "a", "--root", root)
-	do(0, "snapshot", "create", "u", "b", "--root", root)
-	do(1, "snapshot", "delete", "u", "a", "--root", root)
-	do(0, "snapshot", "rollback", "u", "a", "--root", root)
-	if out := do(0, "snapshot", "list", "u", "--root", root); out == "" {
-		t.Fatal("empty list")
+	do(1, "snapshot", "create", "u", "a", "--root", root) // nothing to snapshot on a fresh image
+	if out := do(0, "snapshot", "list", "u", "--root", root); !strings.Contains(out, "base (original image)") || !strings.Contains(out, "current (you are here)") {
+		t.Fatal(out)
 	}
-	do(1, "snapshot", "list", "nope", "--root", root)
+	do(1, "snapshot", "list", "..", "--root", root)
 	do(0, "config", "validate")
 }
 
@@ -44,39 +64,46 @@ func TestSnapshotOpsCLI(t *testing.T) {
 		}
 		return o.String() + e.String()
 	}
+	simBoot(t, snap, "c", imgs, "m1")
 	do(0, "snapshot", "create", "c", "s1", "--note", "first", "--tag", "gold")
-	do(0, "snapshot", "create", "c", "s2", "--from", "s1")
-	do(0, "snapshot", "create", "c", "s3", "--from", "s1")
-	if _, err := os.Stat(snap + "/c/s2/upper"); err != nil {
-		t.Fatal("layer not created", err)
+	do(1, "snapshot", "create", "c", "s1") // duplicate / nothing new
+	simBoot(t, snap, "c", imgs, "m2")
+	do(1, "snapshot", "create", "c", "s1")
+	do(0, "snapshot", "create", "c", "s2")
+	simBoot(t, snap, "c", imgs, "m3")
+	out := do(0, "snapshot", "list", "c", "--tree", "--sizes")
+	for _, w := range []string{"base (original image)", "s1", "s2", "gold", "●", "current (you are here)", "allocated", "└──"} {
+		if !strings.Contains(out, w) {
+			t.Fatalf("list lacks %q:\n%s", w, out)
+		}
 	}
-	if out := do(0, "snapshot", "list", "c", "--tree", "--sizes"); !strings.Contains(out, "frozen") || !strings.Contains(out, "gold") || !strings.Contains(out, "├──") {
-		t.Fatal(out)
-	}
-	do(1, "snapshot", "delete", "c", "s1")
-	do(1, "snapshot", "rollback", "c", "s1", "--discard")
 	do(0, "snapshot", "tag", "c", "s2", "x", "y")
 	do(0, "snapshot", "untag", "c", "s2", "x")
 	do(0, "snapshot", "note", "c", "s2", "hello", "world")
-	if out := do(0, "snapshot", "prune", "c", "--dry-run"); !strings.Contains(out, "would delete 0") {
-		t.Fatal(out) // s3 is current; s2 tagged y
-	}
-	do(0, "snapshot", "rollback", "c", "s2")
-	if out := do(0, "snapshot", "prune", "c", "--dry-run"); !strings.Contains(out, "would delete 1 snapshot(s): s3") {
+	do(1, "snapshot", "tag", "c", "base", "x")
+	// delete the middle snapshot s1: merged into s2 (overlay)
+	if out := do(0, "snapshot", "delete", "c", "s1"); !strings.Contains(out, "merge s1 into s2") {
 		t.Fatal(out)
 	}
+	if b, err := os.ReadFile(snap + "/c/n2/upper/m1"); err != nil || string(b) != "m1" {
+		t.Fatalf("merged content missing: %v", err)
+	}
+	do(1, "snapshot", "delete", "c", "base")
+	do(1, "snapshot", "revert", "c", "nope")
+	do(0, "snapshot", "revert", "c", "s2", "--keep", "kept")
+	if out := do(0, "snapshot", "list", "c", "--tree"); !strings.Contains(out, "kept") {
+		t.Fatal(out)
+	}
+	do(0, "snapshot", "rollback", "c", "base") // alias of revert
+	do(0, "snapshot", "prune", "c", "--dry-run")
 	do(0, "snapshot", "df", "c")
 	do(0, "snapshot", "verify", "c")
 	os.MkdirAll(snap+"/c/orphan", 0o755)
 	if out := do(1, "snapshot", "verify", "c"); !strings.Contains(out, "orphan") {
 		t.Fatal(out)
 	}
-	do(1, "snapshot", "merge", "c", "s1")
-	if out := do(1, "snapshot", "merge", "c", "s3"); !strings.Contains(out, "cannot merge") {
-		t.Fatal(out)
-	}
-	do(0, "snapshot", "gc", "c", "--tmp", "--older-than", "0s")
-	do(0, "snapshot", "delete", "c", "s1", "--recursive", "--force")
+	do(1, "snapshot", "merge", "c", "s2")
+	do(0, "snapshot", "gc", "c", "--ephemeral")
 	do(1, "snapshot", "bogus", "c")
 }
 

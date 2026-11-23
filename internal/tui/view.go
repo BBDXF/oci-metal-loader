@@ -185,36 +185,51 @@ func (m *Model) drawDetail(c *Canvas) {
 		return
 	}
 	g := m.Th.g()
-	c.Put(1, 1, trunc(fmt.Sprintf("%s  type=%s  mode=%s  current=%s  snapshots=%d", m.image, t.Type, t.Mode, nodeLabel(t.Current), len(t.Nodes)), m.W-2), StBold)
+	head := L.BaseNode
+	snaps := 0
+	for _, n := range t.Nodes {
+		if n.Label != "" {
+			snaps++
+			if n.Name == t.Head {
+				head = n.Label
+			}
+		}
+	}
+	hdr := fmt.Sprintf("%s  type=%s  mode=%s  live on=%s  snapshots=%d", m.image, t.Type, t.Mode, head, snaps)
+	c.Put(1, 1, trunc(hdr, m.W-2), StBold)
 	vis := m.bodyRows() - 5
 	for i := 0; i < vis && m.dtop+i < len(m.rows); i++ {
 		r := m.rows[m.dtop+i]
 		mark := " "
-		if (r.IsBase && t.Current == "") || (!r.IsBase && r.Name == t.Current) {
+		if (r.IsBase && t.Head == "") || (!r.IsBase && (r.Node.Live || (r.Node.Name == t.Head && !r.Node.Ephemeral))) {
 			mark = g.cur
 		}
 		var line string
 		if r.IsBase {
-			line = mark + " " + L.BaseNode
+			line = mark + " " + L.BaseNode + " (original image)"
 		} else {
 			n := r.Node
 			var fl []string
-			if r.Kids > 0 {
-				fl = append(fl, L.Frozen)
-			} else {
-				fl = append(fl, L.Leaf)
-			}
-			if strings.HasPrefix(r.Name, "tmp-") {
+			switch {
+			case n.Live:
+			case n.Ephemeral:
 				fl = append(fl, L.Ephemeral)
+			case r.Kids > 0:
+				fl = append(fl, L.Frozen)
 			}
 			if n.NoLayer {
 				fl = append(fl, L.NoLayer)
 			}
-			line = r.Prefix + mark + " " + r.Name + "  [" + strings.Join(fl, ",") + "]"
+			line = r.Prefix + mark + " " + rowTitle(n)
+			if len(fl) > 0 {
+				line += "  [" + strings.Join(fl, ",") + "]"
+			}
 			if len(n.Tags) > 0 {
 				line += " #" + strings.Join(n.Tags, " #")
 			}
-			line += "  " + human(n.Alloc)
+			if !(n.Live && n.Name == "(live)") {
+				line += "  " + human(n.Alloc)
+			}
 		}
 		st := StNormal
 		if m.dtop+i == m.dsel {
@@ -230,18 +245,20 @@ func (m *Model) drawDetail(c *Canvas) {
 	}
 	r := m.selRow()
 	if r.IsBase {
-		c.Put(1, y+1, "base image (read-only). Boot it ephemeral, or create the first snapshot from it.", StDim)
+		c.Put(1, y+1, "base: the original image (read-only, never modified). Revert to it, or boot it ephemeral.", StDim)
 		if len(m.tree.Nodes) == 0 {
 			c.Put(1, y+2, L.NoSnaps, StDim)
 		}
 		return
 	}
 	n := r.Node
-	parent := n.Parent
-	if parent == "" {
-		parent = L.BaseNode
+	parent := L.BaseNode
+	for _, o := range t.Nodes {
+		if o.Name == n.Parent && n.Parent != "" {
+			parent = rowTitle(&o)
+		}
 	}
-	c.Put(1, y+1, trunc(fmt.Sprintf("%s  parent=%s  created=%s  size=%s", r.Name, parent, n.Created, human(n.Alloc)), m.W-2), StBold)
+	c.Put(1, y+1, trunc(fmt.Sprintf("%s  parent=%s  created=%s  size=%s", rowTitle(n), parent, n.Created, human(n.Alloc)), m.W-2), StBold)
 	c.Put(1, y+2, trunc("tags: "+strings.Join(n.Tags, ", "), m.W-2), StNormal)
 	c.Put(1, y+3, trunc("note: "+n.Note, m.W-2), StNormal)
 }

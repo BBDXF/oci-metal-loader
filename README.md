@@ -5,14 +5,14 @@
 English | [简体中文](README.zh-CN.md)
 
 `omloader.iso` is a UEFI loader that sits on a [Ventoy](https://github.com/ventoy/Ventoy) drive (or boots on its own). Put **LXD VM (whole-disk) and container images** on the drive,
-pick one, and it runs directly on the real hardware: **no installation, no hypervisor**, with branchable, rollbackable snapshots and data that survives reboots.
+pick one, and it runs directly on the real hardware: **no installation, no hypervisor**, with VM-style snapshots and data that survives reboots.
 
 > **Alpha.** Everything is tested in QEMU/OVMF only — not on real hardware yet. See [Status](#status).
 
 ## Why it is different
 
 - **Real bare metal, nothing is virtualised.** There is no QEMU/KVM/Hyper-V layer. "LXD VM image" only names the *image format* (a whole-disk image with its own kernel, as LXD publishes for VMs): the loader prepares it and hands the hardware over to that kernel with `kexec`, so it runs natively. Container images (rootfs only) boot as full systems on the loader's kernel. Native drivers, GPU and disks.
-- **Snapshots are built in.** Every boot can start a new branch. Create, roll back, tag, prune, flatten and export snapshots. Base images stay read-only and checksummed.
+- **Snapshots are built in.** VM-style: create, revert, delete, tag, prune, flatten and export. Base images stay read-only and checksummed.
   VMs use `dm-snapshot`, containers use `overlayfs`.
 - **Your data survives.** Snapshots and data volumes live in a persistent store; container data volumes are independent of the system layer, so rolling back the OS keeps your files.
 - **Windows-friendly drive.** Images sit on exFAT. The store can be an *ext4 file* on an exFAT/NTFS partition (Ventoy's `.dat` convention) — no extra Linux partition needed.
@@ -38,16 +38,25 @@ snapshots / data / cache → ext4 store (a partition, or an ext4 file on exFAT/N
    omloader images list --os ubuntu --type vm
    omloader pull lxc:ubuntu/noble --vm --name ubuntu-noble --out /mnt/images/images
    ```
-4. **Boot one**, in a fresh snapshot branch:
+4. **Boot one** (continues your live state, "current"):
    ```sh
-   omloader boot --image ubuntu-noble --snapshot new:try1
+   omloader boot --image ubuntu-noble
+   omloader boot --image ubuntu-noble --snapshot base     # throwaway boot of the original image
    ```
 5. **Manage snapshots:**
    ```sh
    omloader snapshot list ubuntu-noble --tree
    omloader snapshot create ubuntu-noble before-upgrade --note "clean install"
-   omloader snapshot rollback ubuntu-noble before-upgrade
+   omloader snapshot revert ubuntu-noble before-upgrade     # or: revert ubuntu-noble base [--keep experiment]
+   omloader snapshot delete ubuntu-noble before-upgrade
    ```
+
+**Snapshots work like VM snapshots.** `base` is the original, read-only image. `current` is your one writable live state: booting always *continues* it (no new layer per boot).
+`snapshot create` freezes the live state under a label and continues on a fresh empty layer on top; `revert <label|base>` throws the live state away and continues from that point
+(`--keep NAME` first saves it as a snapshot); `delete` removes a snapshot — a snapshot between two others is merged into its child (overlay images; dm-snapshot VM images refuse and suggest `flatten`).
+`--snapshot <label>` or `--ephemeral` boots a throwaway layer on top (nothing is kept, the snapshot is never modified).
+**Snapshots are created, reverted and deleted from the loader (CLI/TUI) before the image is booted; a running system cannot be snapshotted or reverted — shut it down, return to the loader, then manage snapshots (hot snapshots are not supported).**
+Mind the names: the CLI flags `--vm` and `images list --type vm` keep LXD's image-type spelling; in `image.yaml` the type is `lxd-vm`.
 6. **Auto-boot** a default image with a countdown (Ventoy cannot pass kernel parameters) via `omloader/boot.yaml` on the data partition:
    ```yaml
    boot:
@@ -61,11 +70,11 @@ Prefer menus? Run `omloader tui` ([docs/tui.md](docs/tui.md)).
 
 | `type` | What it is | Kernel | Snapshots | Main limits |
 |---|---|---|---|---|
-| `vm` | LXD *VM* image: a whole-disk image (`disk.qcow2` is converted to `base.raw` on import). "VM" names the format — nothing is virtualised. | the image's own (`kexec`) | `dm-snapshot` COW files | UEFI + GPT, root filesystem ext4 or xfs with `/boot` holding the kernel and initrd; no LVM/LUKS root; guest must use an initramfs the loader can extend (verified only on Debian/initramfs-tools guests); no independent data volumes; no account/console provisioning or clean unmount (the guest manages itself); Secure Boot blocks `kexec` |
+| `lxd-vm` | LXD *VM* image: a whole-disk image (`disk.qcow2` is converted to `base.raw` on import). "VM" names the format — nothing is virtualised. | the image's own (`kexec`) | `dm-snapshot` COW files | UEFI + GPT, root filesystem ext4 or xfs with `/boot` holding the kernel and initrd; no LVM/LUKS root; guest must use an initramfs the loader can extend (verified only on Debian/initramfs-tools guests); no independent data volumes; no account/console provisioning or clean unmount (the guest manages itself); Secure Boot blocks `kexec` |
 | `lxd-container` | LXD *container* image: `rootfs.squashfs` (+ `metadata.yaml`) | the loader's (Debian 6.1), modules bind-mounted into the guest | `overlayfs` upper layers | needs a Linux root with an init; hardware support is whatever the loader's kernel offers; console login and users are provisioned at first boot (systemd guests only; others get a busybox debug shell); data volumes `dir` / `ext4-file` |
 | `oci` | Docker/OCI image — **experimental, off by default** (`experimental.oci_images: true`) | the loader's | `overlayfs` | application images usually have no init or login; no registry pull |
 
-Common to all types: the base image is read-only and checksummed, booting a snapshot that has children is refused (use `new:<name>`), Linux guests only (use Ventoy for Windows),
+Common to all types: the base image is read-only and checksummed, snapshots are never modified by booting (a snapshot boots as a throwaway layer), Linux guests only (use Ventoy for Windows),
 x86_64 UEFI only. Details: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ## How it compares
@@ -75,7 +84,7 @@ x86_64 UEFI only. Details: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 | Boots from a USB drive without installing | ✅ | ✅ | ❌ (installs to disk) | ✅ (in RAM) |
 | LXD VM / container images | ✅ | ❌ | ❌ | ❌ |
 | Runs a disk image natively with its own kernel (no hypervisor) | ✅ (LXD VM images) | ✅ (ISO/vDisk) | ✅ | ✅ |
-| Snapshots and rollback | ✅ | ❌ | ✅ (A/B) | ❌ |
+| Snapshots and revert | ✅ | ❌ | ✅ (A/B) | ❌ |
 | Persistent data volumes | ✅ | ✅ (`.dat`) | ✅ | ❌ |
 | Windows ISO / VHD(x) boot | ➖ use Ventoy | ✅ | ❌ | ❌ |
 | Online pull with mirrors/proxy and offline mode | ✅ | ❌ | ✅ | ➖ |

@@ -48,7 +48,7 @@ func waitOp(t *testing.T, m *Model) {
 
 func TestImagesList(t *testing.T) {
 	m, _ := newModel(t, true)
-	mustHave(t, m, "alpine", "lxd-container", "overlayfs"[:0]+"3.0 MiB", "deb", "vm", "1:Images")
+	mustHave(t, m, "alpine", "lxd-container", "overlayfs"[:0]+"3.0 MiB", "deb", "lxd-vm", "1:Images")
 	if got := m.View().Lines()[2]; !strings.Contains(got, "alpine") {
 		t.Fatalf("first row: %q", got)
 	}
@@ -70,7 +70,7 @@ func TestTreeRender(t *testing.T) {
 		t.Fatal("enter opens detail")
 	}
 	s := screen(m)
-	for _, want := range []string{"base", "|-- ", "`-- ", "* b", "[frozen]", "[leaf]", "#golden"} {
+	for _, want := range []string{"base", "base (original image)", "|-- ", "`-- ", "* current (you are here)", "* b", "[frozen]", "#golden"} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("tree lacks %q:\n%s", want, s)
 		}
@@ -80,7 +80,7 @@ func TestTreeRender(t *testing.T) {
 	for _, r := range rows {
 		names = append(names, r.Name)
 	}
-	if strings.Join(names, ",") != "base,a,b,c" {
+	if strings.Join(names, ",") != "base,n1,n2,n3,n4" {
 		t.Fatalf("dfs order %v", names)
 	}
 	// unicode tree
@@ -141,7 +141,7 @@ func TestLayout80x24(t *testing.T) {
 	check("detail")
 	want := []string{
 		"OCI Metal Loader  [1:Images] ",
-		"alpine  type=lxd-container  mode=overlayfs  current=b  snapshots=3",
+		"alpine  type=lxd-container  mode=overlayfs  live on=b  snapshots=3",
 	}
 	for _, w := range want {
 		if !strings.Contains(screen(m), w) {
@@ -172,46 +172,73 @@ func TestLayout80x24(t *testing.T) {
 func TestCreateSnapshotFlow(t *testing.T) {
 	m, f := newModel(t, true)
 	m.Update(N("enter"))
-	m.Update(R('j'))
 	m.Update(R('c'))
-	mustHave(t, m, "Create snapshot", "From: a")
+	mustHave(t, m, "Create snapshot", "Freezes the live state")
 	keys(m, "snap1\nmy note\nt1 t2\n")
-	if !f.called(`create alpine snap1 from=a note="my note" tags=[t1 t2]`) {
+	if !f.called(`create alpine snap1 note="my note" tags=[t1 t2]`) {
 		t.Fatalf("calls %v", f.calls)
 	}
-	mustHave(t, m, "snap1", "created snapshot snap1")
+	mustHave(t, m, "created snapshot snap1")
 }
 
-func TestRollbackDiscardConfirm(t *testing.T) {
+func TestRevertConfirmAndKeep(t *testing.T) {
 	m, f := newModel(t, true)
 	m.Update(N("enter"))
-	m.Update(R('j'))
+	m.Update(R('j')) // a
 	m.Update(R('r'))
-	m.Update(R('2'))
-	mustHave(t, m, "WARNING", "permanently deletes")
+	m.Update(R('1'))
+	mustHave(t, m, "WARNING", "discarded permanently")
 	m.Update(N("esc"))
-	if f.called("rollback") {
+	if f.called("revert") {
 		t.Fatal("cancelled")
 	}
 	m.Update(R('r'))
-	m.Update(R('2'))
+	m.Update(R('1'))
 	m.Update(N("enter"))
-	if !f.called("rollback alpine a discard=true") {
+	if !f.called(`revert alpine a keep=""`) {
 		t.Fatalf("%v", f.calls)
 	}
-	mustHave(t, m, "rollback to a: ok")
+	mustHave(t, m, "revert to a: ok")
+	m.Update(R('r'))
+	m.Update(R('2'))
+	keys(m, "saved\n")
+	if !f.called(`revert alpine a keep="saved"`) {
+		t.Fatalf("%v", f.calls)
+	}
+	// base row reverts to base; the live row is not a revert target
+	m.Update(N("home"))
+	m.Update(R('r'))
+	mustHave(t, m, "Revert -> base")
+	m.Update(N("esc"))
+	for i := 0; i < 3; i++ {
+		m.Update(R('j'))
+	}
+	m.Update(R('r'))
+	mustHave(t, m, "Select a snapshot or the base image")
 }
 
-func TestDeleteRecursiveConfirm(t *testing.T) {
+func TestDeleteBranchAndMerge(t *testing.T) {
 	m, f := newModel(t, true)
 	m.Update(N("enter"))
-	m.Update(R('j'))
+	m.Update(R('j')) // a: two children -> recursive, live state inside -> extra confirmation
 	m.Update(R('d'))
-	mustHave(t, m, "descendants", "Delete: c, a")
+	mustHave(t, m, "everything below it", "--force")
 	m.Update(R('y'))
-	if !f.called("delete alpine a rec=true force=false") {
+	mustHave(t, m, "remove the subtree")
+	m.Update(R('y'))
+	if !f.called("delete alpine a rec=true force=true") {
 		t.Fatalf("%v", f.calls)
 	}
+	m.Update(R('j')) // b: one child (the live state) -> merge
+	m.Update(R('d'))
+	mustHave(t, m, "merged into the child")
+	m.Update(R('y'))
+	if !f.called("delete alpine b rec=false force=false") {
+		t.Fatalf("%v", f.calls)
+	}
+	m.Update(R('j')) // live row
+	m.Update(R('d'))
+	mustHave(t, m, "discarded with Revert")
 }
 
 func TestTagNotePrune(t *testing.T) {
@@ -243,47 +270,38 @@ func TestTagNotePrune(t *testing.T) {
 	}
 }
 
-func TestBootCurrentAndForce(t *testing.T) {
+func TestBootCurrentAndEphemeral(t *testing.T) {
 	m, _ := newModel(t, true)
 	m.Update(N("enter"))
 	m.Update(R('b'))
-	mustHave(t, m, "current snapshot (b)", "new snapshot", "base image, ephemeral")
+	mustHave(t, m, "Continue current", "throwaway", "base (original image), ephemeral")
 	m.Update(N("enter"))
-	mustHave(t, m, "omloader boot --image alpine --snapshot current", "switch-root", "d: preview")
+	mustHave(t, m, "omloader boot --image alpine --snapshot current", "kept in the live layer", "switch-root", "d: preview")
 	m.Update(N("enter"))
 	if !m.Done() || m.Result().Kind != ResBoot || m.Result().Boot != (BootRequest{"alpine", "current", false}) {
 		t.Fatalf("result %+v", m.Result())
 	}
-	// frozen node needs the explicit warning
+	// selected snapshot boots read-only (ephemeral)
 	m, _ = newModel(t, true)
 	m.Update(N("enter"))
-	m.Update(R('j')) // a (has children)
-	m.Update(R('b'))
-	m.Update(R('2')) // selected snapshot (a)
-	mustHave(t, m, "WARNING", "--force")
-	m.Update(N("esc"))
-	if m.Done() {
-		t.Fatal("esc must cancel")
-	}
+	m.Update(R('j')) // a
 	m.Update(R('b'))
 	m.Update(R('2'))
-	m.Update(N("enter")) // accept the warning
-	mustHave(t, m, "--snapshot a --force")
+	mustHave(t, m, "--snapshot a --ephemeral", "Ephemeral boot")
 	m.Update(N("enter"))
-	if got := m.Result(); got.Kind != ResBoot || !got.Boot.Force || got.Boot.Snapshot != "a" {
+	if got := m.Result(); got.Kind != ResBoot || !got.Boot.Ephemeral || got.Boot.Snapshot != "a" {
 		t.Fatalf("result %+v", got)
 	}
-}
-
-func TestBootNewNamedAndBase(t *testing.T) {
-	m, _ := newModel(t, true)
-	m.Update(N("enter"))
-	m.Update(R('b'))
-	m.Update(R('2')) // new: (items: current, new, base)
-	keys(m, "try1\n")
-	m.Update(N("enter"))
-	if got := m.Result().Boot; got.Snapshot != "new:try1" {
-		t.Fatalf("%+v", got)
+	// throwaway current / base
+	for i, want := range []BootRequest{{"alpine", "current", true}, {"alpine", "base", true}} {
+		m, _ = newModel(t, true)
+		m.Update(N("enter"))
+		m.Update(R('b'))
+		m.Update(R(rune('2' + i)))
+		m.Update(N("enter"))
+		if m.Result().Boot != want {
+			t.Fatalf("%d: %+v", i, m.Result())
+		}
 	}
 }
 
@@ -317,7 +335,7 @@ func TestVerifyAndFlattenOps(t *testing.T) {
 	m.Update(R('f'))
 	keys(m, "\n")
 	waitOp(t, m)
-	if !f.called("flatten alpine a alpine-a") {
+	if !f.called("flatten alpine a alpine-flat-a") {
 		t.Fatalf("%v", f.calls)
 	}
 }
