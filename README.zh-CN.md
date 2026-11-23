@@ -97,6 +97,10 @@ Alpha。已经可用的：LXD 虚拟机和容器启动、快照、数据卷、�
 缺少或未验证的：真机（测试推后）、LUKS/LVM 客户机、Windows（请用 Ventoy）、公共服务器的实测（拉取目前只对本地模拟的 simplestreams 服务器测过）、非 Debian 系的虚拟机客户机。
 **默认登录（公开密码！）：** 所有镜像——LXD 容器、LXD 虚拟机和实验性 OCI——启动时都会得到账号 `oci` / `Oci123`（sudo 需密码）、同密码启用的 root，以及以 `oci` 自动登录控制台。该密码是公开的：请在数据分区的 `omloader/boot.yaml` 里用 `guest_defaults:` 修改或关闭，或在单个镜像的 `image.yaml` 里用 `runtime.users` / `root_password_hash` / `autologin` 覆盖（详见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#default-accounts-guest_defaults-all-image-types)）。加载器只写入镜像自己的 COW 层。
 
+**虚拟机客户机与 ESP：** 客户机的 `/boot/efi`（ESP）刻意不挂载——加载器会把该 fstab 条目标为 `nofail`（`boot.vm_fix_esp_fstab`，默认开启）；客户机由 `kexec` 启动，用不到 ESP，只是会往 ESP 写入的工具（如 `update-grub`）无处可写。
+
+**主机名：** 所有客户机（容器、虚拟机、OCI）的主机名默认取镜像名（如 `vm-ubuntu-noble`，而不是 `distrobuilder-<uuid>`）；可用 `guest_defaults.hostname`（`image` | `keep` | 自定义名称）或 `image.yaml` 的 `runtime.hostname` 修改或关闭。
+
 **限制：** **不支持 UEFI Secure Boot**，必须关闭。omloader 刻意与 Ventoy 绑定：把 `omloader.iso` 放到 Ventoy U 盘上即可（没有 `omloader install`）。
 Docker/OCI 镜像是**实验性功能，默认关闭**（它们是应用镜像，不是完整系统）。更详细的说明和全部已知限制见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
 
@@ -104,6 +108,7 @@ Docker/OCI 镜像是**实验性功能，默认关闭**（它们是应用镜像�
 
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — 架构、状态、路线图、限制、测试
 - [docs/ventoy.md](docs/ventoy.md) · [docs/store-file.md](docs/store-file.md) · [docs/tui.md](docs/tui.md) · [build/README.md](build/README.md)
+- 镜像源与 mirror（USTC/南大/清华/CERNET/官方）、Deepin/Mint 现状：[docs/sources.md](docs/sources.md) — `omloader source list|test`、`pull --source S --mirror M`。
 
 ## 许可
 

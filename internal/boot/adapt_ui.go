@@ -181,6 +181,7 @@ const (
 	inittabDebugBB   = "::respawn:-/.omloader/dbgshell"
 	inittabDebugSysv = "oml0:2345:respawn:/.omloader/dbgshell </dev/console >/dev/console 2>&1"
 	inittabSyncBB    = "::shutdown:/.omloader/sync.sh"
+	inittabHostBB    = "::sysinit:/.omloader/busybox hostname -F /etc/hostname"
 )
 
 // adaptUI applies console autologin, accounts, the debug-shell fallback and the shutdown hooks.
@@ -192,6 +193,24 @@ func adaptUI(in AdaptInput, warn io.Writer, sysd, hasBB bool) error {
 	// accounts
 	if err := ApplyAccounts(root, rt, warn); err != nil {
 		return err
+	}
+
+	// hostname (all re-applications: a changed guest_defaults.hostname / runtime.hostname takes effect on the next boot)
+	if !in.KeepHostname {
+		name := rt.Hostname
+		if name == "" {
+			name = config.SanitizeHostname(in.Image)
+		}
+		if err := SetGuestHostname(root, name); err != nil {
+			return err
+		}
+	}
+	// busybox-init guests (Alpine) may not run an openrc hostname service: set the kernel hostname from /etc/hostname at sysinit
+	dropInittab(root, inittabHostBB)
+	if flavour == "busybox" && hasBB && !in.KeepHostname {
+		if err := appendInittab(root, inittabHostBB, false); err != nil {
+			return err
+		}
 	}
 
 	// autologin (systemd guests): getty@tty1 + serial-getty@ttyS0

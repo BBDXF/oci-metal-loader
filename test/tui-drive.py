@@ -206,6 +206,8 @@ def run1():
         if not start_tui(s):
             return s
         s.check(s.screen_has(["OCI Metal Loader", "1:Images", "omloci", "oci"]), "images list shows the fixture image omloci")
+        s.check(s.screen_has(["omloader", "store", "net "]), "header row shows loader version, store and network state")
+        s.check(s.screen_has("Enter:open"), "bottom bar shows the keys of the Images screen")
         s.send("\r")
         s.check(s.screen_has(["omloci", "snapshots=0", "base (original image)", "current (you are here)"]), "image detail (tree) opens: base root + live state")
         s.send("c")
@@ -223,9 +225,9 @@ def run1():
         ok = s.screen_has(["[finished]"], 90) and s.screen_has("OK ")
         s.check(ok and ("10.0.2.2:%s" % os.environ["SRCPORT"]) in s.screen(), "source test reports the local mirror OK")
         s.send("\r")
-        s.send("/")
-        s.type("omltest\r\rcontainer\r")
-        s.check(s.screen_has("lxc:omltest/ct/default", 90), "catalog filtered to the omltest container image")
+        s.check(s.screen_has(["Catalog: lxc-images", "Search:"], 90), "catalog loaded with the live search box")
+        s.type("omltest container")  # live filter: every word must match (os + type)
+        s.check(s.screen_has(["Search: omltest container_", "lxc:omltest/ct/default"], 30), "live search filtered the catalog to the omltest container image")
         s.send("\r")
         s.check(s.screen_has("Pull image"), "pull form")
         s.send("\r")  # accept default name
@@ -233,6 +235,7 @@ def run1():
         s.send("\r")
         ok = s.screen_has("[finished]", 300)
         s.check(ok and "sha256 verified" in s.screen(), "pull finished with digest verification (streamed output)")
+        s.check(s.screen_has(["SUCCESS", "elapsed", "Enter/Esc: dismiss"]), "fixed result panel after the pull (success, elapsed time, dismiss key)")
         s.send("\r")
         s.check(s.screen_has("pulled lxc:omltest/ct/default as omltest-ct"), "pulled image registered")
         # ---- boot the pulled container image: continue current (with dry-run preview first)
@@ -277,7 +280,7 @@ def run2():
         s.send("r")
         s.check(s.screen_has("Revert"), "revert menu")
         s.send("1")
-        s.check(s.screen_has(["WARNING", "discarded permanently"]), "revert asks for confirmation")
+        s.check(s.screen_has(["WARNING", "DISCARDED"]), "revert asks for confirmation and says the live state is discarded")
         s.send("\r")
         s.check(s.screen_has(["revert to s1: ok", "s1"]), "revert to s1 (no live changes yet: live state rebased on s1)")
         s.esc()

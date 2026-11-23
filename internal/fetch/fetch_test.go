@@ -263,7 +263,7 @@ func TestStrategies(t *testing.T) {
 	c = mkCfg(t, slow.URL, fast.URL)
 	c.MirrorPolicy.Strategy = "fastest"
 	f = newF(t, c, false)
-	if got := f.order(context.Background()); got[0] != fast.URL {
+	if got := f.order(context.Background()); got[0].URL != fast.URL {
 		t.Fatalf("order %v", got)
 	}
 	ps := f.ProbeAll(context.Background())

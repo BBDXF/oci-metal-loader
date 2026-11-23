@@ -206,7 +206,7 @@ func importOCI(o Options, sq string) (map[string]any, error) {
 	}
 	y := baseYAML(o, "oci")
 	c := src.Config.Config
-	rt := map[string]any{"hostname": o.Name, "network": "dhcp"}
+	rt := map[string]any{"network": "dhcp"}
 	if o.Autologin {
 		rt["autologin"] = true
 	}
@@ -287,7 +287,7 @@ func importLXD(o Options, sq string) (map[string]any, error) {
 		return nil, err
 	}
 	y := baseYAML(o, "lxd-container")
-	rt := map[string]any{"hostname": o.Name, "network": "dhcp"}
+	rt := map[string]any{"network": "dhcp"}
 	if o.Autologin {
 		rt["autologin"] = true
 	}

@@ -108,8 +108,28 @@ func decodeStrict(m map[string]any, out any) error {
 	return dec.Decode(out)
 }
 
-// Load merges defaults < global (optional) < image (optional) and validates.
+// Load merges defaults < embedded sources.yaml < sources.yaml files found by SourcesFiles < global (optional) < image
+// (optional) and validates.
 func Load(globalPath, imagePath string) (*Resolved, error) {
+	return LoadWith(globalPath, imagePath, SourcesFiles(globalPath))
+}
+
+// parseSourcesLayer parses a sources.yaml layer; only `sources` and `default_source` are allowed in it.
+func parseSourcesLayer(file string, raw []byte) (*layer, error) {
+	l, err := parseLayer(LayerSources, file, raw, &Config{})
+	if err != nil {
+		return nil, err
+	}
+	for k := range l.data {
+		if k != "sources" && k != "default_source" {
+			return nil, fmt.Errorf("%s:%d: key %q is not allowed in a sources file (only sources, default_source)", file, l.lines[k], k)
+		}
+	}
+	return l, nil
+}
+
+// LoadWith is Load with an explicit list of sources.yaml files (lowest priority first); the embedded copy is always first.
+func LoadWith(globalPath, imagePath string, sourcesFiles []string) (*Resolved, error) {
 	r := &Resolved{Sources: map[string]string{}, Lines: map[string]string{}}
 	def, err := parseLayer(LayerDefaults, "defaults.yaml", configs.Defaults, &Config{})
 	if err != nil {
@@ -117,6 +137,22 @@ func Load(globalPath, imagePath string) (*Resolved, error) {
 	}
 	r.merged = map[string]any{}
 	r.merge(r.merged, def, def.data, "", "")
+	emb, err := parseSourcesLayer("sources.yaml(built-in)", configs.Sources)
+	if err != nil {
+		return nil, err
+	}
+	r.merge(r.merged, emb, emb.data, "", "")
+	for _, f := range sourcesFiles {
+		raw, err := os.ReadFile(f)
+		if err != nil {
+			return nil, err
+		}
+		sl, err := parseSourcesLayer(f, raw)
+		if err != nil {
+			return nil, err
+		}
+		r.merge(r.merged, sl, sl.data, "", "")
+	}
 	if globalPath != "" {
 		raw, err := os.ReadFile(globalPath)
 		if err != nil {

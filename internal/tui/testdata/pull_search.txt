@@ -1,0 +1,24 @@
+ OCI Metal Loader   1:Images [2:Pull] 3:Storage  4:Network  5:Settings    ASCII
+ omloader v9.9  |  store 3.0 GiB free / 8.0 GiB (store-file)  |  net 10.0.0.5
+ Sources
+ lxc-images     simplestreams https://images.example
+
+ Catalog: lxc-images                                                       1/1
+ Search: arch_  (1 of 2)
+ lxc:archlinux/current/cloud        vm        20260101   3.0 MiB
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ type:search  Esc:clear/back  Up/Dn PgUp/PgDn:move  Enter:pull  Tab:tabs  F1:h~

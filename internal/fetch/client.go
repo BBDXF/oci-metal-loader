@@ -92,5 +92,18 @@ func NewClient(n config.Network, srcProxy string) (*http.Client, error) {
 			return pu, nil
 		}
 	}
-	return &http.Client{Transport: tr}, nil
+	return &http.Client{Transport: uaTransport{tr}}, nil
+}
+
+// UserAgent is sent with every request: some mirrors (USTC) refuse Go's default User-Agent with 403/204.
+const UserAgent = "omloader/1"
+
+type uaTransport struct{ rt http.RoundTripper }
+
+func (t uaTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	if r.Header.Get("User-Agent") == "" {
+		r = r.Clone(r.Context())
+		r.Header.Set("User-Agent", UserAgent)
+	}
+	return t.rt.RoundTrip(r)
 }

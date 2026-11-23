@@ -67,6 +67,13 @@ type Model struct {
 	done   bool
 	status string
 	stErr  bool
+	stWarn bool
+
+	hdr       HeaderInfo
+	hdrOK     bool
+	hdrAt     time.Time
+	opHideLog bool
+	helpTop   int
 
 	images     []ImageInfo
 	isel, itop int
@@ -85,9 +92,11 @@ type Model struct {
 
 	sources    []SourceInfo
 	ssel       int
-	catalog    []CatalogItem
+	catalog    []CatalogItem // filtered view
+	catAll     []CatalogItem // full catalog
 	csel, ctop int
 	csource    string
+	smirror    map[string]string // source name -> mirror chosen with `m` (absent = the configured one)
 	filter     Filter
 	pullCat    bool // focus on the catalog list
 
@@ -105,7 +114,7 @@ func New(svc Service, th Theme) *Model {
 }
 
 // Init loads the images list.
-func (m *Model) Init() { m.RefreshImages() }
+func (m *Model) Init() { m.refreshHeader(true); m.RefreshImages() }
 
 // Result returns the outcome once Done.
 func (m *Model) Result() Result { return m.res }
@@ -125,10 +134,11 @@ func (m *Model) Busy() bool {
 	return !f
 }
 
-func (m *Model) say(s string)            { m.status, m.stErr = s, false }
+func (m *Model) say(s string)            { m.status, m.stErr, m.stWarn = s, false, false }
+func (m *Model) warn(s string)           { m.status, m.stErr, m.stWarn = s, false, true }
 func (m *Model) sayf(f string, a ...any) { m.say(fmt.Sprintf(f, a...)) }
 func (m *Model) fail(err error) {
-	m.status, m.stErr = err.Error(), true
+	m.status, m.stErr, m.stWarn = err.Error(), true, false
 	m.message(L.Error, true, err.Error())
 }
 
@@ -153,12 +163,13 @@ func (m *Model) form(title string, lines []string, labels, defaults []string, su
 // startOp shows the operation view and runs fn in the background; onDone runs on the UI goroutine (Tick).
 func (m *Model) startOp(title string, fn func(ctx context.Context, w io.Writer) error, onDone func(error)) *Op {
 	m.op = StartOp(title, func(ctx context.Context, o *Op) error { return fn(ctx, o) }, onDone)
-	m.opScroll = 0
+	m.opScroll, m.opHideLog = 0, false
 	return m.op
 }
 
 // Tick must be called periodically (and after Op.Wait in tests): it delivers operation completions.
 func (m *Model) Tick() {
+	m.refreshHeader(false)
 	o := m.op
 	if o == nil || o.handled {
 		return

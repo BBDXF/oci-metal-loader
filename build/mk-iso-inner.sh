@@ -10,6 +10,7 @@ KVER=$(ls /lib/modules | head -1)
 rm -rf $X; mkdir -p $X
 cp -a $W/build/live/rootfs/. $X/
 install -D -m755 $W/bin/omloader $X/usr/local/bin/omloader
+install -D -m644 $W/configs/sources.yaml $X/etc/omloader/sources.yaml   # sources + mirrors catalog (docs/sources.md); override: <data partition>/omloader/sources.yaml
 mksquashfs $X $OUT/omloader.squashfs -noappend -comp zstd -quiet -no-progress
 
 # ---- stage-1 initramfs: busybox + mount/blkid/modprobe + the boot-critical modules ----
@@ -39,12 +40,14 @@ cp /boot/vmlinuz-$KVER $ISO/boot/vmlinuz
 cp $OUT/live.squashfs $OUT/omloader.squashfs $ISO/live/
 echo marker > $ISO/boot/omloader.marker
 cp $W/build/grub.cfg $ISO/boot/grub/grub.cfg
+# grub font for gfxterm (grub.cfg: loadfont ($root)/boot/grub/fonts/unicode.pf2); grub-common ships it (~2.3 MB on the ISO)
+mkdir -p $ISO/boot/grub/fonts; cp /usr/share/grub/unicode.pf2 $ISO/boot/grub/fonts/unicode.pf2
 cat > /tmp/embed.cfg <<'EOC'
 search --no-floppy --file --set=root /boot/omloader.marker
 configfile ($root)/boot/grub/grub.cfg
 EOC
 grub-mkstandalone -O x86_64-efi -o /tmp/BOOTX64.EFI \
-  --modules="part_gpt part_msdos fat iso9660 search search_fs_file configfile normal echo test serial terminal linux all_video" \
+  --modules="part_gpt part_msdos fat iso9660 search search_fs_file configfile normal echo test serial terminal linux all_video gfxterm gfxterm_background font video video_fb regexp" \
   "boot/grub/grub.cfg=/tmp/embed.cfg"
 dd if=/dev/zero of=$ISO/boot/efiboot.img bs=1M count=24 status=none
 mformat -i $ISO/boot/efiboot.img ::

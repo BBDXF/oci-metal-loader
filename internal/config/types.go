@@ -18,9 +18,11 @@ type Config struct {
 	Network      Network           `yaml:"network" json:"network"`
 	MirrorPolicy MirrorPolicy      `yaml:"mirror_policy" json:"mirror_policy"`
 	Sources      map[string]Source `yaml:"sources" json:"sources"`
-	Cache        Cache             `yaml:"cache" json:"cache"`
-	Policy       Policy            `yaml:"policy" json:"policy"`
-	Experimental Experimental      `yaml:"experimental" json:"experimental"`
+	// DefaultSource is the source used by pull/images list when neither --source nor a spec prefix names one (sources.yaml).
+	DefaultSource string       `yaml:"default_source" json:"default_source"`
+	Cache         Cache        `yaml:"cache" json:"cache"`
+	Policy        Policy       `yaml:"policy" json:"policy"`
+	Experimental  Experimental `yaml:"experimental" json:"experimental"`
 	// GuestDefaults: console accounts/autologin applied to every image (all types) that does not set its own (see EffectiveRuntime).
 	GuestDefaults GuestDefaults `yaml:"guest_defaults" json:"guest_defaults"`
 }
@@ -105,6 +107,8 @@ type Boot struct {
 	// DefaultImage: image to boot automatically (after Timeout seconds) when the kernel command line has no
 	// omloader.image= (e.g. under Ventoy, which cannot pass kernel parameters). Empty = drop to the shell.
 	DefaultImage string `yaml:"default_image" json:"default_image"`
+	// VMFixESPFstab (default true): lxd-vm boots add `nofail,x-systemd.device-timeout=1s` to the guest's /boot/efi fstab entry (see docs).
+	VMFixESPFstab bool `yaml:"vm_fix_esp_fstab" json:"vm_fix_esp_fstab"`
 	// ExtraCmdlineFlags: omloader.* equivalents without the prefix, e.g. ["poweroff_on_fail=1", "experimental=oci", "selftest=1"].
 	ExtraCmdlineFlags []string `yaml:"extra_cmdline_flags" json:"extra_cmdline_flags"`
 	// UI: what the console shows when nothing is booted automatically: "tui" (interactive terminal UI, default) or "shell".
@@ -143,35 +147,29 @@ type Source struct {
 	Mirrors []string  `yaml:"mirrors" json:"mirrors"`
 	Proxy   string    `yaml:"proxy" json:"proxy"` // overrides network.proxy for this source ("direct" = none)
 	Rewrite []Rewrite `yaml:"rewrite" json:"rewrite"`
+	// sources.yaml additions (see docs/sources.md)
+	Title   string            `yaml:"title" json:"title"`
+	Note    string            `yaml:"note" json:"note"`
+	Enabled *bool             `yaml:"enabled" json:"enabled"` // false hides/disables the source (how a user file "removes" a built-in one)
+	Mirror  string            `yaml:"mirror" json:"mirror"`   // selected mirror: official (default) | auto | a name from servers
+	Servers map[string]Mirror `yaml:"servers" json:"servers"` // named mirrors of this source
+}
+
+// Mirror is one named server of a source (sources.<name>.servers.<id>).
+type Mirror struct {
+	Title   string    `yaml:"title" json:"title"`
+	URL     string    `yaml:"url" json:"url"`   // base URL (oci-registry: host or https://host)
+	Path    string    `yaml:"path" json:"path"` // optional path appended to url
+	Region  string    `yaml:"region" json:"region"`
+	Note    string    `yaml:"note" json:"note"`
+	Enabled *bool     `yaml:"enabled" json:"enabled"`
+	Rewrite []Rewrite `yaml:"rewrite" json:"rewrite"` // prefix rewrites of the RELATIVE path (index/catalog/blob) for this server only
 }
 
 // Rewrite replaces a URL prefix (applied to every candidate URL of the source).
 type Rewrite struct {
 	From string `yaml:"from" json:"from"`
 	To   string `yaml:"to" json:"to"`
-}
-
-// RegionPresets are UNVERIFIED mirror presets added to source "lxc-images" by mirror_policy.region_preset.
-// Content is always digest-verified against the upstream index, but the mirror URLs themselves are not guaranteed.
-var RegionPresets = map[string][]string{
-	"cn": {"https://mirrors.tuna.tsinghua.edu.cn/lxc-images", "https://mirror.nju.edu.cn/lxc-images"},
-}
-
-// SourceMirrors returns the configured mirrors of a source plus (for lxc-images) the region preset.
-func (c *Config) SourceMirrors(name string) []string {
-	m := append([]string{}, c.Sources[name].Mirrors...)
-	if name == "lxc-images" {
-		for _, p := range RegionPresets[c.MirrorPolicy.RegionPreset] {
-			dup := false
-			for _, e := range m {
-				dup = dup || e == p
-			}
-			if !dup {
-				m = append(m, p)
-			}
-		}
-	}
-	return m
 }
 
 type Cache struct {
@@ -285,6 +283,8 @@ type GuestDefaults struct {
 	RootPassword     string `yaml:"root_password" json:"root_password"`
 	RootPasswordHash string `yaml:"root_password_hash" json:"root_password_hash"`
 	Users            []User `yaml:"users" json:"users"`
+	// Hostname of the guest: "" or "image" = the image name sanitised to a DNS label, "keep" = do not touch the guest, else the literal name.
+	Hostname string `yaml:"hostname" json:"hostname"`
 }
 
 // EffectiveRuntime merges guest_defaults into an image's runtime (all image types; the image always wins):

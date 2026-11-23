@@ -214,6 +214,29 @@ Init selection: `runtime.entrypoint` (+`cmd`) -> `/sbin/init` -> `runtime.cmd` -
 proc/sys/dev/devpts/run, applies `runtime.env`/`workdir` from `/.omloader/env`, starts DHCP, `exec "$@"`; the app becomes PID 1).
 Guest `/proc /sys /dev` are moved from the loader; systemd/sysv mount the rest themselves.
 
+### VM guests and the ESP (`boot.vm_fix_esp_fstab`)
+**Problem.** LXD VM images have `LABEL=UEFI /boot/efi vfat ...` in `/etc/fstab`. The guest sees its partitions as kpartx *device-mapper* devices (`/dev/mapper/oml-<image>-n1p1`, ...) created in the
+initramfs without libdm cookies. The guest's `55-dm.rules` sets `DM_UDEV_DISABLE_DISK_RULES_FLAG` on every dm "add" event without the primary-source flag, and the initramfs udev database is cleaned before
+switch-root, so `/dev/disk/by-label/UEFI` never appears; systemd waits 90 s for the device and drops to emergency mode.
+**Why the ESP is not mounted, and why that is fine.** The guest is started with `kexec` from the loader's UEFI session, so it never reads the ESP: the kernel and initrd come from the root partition and the loader's
+UEFI variables/boot entries are irrelevant to it. A guest that cannot mount `/boot/efi` only loses bootloader/kernel-hook updates to the ESP (e.g. `update-grub`, `fwupd`), which are not used for booting here.
+**Fix.** When the loader provisions a VM guest (root mounted read-write on the final snapshot device, before `kexec -e`) it adds `nofail,x-systemd.device-timeout=1s` to the options of every vfat `/boot/efi` fstab
+entry (`LABEL=`, `UUID=`, `PARTLABEL=` or a path; existing options are kept and not duplicated; comments, other lines and whitespace stay; the original is kept once as `/etc/fstab.omloader-orig`). The ESP then simply stays unmounted
+after a 1 s wait instead of blocking boot for 90 s. It runs once per live layer (marker `/var/lib/omloader/esp-fstab-fixed`) and independently of `guest_defaults` (it also applies when the accounts are disabled); only the COW layer is written.
+Switch: `boot.vm_fix_esp_fstab: true` (default; `false` leaves the guest's fstab alone).
+**Rejected alternatives.** *udev rule injection* into the guest (a rule that re-enables the disk rules for `oml-*` devices): needs a rule file in the guest root and in the initramfs and depends on the guest's udev rule layout. *`losetup -P`* on the final dm
+device instead of kpartx (real partition devices with normal udev links): changes the root device name (`root=` is fixed in the kexec command line before the loop number is known) and the whole assemble/teardown path. *Kernel cmdline mask*
+(`systemd.mask=boot-efi.mount`): used as a test workaround before, but a global cmdline hack that also hides the mount for guests where the by-label link would work, and is not per-fstab-entry.
+
+### Guest hostname (`guest_defaults.hostname`, all image types)
+LXD images bake in a long builder name (`distrobuilder-<uuid>`); LXD itself would override it with the instance name through its agent/cloud-init, which the loader does not have. Rule for every image type:
+`image.yaml runtime.hostname` (a literal name; `keep` = leave the guest alone) wins; else `guest_defaults.hostname`: `image` (default, also `""`) = the **image name sanitised to an RFC 1123 label**
+(lowercase, anything but `[a-z0-9-]` becomes `-`, runs collapse, no leading/trailing `-`, max 63, nothing usable -> `omloader`; `vm-ubuntu-noble` stays, `Ubuntu_Noble.24` -> `ubuntu-noble-24`), `keep`, or a literal label.
+It writes `/etc/hostname` and updates `/etc/hosts` (the old name is removed from alias lists, every `127.0.1.1` entry becomes one `127.0.1.1<TAB>name` line, other lines stay).
+Containers: by the firstboot adapter on every (re)application (the name is part of the config hash); busybox-init guests (Alpine) additionally get a `::sysinit:` line that runs `hostname -F /etc/hostname`.
+lxd-vm: with the other provisioning steps, before `kexec -e`, in the COW layer; marker `/var/lib/omloader/hostname` holds the applied name (a changed name is applied on the next boot of the layer).
+`omloader import` no longer writes `runtime.hostname` into new images (older images keep theirs, which wins by the rule above).
+
 ### Default accounts (`guest_defaults`, all image types)
 One global config section gives **every** image (lxd-container, lxd-vm, experimental oci) a console account at boot. Built-in defaults (`configs/defaults.yaml`):
 user `oci`, password `Oci123`, `sudo: true` (drop-in `/etc/sudoers.d/90-omloader-oci` = `oci ALL=(ALL:ALL) ALL`, password required; the `sudo` group is created/joined),
@@ -358,9 +381,7 @@ until a login/multi-user marker appears on the serial console, powers off via th
 Default list: containers ubuntu/noble, debian/bookworm, alpine/3.21; VMs ubuntu/noble, debian/bookworm (`REAL_IMAGES`). Skipped (exit 0) without network.
 `REAL_OCI=<registry path>` adds an experimental OCI image (fetched with skopeo on the host, since omloader has no registry pull). `REAL_KEEP=1` keeps `out/real-usb.raw`;
 `test/manual-run.sh start|stop|console|status|reset` runs a persistent **libvirt** domain `omloader-manual` (qemu:///system, UEFI/OVMF with persistent NVRAM, serial pty + VNC, default NAT network, 4 GiB) on a copy of that store (`out/manual-usb.raw`). It is visible in Cockpit (`https://<host>:9090` → Virtual machines; the host's libvirt group lets the test user manage it) and via `virsh -c qemu:///system console omloader-manual` (Ctrl-] detaches). The automated suites keep using raw `qemu` through `test/run-kvm.sh` (serial log files and hard timeouts); only manual VMs are libvirt-managed.
-Real-image findings: **LXD VM images mount `LABEL=UEFI` at `/boot/efi`, but the guest's udev does not create `/dev/disk/by-label/*` for the kpartx (dm) partitions
-(udev ignores dm devices that lack libdm's cookie flags once the initramfs udev database is cleaned), so systemd waits 90 s and drops to emergency mode.**
-`e2e-real` works around it with `kernel.cmdline: ... systemd.mask=boot-efi.mount` (`REAL_VM_CMDLINE`); a real fix is an open design question. Alpine containers
+Real-image findings: LXD VM images mount `LABEL=UEFI` at `/boot/efi`; this needed a loader fix, see "VM guests and the ESP" below (no workaround any more). Alpine containers
 expect `eth0` (the loader kernel names NICs `en*`) and have no acpid, so ACPI power-off is forced.
 
 ## Tests (remote KVM)

@@ -1,0 +1,36 @@
+ OCI Metal Loader  [1:Images] 2:Pull  3:Storage  4:Network  5:Settings
+ omloader v9.9  |  store 3.0 GiB free / 8.0 GiB (store-file)  |  images used 2.0 GiB  |  net 10.0.0.5
+NAME                                                    TYPE          SIZE      BASE     SNAPS LIVE ON      LAST USED
+alpine                                                  lxd-container 3.0 MiB   ok       3     b            01-03 11:00
+deb                                                     lxd-vm        2.0 GiB   -        0     base         -
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                                                                   1/2
+ Enter:open  r:refresh  1-5:tabs  s:shell  P:power  ?:help  q:quit

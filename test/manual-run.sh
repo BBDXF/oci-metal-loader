@@ -7,6 +7,7 @@
 #   test/manual-run.sh reset                      drop the domain, its NVRAM and the store; the next start re-copies out/real-usb.raw
 # Persistent: out/manual-usb.raw (VTOYDATA = images, OMLOADER = snapshots/cache; libvirt chowns it to libvirt-qemu while the domain runs)
 # and the domain's NVRAM (/var/lib/libvirt/qemu/nvram/omloader-manual_VARS.fd).
+# The serial output is also logged to work/manual/serial.log (libvirt-qemu owned, world-readable).
 # Env: OML_ARGS (extra kernel args, e.g. omloader.ui=shell), ISO, MEM_MIB (default 4096), VCPUS (default 2), DOM (domain name), VNC_PORT
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; O=$ROOT/out; M=$ROOT/work/manual; mkdir -p $M; chmod o+rx $ROOT $O $ROOT/work $M 2>/dev/null
 ISO=${ISO:-$O/omloader.iso}; DISK=$O/manual-usb.raw; DOM=${DOM:-omloader-manual}
@@ -18,13 +19,16 @@ start)
   [ -f $DISK ] || { [ -f $O/real-usb.raw ] || { echo "no $O/real-usb.raw: run test/e2e-real.sh with REAL_KEEP=1 first"; exit 1; }
     cp --sparse=always $O/real-usb.raw $DISK; }
   ARGS="${OML_ARGS:-}"; [ -n "${2:-}" ] && ARGS="$ARGS omloader.image=$2"; [ -n "${3:-}" ] && ARGS="$ARGS omloader.snapshot=$3"
+  rm -f $M/boot.iso   # may be owned by libvirt-qemu from the last run
   cp $ISO $M/boot.iso; echo "set omloader_args=\"$ARGS\"" > $M/extra.cfg
   xorriso -dev $M/boot.iso -boot_image any keep -map $M/extra.cfg /boot/grub/extra.cfg -commit -end >/dev/null 2>&1 || { echo "xorriso failed"; exit 3; }
   chmod a+r $M/boot.iso
+  UUID=$($V domuuid $DOM 2>/dev/null | head -1)   # keep the uuid (and so the NVRAM) of an existing definition
   cat > $M/domain.xml <<XML
 <domain type='kvm'>
   <name>$DOM</name>
-  <description>omloader manual test VM (test/manual-run.sh)</description>
+${UUID:+  <uuid>$UUID</uuid>
+}  <description>omloader manual test VM (test/manual-run.sh)</description>
   <memory unit='MiB'>${MEM_MIB:-4096}</memory>
   <vcpu>${VCPUS:-2}</vcpu>
   <os firmware='efi'>
@@ -42,10 +46,11 @@ start)
       <driver name='qemu' type='raw'/><source file='$DISK'/><target dev='vda' bus='virtio'/><serial>omloader0</serial>
     </disk>
     <interface type='network'><source network='default'/><model type='virtio'/></interface>
-    <serial type='pty'><target type='isa-serial' port='0'><model name='isa-serial'/></target></serial>
+    <serial type='pty'><log file='$M/serial.log' append='off'/><target type='isa-serial' port='0'><model name='isa-serial'/></target></serial>
     <console type='pty'><target type='serial' port='0'/></console>
     <graphics type='vnc' port='${VNC_PORT:--1}' autoport='$([ -n "${VNC_PORT:-}" ] && echo no || echo yes)' listen='127.0.0.1'><listen type='address' address='127.0.0.1'/></graphics>
-    <video><model type='vga'/></video>
+    <video><model type='virtio'/></video>   <!-- Ubuntu's kernel has virtio-gpu but no bochs driver: with VGA the guest console stays blank after kexec -->
+    <memballoon model='virtio' freePageReporting='on'><stats period='5'/></memballoon>   <!-- statistics for Cockpit; free page reporting returns the guest's free RAM to the host (qemu's RSS otherwise stays at the full 4 GiB after a boot) -->
     <input type='tablet' bus='usb'/>
     <rng model='virtio'><backend model='random'>/dev/urandom</backend></rng>
   </devices>

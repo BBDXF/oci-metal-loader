@@ -14,7 +14,7 @@ func (m *Model) Update(k Key) {
 		return
 	}
 	if m.help {
-		m.help = false
+		m.helpKey(k)
 		return
 	}
 	if m.dlg != nil {
@@ -26,19 +26,20 @@ func (m *Model) Update(k Key) {
 		return
 	}
 	act := m.Km.Action(k)
+	typing := m.typing()
 	if act == "cancel" {
-		m.say("Ctrl+C cancels running operations; nothing is running. Use q/Esc to leave the TUI.")
+		m.warn("Ctrl+C cancels running operations; nothing is running. Use q/Esc to leave the TUI.")
 		return
 	}
-	if act == "help" {
-		m.help = true
+	if act == "help" && (!typing || k.Name != "") {
+		m.help, m.helpTop = true, 0
 		return
 	}
 	if act == "redraw" {
 		return
 	}
 	// global shortcuts
-	if k.Name == "" {
+	if k.Name == "" && !typing {
 		switch k.Rune {
 		case '1', '2', '3', '4', '5':
 			m.gotoTab(Screen(k.Rune - '1'))
@@ -81,6 +82,7 @@ func (m *Model) Update(k Key) {
 
 func (m *Model) gotoTab(s Screen) {
 	m.Screen = s
+	m.refreshHeader(true)
 	switch s {
 	case ScrImages:
 		m.RefreshImages()
@@ -106,7 +108,7 @@ func (m *Model) shellConfirm() {
 
 func (m *Model) powerMenu() {
 	if m.Busy() {
-		m.say(L.PowerBusy)
+		m.warn(L.PowerBusy)
 		return
 	}
 	m.menu(L.PowerTitle, []string{L.PowerReboot, L.PowerOff, L.Cancel}, func(i int) {
@@ -157,7 +159,34 @@ func keepVisible(sel, top, vis int) int {
 	return top
 }
 
-func (m *Model) bodyRows() int { return m.H - 4 }
+func (m *Model) bodyRows() int { return m.H - 5 }
+
+// typing is true while the Pull catalog search box has the keyboard (letters and digits are text).
+func (m *Model) typing() bool { return m.Screen == ScrPull && m.pullCat && m.dlg == nil && m.op == nil }
+
+func (m *Model) helpKey(k Key) {
+	act := m.Km.Action(k)
+	page := m.bodyRows() - 1
+	switch {
+	case k.Name == "esc" || k.Name == "enter" || k.Name == "f1" || k.Name == "" && (k.Rune == '?' || k.Rune == 'q'):
+		m.help = false
+	case act == "up":
+		m.helpTop--
+	case act == "down":
+		m.helpTop++
+	case act == "pgup":
+		m.helpTop -= page
+	case act == "pgdn":
+		m.helpTop += page
+	case act == "home":
+		m.helpTop = 0
+	case act == "end":
+		m.helpTop = 1 << 20
+	}
+	if m.helpTop < 0 {
+		m.helpTop = 0
+	}
+}
 
 // ---- images ----
 
@@ -302,7 +331,7 @@ func snapLabel(r TreeRow) string {
 
 func (m *Model) detailKey(k Key, act string) {
 	m.dsel = moveSel(act, m.dsel, len(m.rows), m.bodyRows())
-	m.dtop = keepVisible(m.dsel, m.dtop, m.bodyRows()-5)
+	m.dtop = keepVisible(m.dsel, m.dtop, m.detailVis(m.bodyRows()))
 	row := m.selRow()
 	switch {
 	case act == "back" || k.Rune == 'q':
@@ -386,7 +415,7 @@ func (m *Model) after(what string) func(error) {
 	return func(err error) {
 		m.reloadTree()
 		if err != nil {
-			m.stErr, m.status = true, what+": "+err.Error()
+			m.stErr, m.stWarn, m.status = true, false, what+": "+err.Error()
 		} else {
 			m.sayf("%s: ok", what)
 		}
@@ -435,7 +464,17 @@ func (m *Model) revertMenu(row TreeRow) {
 		}
 		switch i {
 		case 0:
-			m.confirm(L.RevertTitle, true, []string{"Revert to " + target + "?", L.RevertSure}, func() { do("") })
+			where := m.tree.Head
+			if where == "" {
+				where = L.BaseNode
+			} else {
+				for _, n := range m.tree.Nodes {
+					if n.Name == where && n.Label != "" {
+						where = n.Label
+					}
+				}
+			}
+			m.confirm(L.RevertTitle, true, []string{"Revert to " + target + "?", fmt.Sprintf(L.RevertWhat, where), fmt.Sprintf(L.RevertTarget, target, target), L.RevertSure}, func() { do("") })
 		case 1:
 			m.form(L.RevertKeep, []string{L.RevertKeepHelp}, []string{L.FieldName}, []string{""}, func(v []string) {
 				if k := strings.TrimSpace(v[0]); k != "" {
@@ -483,7 +522,8 @@ func (m *Model) deleteFlow(row TreeRow) {
 			m.fail(err)
 			return
 		}
-		lines := append([]string{}, plan...)
+		lines := []string{fmt.Sprintf(L.DeleteWhat, label, human(row.Node.Alloc))}
+		lines = append(lines, plan...)
 		if row.Kids == 1 {
 			lines = append(lines, "", L.DeleteMerge)
 		}
@@ -555,7 +595,11 @@ func (m *Model) pruneMenu() {
 			m.message(L.Info, false, L.PruneNothing)
 			return
 		}
-		m.confirm(L.PruneAsk, true, []string{"dry-run result: would delete " + fmt.Sprint(len(plan)) + " layer(s):", strings.Join(plan, ", ")}, func() {
+		why := L.RetWhat
+		if gc {
+			why = L.GCWhat
+		}
+		m.confirm(L.PruneAsk, true, []string{fmt.Sprintf(L.PruneWhat, len(plan)), strings.Join(plan, ", "), why}, func() {
 			if _, err := m.Svc.Prune(m.image, gc, false); err != nil {
 				m.fail(err)
 			}
@@ -611,6 +655,7 @@ func (m *Model) verifyMenu() {
 
 func (m *Model) closeOp() {
 	m.op = nil
+	m.refreshHeader(true)
 	if m.opResume != nil {
 		m.dlg, m.opResume = m.opResume, nil
 	}
@@ -620,6 +665,10 @@ func (m *Model) opKey(k Key) {
 	act := m.Km.Action(k)
 	fin, _ := m.op.Finished()
 	page := m.H - 8
+	if act == "help" {
+		m.help, m.helpTop = true, 0
+		return
+	}
 	switch act {
 	case "cancel":
 		if !fin {
@@ -639,6 +688,9 @@ func (m *Model) opKey(k Key) {
 		m.opScroll = 1 << 20
 	case "end":
 		m.opScroll = 0
+	}
+	if k.Name == "" && k.Rune == 'l' {
+		m.opHideLog = !m.opHideLog
 	}
 	if m.opScroll < 0 {
 		m.opScroll = 0

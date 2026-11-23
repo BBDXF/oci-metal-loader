@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "omloader sources.yaml",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "default_source": {
+      "type": "string"
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "simplestreams",
+              "oci-registry",
+              "http",
+              "local"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "mirrors": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^https?://"
+            }
+          },
+          "proxy": {
+            "type": "string"
+          },
+          "rewrite": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "from"
+              ],
+              "properties": {
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "title": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "mirror": {
+            "type": "string",
+            "description": "official | auto | a server id"
+          },
+          "servers": {
+            "type": "object",
+            "propertyNames": {
+              "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "url"
+              ],
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string",
+                  "description": "base URL (oci-registry: host or https://host)"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "optional path appended to url"
+                },
+                "region": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "rewrite": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "from"
+                    ],
+                    "properties": {
+                      "from": {
+                        "type": "string"
+                      },
+                      "to": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "type",
+          "url"
+        ]
+      }
+    }
+  }
+}

@@ -7,10 +7,8 @@
 #      REAL_SOURCE_URL (simplestreams base URL, default https://images.linuxcontainers.org; a mirror works too)
 #      REAL_KEEP=1 keep out/real-usb.raw (store with the pulled images; used by test/manual-run.sh)
 #      REAL_REUSE=1 reuse out/real-usb.raw (already pulled), skip disk creation and pulls
-#      REAL_VM_CMDLINE (default 'systemd.mask=boot-efi.mount') appended to kernel.cmdline of the pulled VM images: WORKAROUND for
-#        the missing /dev/disk/by-label/UEFI in the guest (dm partitions get no udev symlinks; see docs/DEVELOPMENT.md). Set to '-' to test without it.
-#      REAL_OCI=host/path:tag (EXPERIMENTAL, optional) e.g. docker.1ms.run/jrei/systemd-debian:12 - fetched with skopeo on this host (omloader has no
-#        registry pull), imported inside the loader and booted with experimental.oci. Skipped when empty or skopeo/registry fail.
+#      REAL_VM_CMDLINE (default empty) appended to kernel.cmdline of the pulled VM images (e.g. to experiment); the /boot/efi fstab problem is fixed by the loader
+#        (boot.vm_fix_esp_fstab), no workaround needed any more
 #      SKIP_BUILD=1 reuse out/omloader.iso   BOOT_TIMEOUT=sec (default 420)  PULL_TIMEOUT=sec (default 2400)
 # No network => the suite is SKIPPED (exit 0) with a clear message.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; O=$ROOT/out; W=$ROOT/work; T=$ROOT/test
@@ -93,20 +91,21 @@ def snd(t,w=2.5):
     except Exception: pass
 snd("\r"); snd("\r")
 snd("echo OMLPROOF_ID=$(id -un)\r")
+snd("echo OMLPROOF_HOST=$(hostname)\r")
 snd("echo Oci123 | sudo -S -p '' id -un 2>&1 | sed 's/^/OMLPROOF_SUDO=/'\r", 4)
 snd("su - root -c 'echo OMLPROOF_SU=$(id -un)'\r", 2.5)
 snd("Oci123\r", 4)
 snd("grep -c '^root:\\$' /etc/shadow | sed 's/^/OMLPROOF_ROOTHASH=/'\r")
 PY
   clean $1
-  PROOF_RES=$(grep -ao 'OMLPROOF_[A-Z]*=[a-z0-9]*' $W/$1.clean | tr '\n' ' ')
+  PROOF_RES=$(grep -ao 'OMLPROOF_[A-Z]*=[a-z0-9-]*' $W/$1.clean | tr '\n' ' ')
 }
 report() { SUMMARY+=("$(printf '%-34s pull=%-6s size=%-10s boot=%-4s (%ss) power=%-6s %s' "$1" "$2" "$3" "$4" "$5" "$6" "$7")"); }
 
-VMCL=${REAL_VM_CMDLINE-systemd.mask=boot-efi.mount}; [ "$VMCL" = - ] && VMCL=
+VMCL=${REAL_VM_CMDLINE:-}; [ "$VMCL" = - ] && VMCL=
 if [ -n "${REAL_REUSE:-}" ] && [ -z "${REUSE+x}" ]; then
   echo "== reusing the store $D (no pull)"
-  { for i in $REAL_IMAGES; do n=$(nm $i); echo "t size-$n du -sh --apparent-size /mnt/images/images/$n"; done; } > $W/pull.body; for i in $REAL_IMAGES; do n=$(nm $i); echo "TAG:pull-$n:BEGIN"; echo "TAG:pull-$n:RC=0"; echo "TAG:pull-$n:SECS=0"; done > /dev/null
+  { for i in $REAL_IMAGES; do n=$(nm $i); echo "sed -i '/^ *hostname: /d' /mnt/images/images/$n/image.yaml"; echo "t size-$n du -sh --apparent-size /mnt/images/images/$n"; done; } > $W/pull.body; for i in $REAL_IMAGES; do n=$(nm $i); echo "TAG:pull-$n:BEGIN"; echo "TAG:pull-$n:RC=0"; echo "TAG:pull-$n:SECS=0"; done > /dev/null
   HOOK_TIMEOUT=300 hook rp < $W/pull.body
   for i in $REAL_IMAGES; do n=$(nm $i); printf 'TAG:pull-%s:BEGIN\nTAG:pull-%s:RC=0\nTAG:pull-%s:SECS=0\nTAG:pull-%s:END\n' $n $n $n $n >> $W/rp.clean; done
 else
@@ -121,7 +120,7 @@ for i in $REAL_IMAGES; do
   if [ "$r" = 0 ]; then pass "pull $i (${secs}s, $sz)"; PULLED[${#PULLED[@]}]=$i
   else fail "pull $i rc=$r: $(sect rp pull-$n | tail -4 | tr '\n' '|' | cut -c1-300)"; report "$i" "FAIL" - - - - -; fi
 done
-if [ -n "$VMCL" ]; then   # WORKAROUND for the by-label UEFI problem (VM images only)
+if [ -n "$VMCL" ]; then   # optional extra kernel.cmdline for the VM images
   { for i in $REAL_IMAGES; do case $i in vm:*) n=$(nm $i); echo "grep -q -- '$VMCL' /mnt/images/images/$n/image.yaml || sed -i 's|^\\( *cmdline: .*\\)\$|\\1 $VMCL|' /mnt/images/images/$n/image.yaml; grep cmdline /mnt/images/images/$n/image.yaml";; esac; done; } > $W/patch.body
   hook rpatch < $W/patch.body; grep -a 'cmdline' $W/rpatch.clean | head -4
 fi
@@ -136,6 +135,7 @@ for i in "${PULLED[@]}"; do
   if [ $BOOT_OK = 1 ]; then pass "boot $i reached userspace in ${BOOT_SECS}s (power-off: $POWER)"; else fail "boot $i (see $W/b-$n.clean): $EVID"; fi
   echo "PROOF $i: $PROOF_RES"
   case "$PROOF_RES" in *OMLPROOF_ID=oci*) pass "$i: autologin shell as oci";; *) fail "$i: no autologin shell as oci";; esac
+  case "$PROOF_RES" in *"OMLPROOF_HOST=$n "*) pass "$i: hostname is the image name ($n)";; *) fail "$i: hostname not $n (got: $PROOF_RES)";; esac
   case "$PROOF_RES" in *OMLPROOF_SUDO=root*) pass "$i: sudo with the password works";; *) echo "NOTE: $i: sudo did not work (sudo not installed?)";; esac
   case "$PROOF_RES" in *OMLPROOF_SU=root*) pass "$i: su - root with Oci123 works";; *) fail "$i: su - root with the default password failed";; esac
   report "$i" "${secs}s" "$sz" "$([ $BOOT_OK = 1 ] && echo ok || echo FAIL)" "$BOOT_SECS" "$POWER" "$EVID"

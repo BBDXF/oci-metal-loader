@@ -43,3 +43,24 @@ func TestFind(t *testing.T) {
 		t.Fatal("alias match")
 	}
 }
+
+// cloud-images.ubuntu.com style catalog: no "variant", items squashfs / disk1.img / lxd.tar.xz (+ many others we ignore).
+func TestUbuntuCloudImagesCatalog(t *testing.T) {
+	const cat = `{"products":{"com.ubuntu.cloud:server:24.04:amd64":{"aliases":"24.04,n,noble","arch":"amd64","os":"ubuntu","release":"noble","versions":{
+	"20260101":{"items":{"lxd.tar.xz":{"ftype":"lxd.tar.xz","sha256":"a","size":1,"path":"server/releases/noble/release-20260101/x-lxd.tar.xz"},
+	 "squashfs":{"ftype":"squashfs","sha256":"b","size":2,"path":"server/releases/noble/release-20260101/x.squashfs"},
+	 "disk1.img":{"ftype":"disk1.img","sha256":"c","size":3,"path":"server/releases/noble/release-20260101/x.img"},
+	 "ova":{"ftype":"ova","sha256":"d","size":4,"path":"p/x.ova"},"root.tar.xz":{"ftype":"root.tar.xz","sha256":"e","size":5,"path":"p/x-root.tar.xz"}}}}}}}`
+	c, err := ParseCatalog(strings.NewReader(cat))
+	if err != nil {
+		t.Fatal(err)
+	}
+	imgs := c.Find(Query{OS: "ubuntu", Release: "noble", Variant: "default", Arch: "amd64"})
+	if len(imgs) != 2 || imgs[0].VM || !imgs[1].VM || imgs[0].Variant != "default" ||
+		imgs[0].Root.Path != "server/releases/noble/release-20260101/x.squashfs" || imgs[1].Root.Path != "server/releases/noble/release-20260101/x.img" {
+		t.Fatalf("%+v", imgs)
+	}
+	if len(c.Find(Query{Release: "24.04", Variant: "desktop"})) != 0 {
+		t.Fatal("ubuntu cloud images have no desktop variant")
+	}
+}

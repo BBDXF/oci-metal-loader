@@ -97,6 +97,10 @@ Alpha. What works: LXD VM and container boot, snapshots, data volumes, online pu
 What is missing or unverified: real hardware (testing postponed), LUKS/LVM guests, Windows (use Ventoy), public-server testing (pull is tested against a local simplestreams server), non-Debian VM guests.
 **Default login (public password!):** every image — LXD container, LXD VM and experimental OCI — gets the account `oci` / `Oci123` (sudo with password), root enabled with the same password, and console autologin as `oci`. The password is public: change or disable it with `guest_defaults:` in `omloader/boot.yaml` on the data partition, or per image with `runtime.users` / `root_password_hash` / `autologin` in `image.yaml` (details: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#default-accounts-guest_defaults-all-image-types)). The loader only writes into the image's own COW layer.
 
+**VM guests and the ESP:** the guest's `/boot/efi` (ESP) is deliberately not mounted — the loader marks that fstab entry `nofail` (`boot.vm_fix_esp_fstab`, default on); the guest is started by `kexec` and never needs the ESP, but tools that write to it (e.g. `update-grub`) have nothing to write to.
+
+**Hostname:** every guest (container, VM, OCI) gets the image name as hostname (`vm-ubuntu-noble`, not `distrobuilder-<uuid>`); change or disable it with `guest_defaults.hostname` (`image` | `keep` | a name) or `runtime.hostname` in `image.yaml`.
+
 **Limitations:** UEFI **Secure Boot is not supported** and must be disabled. omloader is deliberately bound to Ventoy: put `omloader.iso` on a Ventoy stick (there is no `omloader install`).
 Docker/OCI images are **experimental and off by default** (they are application images, not systems). Details and the full list of limitations: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
@@ -104,6 +108,7 @@ Docker/OCI images are **experimental and off by default** (they are application 
 
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — architecture, status, roadmap, limitations, tests
 - [docs/ventoy.md](docs/ventoy.md) · [docs/store-file.md](docs/store-file.md) · [docs/tui.md](docs/tui.md) · [build/README.md](build/README.md)
+- Sources, mirrors (USTC/NJU/TUNA/CERNET/official), Deepin/Mint status: [docs/sources.md](docs/sources.md) — `omloader source list|test`, `pull --source S --mirror M`.
 
 ## License
 

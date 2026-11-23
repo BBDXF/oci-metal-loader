@@ -59,16 +59,48 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "enabled": {"type": "boolean"},
-                "path": {"type": "string", "not": {"pattern": "(^|/)\\.\\.(/|$)"}},
-                "glob": {"type": "array", "items": {"type": "string", "not": {"pattern": "(^|/)\\.\\.(/|$)"}}},
+                "enabled": {
+                  "type": "boolean"
+                },
+                "path": {
+                  "type": "string",
+                  "not": {
+                    "pattern": "(^|/)\\.\\.(/|$)"
+                  }
+                },
+                "glob": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "not": {
+                      "pattern": "(^|/)\\.\\.(/|$)"
+                    }
+                  }
+                },
                 "host_match": {
                   "type": "object",
                   "additionalProperties": false,
-                  "properties": {"label": {"type": "string", "maxLength": 16}, "uuid": {"type": "string"}}
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "maxLength": 16
+                    },
+                    "uuid": {
+                      "type": "string"
+                    }
+                  }
                 },
-                "size": {"type": "string"},
-                "prealloc": {"type": "string", "enum": ["auto", "yes", "no"]}
+                "size": {
+                  "type": "string"
+                },
+                "prealloc": {
+                  "type": "string",
+                  "enum": [
+                    "auto",
+                    "yes",
+                    "no"
+                  ]
+                }
               }
             }
           }
@@ -135,6 +167,9 @@
         },
         "default_image": {
           "type": "string"
+        },
+        "vm_fix_esp_fstab": {
+          "type": "boolean"
         },
         "ui": {
           "type": "string",
@@ -323,6 +358,72 @@
                 }
               }
             }
+          },
+          "title": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "mirror": {
+            "type": "string",
+            "description": "official | auto | a server id"
+          },
+          "servers": {
+            "type": "object",
+            "propertyNames": {
+              "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "url"
+              ],
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string",
+                  "description": "base URL (oci-registry: host or https://host)"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "optional path appended to url"
+                },
+                "region": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "rewrite": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "from"
+                    ],
+                    "properties": {
+                      "from": {
+                        "type": "string"
+                      },
+                      "to": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "required": [
@@ -360,11 +461,60 @@
       "additionalProperties": false,
       "description": "accounts + console autologin for every lxd-container image (public default password; see docs)",
       "properties": {
-        "autologin": {"type": "boolean"},
-        "autologin_user": {"type": "string", "pattern": "^[a-z_][a-z0-9_-]{0,31}$"},
-        "root_password": {"type": "string"},
-        "root_password_hash": {"type": "string"},
-        "users": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["name"], "properties": {"name": {"type": "string", "pattern": "^[a-z_][a-z0-9_-]{0,31}$"}, "password_hash": {"type": "string"}, "password": {"type": "string"}, "groups": {"type": "array", "items": {"type": "string"}}, "shell": {"type": "string", "pattern": "^/"}, "sudo": {"type": "boolean"}, "ssh_authorized_keys": {"type": "array", "items": {"type": "string"}}}}}
+        "autologin": {
+          "type": "boolean"
+        },
+        "autologin_user": {
+          "type": "string",
+          "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+        },
+        "root_password": {
+          "type": "string"
+        },
+        "root_password_hash": {
+          "type": "string"
+        },
+        "users": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+              },
+              "password_hash": {
+                "type": "string"
+              },
+              "password": {
+                "type": "string"
+              },
+              "groups": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "shell": {
+                "type": "string",
+                "pattern": "^/"
+              },
+              "sudo": {
+                "type": "boolean"
+              },
+              "ssh_authorized_keys": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "experimental": {
@@ -390,6 +540,9 @@
           }
         }
       }
+    },
+    "default_source": {
+      "type": "string"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",

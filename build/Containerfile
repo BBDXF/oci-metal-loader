@@ -16,6 +16,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/* /var/cache/apt/* /var/log/* /usr/share/man /usr/share/info /usr/share/lintian /usr/share/locale \
  && find /usr/share/doc -type f ! -name copyright -delete \
  && find /usr/share/doc -type d -empty -delete
+# console fonts for tty1/VNC/screen (docs/tui.md "Console font"): kbd (setfont, kbd_mode) + a Terminus subset taken from
+# console-setup-linux (extracted without its keyboard-configuration/xkb dependencies; Terminus is SIL OFL 1.1). kbd +2.0 MB installed (~0.8 MB compressed), fonts 80 KB.
+RUN apt-get update && apt-get install -y --no-install-recommends kbd \
+ && cd /tmp && apt-get download console-setup-linux \
+ && dpkg-deb --fsys-tarfile console-setup-linux_*_all.deb | tar -x -C / \
+      ./usr/share/consolefonts/Uni3-TerminusBold16.psf.gz ./usr/share/consolefonts/Uni3-TerminusBold20x10.psf.gz \
+      ./usr/share/consolefonts/Uni3-TerminusBold24x12.psf.gz ./usr/share/consolefonts/Uni3-TerminusBold28x14.psf.gz \
+      ./usr/share/consolefonts/Uni3-TerminusBold32x16.psf.gz ./usr/share/consolefonts/Uni3-Terminus16.psf.gz \
+      ./usr/share/consolefonts/Uni3-Terminus20x10.psf.gz ./usr/share/consolefonts/Uni3-Terminus24x12.psf.gz \
+      ./usr/share/consolefonts/Uni3-Terminus28x14.psf.gz ./usr/share/consolefonts/Uni3-Terminus32x16.psf.gz \
+ && rm -f /tmp/console-setup-linux_*.deb \
+ && mkdir -p /usr/share/doc/console-setup-linux \
+ && printf 'Terminus console fonts (Uni3-Terminus*.psf.gz) extracted from the Debian package console-setup-linux (source: console-setup, Terminus font by Dimitar Toshkov Zhekov, SIL Open Font License 1.1). See the package copyright in Debian bookworm.\n' > /usr/share/doc/console-setup-linux/copyright \
+ && rm -rf /var/lib/apt/lists/* /var/cache/apt/* /var/log/* /usr/share/man /usr/share/info /usr/share/lintian /usr/share/locale \
+ && find /usr/share/doc -type f ! -name copyright -delete && find /usr/share/doc -type d -empty -delete
 
 FROM live AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends \

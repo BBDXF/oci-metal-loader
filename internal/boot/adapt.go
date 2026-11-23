@@ -30,6 +30,9 @@ type AdaptInput struct {
 	Busybox    string // host path of a static busybox ("" = none)
 	ResolvConf string // source resolv.conf ("" = built-in default)
 	Warn       io.Writer
+	// KeepHostname leaves the guest's own hostname alone (guest_defaults.hostname / runtime.hostname = keep); otherwise Runtime.Hostname
+	// (resolved by config.ResolveHostname; empty = the sanitised image name) is written to /etc/hostname and /etc/hosts.
+	KeepHostname bool
 }
 
 // walkInRoot resolves p inside root like ResolveInRoot but creates missing
@@ -205,7 +208,7 @@ func Adapt(in AdaptInput) (bool, error) {
 		warn = io.Discard
 	}
 	first := !guestExists(in.Root, AdaptMarker)
-	want := uiConfigHash(in.Runtime)
+	want := uiConfigHash(in.Runtime, in.KeepHostname)
 	if !first && markerUIHash(in.Root) == want {
 		return false, nil
 	}
@@ -229,11 +232,15 @@ func Adapt(in AdaptInput) (bool, error) {
 }
 
 // uiConfigHash fingerprints the runtime keys handled by adaptUI.
-func uiConfigHash(rt config.Runtime) string {
+func uiConfigHash(rt config.Runtime, keepHost bool) string {
+	host := rt.Hostname
+	if keepHost {
+		host = "\x00keep"
+	}
 	v := struct {
 		V  int
 		RT config.Runtime
-	}{3, config.Runtime{Autologin: rt.Autologin, AutologinUser: rt.AutologinUser, Users: rt.Users, RootPasswordHash: rt.RootPasswordHash,
+	}{4, config.Runtime{Hostname: host, Autologin: rt.Autologin, AutologinUser: rt.AutologinUser, Users: rt.Users, RootPasswordHash: rt.RootPasswordHash,
 		RootPassword: rt.RootPassword, DebugShell: rt.DebugShell, ShutdownSync: rt.ShutdownSync}}
 	b, _ := json.Marshal(v)
 	h := sha256.Sum256(b)
@@ -252,19 +259,7 @@ func markerUIHash(root string) string {
 
 func adaptBase(in AdaptInput, warn io.Writer, sysd bool) (bool, error) {
 	rt := in.Runtime
-	host := rt.Hostname
-	if host == "" {
-		host = in.Image
-	}
 	W := func(rel, data string, mode os.FileMode) error { return guestWrite(in.Root, rel, []byte(data), mode) }
-	if err := W("/etc/hostname", host+"\n", 0o644); err != nil {
-		return false, err
-	}
-	if !guestExists(in.Root, "/etc/hosts") {
-		if err := W("/etc/hosts", "127.0.0.1\tlocalhost\n127.0.1.1\t"+host+"\n::1\tlocalhost ip6-localhost\n", 0o644); err != nil {
-			return false, err
-		}
-	}
 	if err := W("/etc/fstab", "# omloader: root is an overlayfs; no entries\n", 0o644); err != nil {
 		return false, err
 	}

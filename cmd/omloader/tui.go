@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -439,6 +438,12 @@ func (s *realSvc) Export(ctx context.Context, image, node, path string, w io.Wri
 
 // ---- online ----
 
+// splitSource splits the TUI's "NAME@MIRROR" source reference.
+func splitSource(ref string) (name, mirror string) {
+	name, mirror, _ = strings.Cut(ref, "@")
+	return
+}
+
 func (s *realSvc) Offline() bool {
 	c, err := s.cfg()
 	return err != nil || !c.Policy.AllowOnline || c.Cache.Offline == "on"
@@ -449,15 +454,16 @@ func (s *realSvc) Sources() ([]tui.SourceInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	var names []string
-	for n := range c.Sources {
-		names = append(names, n)
-	}
-	sort.Strings(names)
 	var out []tui.SourceInfo
-	for _, n := range names {
+	for _, n := range c.SourceNames() {
 		src := c.Sources[n]
-		si := tui.SourceInfo{Name: n, Type: src.Type, URL: src.URL, Mirrors: c.SourceMirrors(n), Usable: c.SourceUsable(n)}
+		si := tui.SourceInfo{Name: n, Type: src.Type, URL: src.URL, Mirrors: c.SourceMirrors(n), Usable: c.SourceUsable(n), Mirror: src.Mirror}
+		if si.Mirror == "" {
+			si.Mirror = config.MirrorOfficial
+		}
+		if ids := c.ServerNames(n); len(ids) > 0 {
+			si.MirrorIDs = append([]string{config.MirrorOfficial, config.MirrorAuto}, ids...)
+		}
 		if !c.SourceAllowed(n) {
 			si.Note = tui.L.SourceBlocked
 		} else if !si.Usable {
@@ -470,7 +476,11 @@ func (s *realSvc) Sources() ([]tui.SourceInfo, error) {
 
 func (s *realSvc) SourceTest(ctx context.Context, name string, w io.Writer) error {
 	setOpCtx(ctx)
+	name, mirror := splitSource(name)
 	a := []string{"test", name}
+	if mirror != "" {
+		a = append(a, "--mirror", mirror)
+	}
 	if s.cfgPath != "" {
 		a = append(a, "-c", s.cfgPath)
 	}
@@ -485,10 +495,8 @@ func (s *realSvc) Catalog(ctx context.Context, source string, f tui.Filter) ([]t
 	if err != nil {
 		return nil, err
 	}
-	if f.Kind != "" && f.Kind != "container" && f.Kind != "vm" {
-		return nil, fmt.Errorf("type must be container or vm")
-	}
-	fe, err := newFetcher(c, source, false, io.Discard)
+	source, mirror := splitSource(source)
+	fe, err := newMirrorFetcher(c, source, mirror, false, io.Discard)
 	if err != nil {
 		return nil, err
 	}
@@ -497,8 +505,8 @@ func (s *realSvc) Catalog(ctx context.Context, source string, f tui.Filter) ([]t
 		return nil, err
 	}
 	var out []tui.CatalogItem
-	for _, i := range cat.Find(simplestreams.Query{OS: f.OS, Release: f.Release, Arch: "amd64", Kind: f.Kind}) {
-		out = append(out, tui.CatalogItem{OS: strings.ToLower(i.OS), Release: i.Release, Variant: i.Variant, Kind: i.Kind(), Version: i.Version, Size: i.Root.Size})
+	for _, i := range cat.Find(simplestreams.Query{Arch: "amd64"}) {
+		out = append(out, tui.CatalogItem{OS: strings.ToLower(i.OS), Release: i.Release, Variant: i.Variant, Arch: i.Arch, Kind: i.Kind(), Version: i.Version, Size: i.Root.Size})
 	}
 	return out, nil
 }
@@ -516,7 +524,11 @@ func (s *realSvc) DefaultPullName(it tui.CatalogItem) string {
 
 func (s *realSvc) Pull(ctx context.Context, source string, it tui.CatalogItem, name string, w io.Writer) error {
 	setOpCtx(ctx)
+	source, mirror := splitSource(source)
 	a := []string{it.Spec(), "--source", source, "--name", name, "--out", s.imagesRoot}
+	if mirror != "" {
+		a = append(a, "--mirror", mirror)
+	}
 	if it.Kind == "vm" {
 		a = append(a, "--vm")
 	}

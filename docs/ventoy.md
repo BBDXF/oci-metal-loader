@@ -47,3 +47,6 @@ Without `omloader.image=` on the kernel command line `autoboot.sh` reads this fi
 - Ventoy's menu is graphical (VGA) only; the loader's own GRUB menu and the whole boot log are on the serial console and tty.
 - **Secure Boot** is not supported: disable it in the firmware.
 - Limits: the data partition that holds the ISO cannot be unmounted while the loader runs; **an ISO on an NTFS partition is not found by stage 1** (the loader kernel has no ntfs3 driver; ntfs-3g is FUSE and only exists in the full live system) — use exFAT/ext4/xfs/FAT32 for the Ventoy partition; ISO path with spaces is found by scan only (not passed via `omloader.isofile=`); `omloader-mounts` waits for USB data partitions only when an `omloader.*` flag is on the command line, so `boot.yaml` on a slow USB VTOYDATA may be missed (put it on the Ventoy partition, which stage 1 already mounted).
+
+## Display
+In Ventoy's GRUB2 mode `grub.cfg` does not touch the video mode (no `gfxmode`/`gfxterm`, no resolution submenu): Ventoy drives the display. The Linux console font is still sized to the framebuffer by `omloader-console.service` (see `docs/tui.md`, *Console font and resolution*).

@@ -44,20 +44,24 @@ type SourceInfo struct {
 	Name, Type, URL string
 	Mirrors         []string
 	Usable          bool
-	Note            string // blocked / offline-only reason
+	Note            string   // blocked / offline-only reason
+	Mirror          string   // configured mirror selection (official | auto | server id)
+	MirrorIDs       []string // selectable mirrors: official, auto, then the server ids of sources.yaml
 }
+
+// The `source` string passed to SourceTest/Catalog/Pull is "NAME" or "NAME@MIRROR" (mirror override, see SourceRef).
 
 // CatalogItem is one pullable image.
 type CatalogItem struct {
-	OS, Release, Variant, Kind, Version string // Kind: container | vm
-	Size                                int64
+	OS, Release, Variant, Arch, Kind, Version string // Kind: container | vm
+	Size                                      int64
 }
 
 // Spec is the pull spec lxc:<os>/<release>/<variant>.
 func (c CatalogItem) Spec() string { return "lxc:" + c.OS + "/" + c.Release + "/" + c.Variant }
 
-// Filter narrows the catalog.
-type Filter struct{ OS, Release, Kind string }
+// Filter is a free-text, multi-keyword search (see internal/imgsearch).
+type Filter struct{ Text string }
 
 // StoreStatus describes the snapshot store.
 type StoreStatus struct {

@@ -427,7 +427,8 @@ func Execute(o Options, res *config.Resolved, p *Plan, r Runner) (string, error)
 	}
 	if realRoot && !o.DryRun {
 		// kernel + initrd are loaded in memory now: provision default accounts into the live COW layer, then unmount cleanly
-		ProvisionVMGuest(r, mnt, config.EffectiveRuntime(res.Config.GuestDefaults, img.Runtime), out, warn)
+		hostName, _ := config.ResolveHostname(res.Config.GuestDefaults, img.Runtime, o.Image) // "" when keep
+		ProvisionVMGuest(r, mnt, config.EffectiveRuntime(res.Config.GuestDefaults, img.Runtime), res.Config.Boot.VMFixESPFstab, hostName, out, warn)
 	}
 	cleanup()
 	if !o.NoKexec && !o.DryRun {

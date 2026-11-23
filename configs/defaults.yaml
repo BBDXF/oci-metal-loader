@@ -29,6 +29,7 @@ boot:
   timeout: 5
   default_snapshot: current
   kernel_cmdline_extra: ""
+  vm_fix_esp_fstab: true   # lxd-vm: make the guest's /boot/efi mount nofail (the ESP is not mapped with udev links; avoids a 90 s emergency-mode timeout)
   ui: tui          # tui | shell (console at boot when nothing is booted automatically; omloader.ui= kernel flag wins)
 data:
   default_backend: dir
@@ -51,15 +52,8 @@ mirror_policy:
   strategy: fallback   # fallback | fastest | mirror-only
   health_check: true
   cache_ttl_hours: 24
-  region_preset: global
-sources:
-  lxc-images:
-    type: simplestreams
-    url: https://images.linuxcontainers.org
-    mirrors: []      # region_preset: cn adds UNVERIFIED tuna/nju presets (content is digest-checked anyway)
-  dockerhub:
-    type: oci-registry
-    url: registry-1.docker.io
+  region_preset: global   # cn: also try the region: cn servers of every source (configs/sources.yaml) as fallbacks
+# sources: the built-in sources/mirrors catalog lives in configs/sources.yaml (embedded; user copy: omloader/sources.yaml on the data partition)
 cache:
   path: /OMLOADER/cache
   max_size_gb: 20
@@ -75,6 +69,7 @@ experimental:
 #   image root_password / root_password_hash   -> replaces root_password
 #   image autologin or autologin_user set      -> replaces autologin + autologin_user
 guest_defaults:
+  hostname: image         # image = the image name as an RFC 1123 label (vm-ubuntu-noble); keep = leave the guest's own; or a literal name. image.yaml runtime.hostname wins
   autologin: true
   autologin_user: oci
   root_password: Oci123

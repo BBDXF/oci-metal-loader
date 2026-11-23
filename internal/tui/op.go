@@ -152,21 +152,72 @@ func human(n int64) string {
 	return fmt.Sprintf("%.1f TiB", f)
 }
 
-func trunc(s string, n int) string {
-	r := []rune(s)
-	if len(r) <= n {
-		return s
+// Elapsed is the running (or total) time of the operation.
+func (o *Op) Elapsed(now time.Time) time.Duration {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.fin {
+		return o.Ended.Sub(o.Started)
 	}
-	if n <= 1 {
-		return string(r[:n])
-	}
-	return string(r[:n-1]) + "~"
+	return now.Sub(o.Started)
 }
 
-func pad(s string, n int) string {
-	r := []rune(s)
-	if len(r) >= n {
-		return string(r[:n])
+// clock formats a duration as m:ss or h:mm:ss.
+func clock(d time.Duration) string {
+	s := int(d.Seconds())
+	if s < 0 {
+		s = 0
 	}
-	return s + strings.Repeat(" ", n-len(r))
+	if s >= 3600 {
+		return fmt.Sprintf("%d:%02d:%02d", s/3600, s/60%60, s%60)
+	}
+	return fmt.Sprintf("%d:%02d", s/60, s%60)
+}
+
+// ProgressBar renders "[=====>    ] 45%  12.0 MiB / 27.0 MiB  3.1 MiB/s  ETA 0:05" (width = bar cells) when the total is
+// known, or a spinner plus the elapsed time otherwise. known tells which of both was drawn.
+func (o *Op) ProgressBar(now time.Time, width int, g glyphs) (line string, known bool) {
+	_ = o.Progress(now) // samples bytes and speed
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	end := now
+	if o.fin {
+		end = o.Ended
+	}
+	el := end.Sub(o.Started)
+	if o.Bytes != nil && o.Total > 0 {
+		b := o.maxBytes
+		if b > o.Total {
+			b = o.Total
+		}
+		if o.fin && o.err == nil {
+			b = o.Total
+		}
+		if width < 10 {
+			width = 10
+		}
+		filled := int(b * int64(width) / o.Total)
+		bar := "[" + strings.Repeat("=", filled)
+		if filled < width {
+			bar += ">" + strings.Repeat(" ", width-filled-1)
+		}
+		bar += "]"
+		line = fmt.Sprintf("%s %3d%%  %s / %s", bar, b*100/o.Total, human(b), human(o.Total))
+		sp := o.speed
+		if o.fin && el > 0 {
+			sp = float64(o.maxBytes) / el.Seconds()
+		}
+		if sp > 0 {
+			line += "  " + human(int64(sp)) + "/s"
+			if !o.fin && o.Total > b {
+				line += "  ETA " + clock(time.Duration(float64(o.Total-b)/sp*float64(time.Second)))
+			}
+		}
+		return line + "  " + clock(el), true
+	}
+	if o.fin {
+		return "elapsed " + clock(el), false
+	}
+	frames := []rune(g.spin)
+	return string(frames[int(now.UnixMilli()/120)%len(frames)]) + " " + L.Working + "  " + clock(el), false
 }

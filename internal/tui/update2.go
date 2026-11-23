@@ -2,7 +2,9 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"omloader/internal/imgsearch"
 	"strings"
 )
 
@@ -20,6 +22,42 @@ func (m *Model) loadSources() {
 	}
 }
 
+// SourceRef is the source argument for the service: NAME, or NAME@MIRROR when the user picked another mirror.
+func (m *Model) SourceRef(s SourceInfo) string {
+	if sel := m.smirror[s.Name]; sel != "" && sel != s.Mirror {
+		return s.Name + "@" + sel
+	}
+	return s.Name
+}
+
+func (m *Model) mirrorOf(s SourceInfo) string {
+	if sel := m.smirror[s.Name]; sel != "" {
+		return sel
+	}
+	if s.Mirror != "" {
+		return s.Mirror
+	}
+	return "official"
+}
+
+// cycleMirror moves the selected source to its next mirror (official, auto, server ids...).
+func (m *Model) cycleMirror(s SourceInfo) {
+	if len(s.MirrorIDs) < 2 {
+		return
+	}
+	cur, next := m.mirrorOf(s), 0
+	for i, id := range s.MirrorIDs {
+		if id == cur {
+			next = (i + 1) % len(s.MirrorIDs)
+		}
+	}
+	if m.smirror == nil {
+		m.smirror = map[string]string{}
+	}
+	m.smirror[s.Name] = s.MirrorIDs[next]
+	m.catAll, m.catalog = nil, nil // the catalog belongs to the previous mirror
+}
+
 func (m *Model) loadCatalog(src string) {
 	m.csource = src
 	var items []CatalogItem
@@ -33,8 +71,11 @@ func (m *Model) loadCatalog(src string) {
 		return err
 	}, func(err error) {
 		if err == nil {
-			m.catalog, m.csel, m.ctop, m.pullCat = items, 0, 0, true
-			m.sayf("%d image(s)", len(items))
+			if items == nil {
+				items = []CatalogItem{}
+			}
+			m.catAll, m.pullCat = items, true
+			m.applyFilter()
 			m.closeOp()
 		}
 	})
@@ -42,20 +83,7 @@ func (m *Model) loadCatalog(src string) {
 
 func (m *Model) pullKey(k Key, act string) {
 	if m.pullCat {
-		m.csel = moveSel(act, m.csel, len(m.catalog), m.bodyRows())
-		m.ctop = keepVisible(m.csel, m.ctop, m.bodyRows()-len(m.sources)-4)
-		switch {
-		case act == "back":
-			m.pullCat = false
-		case act == "select":
-			if m.csel < len(m.catalog) {
-				m.pullForm(m.catalog[m.csel])
-			}
-		case k.Rune == '/':
-			m.filterForm()
-		case k.Rune == 'r':
-			m.loadCatalog(m.csource)
-		}
+		m.catalogKey(k, act)
 		return
 	}
 	m.ssel = moveSel(act, m.ssel, len(m.sources), m.bodyRows())
@@ -68,31 +96,79 @@ func (m *Model) pullKey(k Key, act string) {
 			if !s.Usable && m.Svc.Offline() {
 				m.message(L.Info, false, L.PullOffline)
 			}
-			m.loadCatalog(s.Name)
+			m.loadCatalog(m.SourceRef(s))
+		}
+	case k.Rune == 'm':
+		if m.ssel < len(m.sources) {
+			m.cycleMirror(m.sources[m.ssel])
 		}
 	case k.Rune == 't':
 		if m.ssel < len(m.sources) {
-			name := m.sources[m.ssel].Name
+			name := m.SourceRef(m.sources[m.ssel])
 			m.startOp(L.SourceTest+": "+name, func(ctx context.Context, w io.Writer) error { return m.Svc.SourceTest(ctx, name, w) }, nil)
 		}
 	case k.Rune == '/':
-		m.filterForm()
+		if m.catAll != nil {
+			m.pullCat = true
+		} else if m.ssel < len(m.sources) {
+			m.loadCatalog(m.SourceRef(m.sources[m.ssel]))
+		}
 	case k.Rune == 'r':
 		m.loadSources()
 	}
 }
 
-func (m *Model) filterForm() {
-	m.form(L.FilterTitle, []string{"Empty field = any."}, []string{L.FieldOS, L.FieldRelease, L.FieldType},
-		[]string{m.filter.OS, m.filter.Release, m.filter.Kind}, func(v []string) {
-			m.filter = Filter{OS: strings.TrimSpace(v[0]), Release: strings.TrimSpace(v[1]), Kind: strings.TrimSpace(v[2])}
-			if m.csource == "" && m.ssel < len(m.sources) {
-				m.csource = m.sources[m.ssel].Name
-			}
-			if m.csource != "" {
-				m.loadCatalog(m.csource)
-			}
-		})
+// catalogKey: the search box has the keyboard (live filter). Letters, digits and space are text; navigation uses the named
+// keys; Esc clears the search first and only then leaves the catalog; Enter opens the pull form of the selected image.
+func (m *Model) catalogKey(k Key, act string) {
+	if k.Name != "" {
+		m.csel = moveSel(act, m.csel, len(m.catalog), m.catVis(m.H-1))
+	}
+	switch {
+	case k.Name == "esc":
+		if m.filter.Text != "" {
+			m.filter.Text = ""
+			m.applyFilter()
+		} else {
+			m.pullCat = false
+		}
+	case k.Name == "enter":
+		if m.csel < len(m.catalog) {
+			m.pullForm(m.catalog[m.csel])
+		}
+	case k.Name == "bs":
+		if r := []rune(m.filter.Text); len(r) > 0 {
+			m.filter.Text = string(r[:len(r)-1])
+			m.applyFilter()
+		}
+	case k.Name == "" && k.Rune >= 0x20:
+		m.filter.Text += string(k.Rune)
+		m.applyFilter()
+	}
+	m.ctop = keepVisible(m.csel, m.ctop, m.catVis(m.H-1))
+}
+
+// applyFilter recomputes the visible catalog from catAll using the shared matcher; the selection stays on the same image
+// when it still matches.
+func (m *Model) applyFilter() {
+	var keep *CatalogItem
+	if m.csel < len(m.catalog) {
+		c := m.catalog[m.csel]
+		keep = &c
+	}
+	idx := imgsearch.Filter(m.filter.Text, len(m.catAll), func(i int) imgsearch.Item {
+		c := m.catAll[i]
+		return imgsearch.Item{OS: c.OS, Release: c.Release, Variant: c.Variant, Arch: c.Arch, Kind: c.Kind}
+	})
+	m.catalog = make([]CatalogItem, 0, len(idx))
+	m.csel, m.ctop = 0, 0
+	for n, i := range idx {
+		m.catalog = append(m.catalog, m.catAll[i])
+		if keep != nil && m.catAll[i] == *keep {
+			m.csel = n
+		}
+	}
+	m.ctop = keepVisible(m.csel, 0, m.catVis(m.H-1))
 }
 
 func (m *Model) pullForm(it CatalogItem) {
@@ -144,13 +220,13 @@ func (m *Model) storageKey(k Key, act string) {
 				return
 			}
 			grow := i == 1
-			warn := []string{"Creates an ext4 store file (label OMLOADER) on the host partition."}
+			warn := []string{L.StoreCreateWarn}
 			if grow {
-				warn = []string{"Grows the store file offline (extend + e2fsck + resize2fs). The loader releases (unmounts) the store first: reboot afterwards."}
+				warn = []string{L.StoreGrowWarn}
 			}
 			m.form(L.StoreWizard, warn, []string{L.StorePath, L.StoreSize}, []string{defPath, defSize}, func(v []string) {
 				path, size := strings.TrimSpace(v[0]), strings.TrimSpace(v[1])
-				m.confirm(L.StoreWizard, true, []string{map[bool]string{true: "grow ", false: "create "}[grow] + path + " to " + size + "?"}, func() {
+				m.confirm(L.StoreWizard, true, []string{map[bool]string{true: fmt.Sprintf(L.StoreGrowAsk, path, size), false: fmt.Sprintf(L.StoreCreateAsk, path, size)}[grow]}, func() {
 					m.startOp("store "+map[bool]string{true: "grow", false: "create"}[grow]+" "+path, func(ctx context.Context, w io.Writer) error {
 						if grow {
 							return m.Svc.StoreGrow(ctx, path, size, w)

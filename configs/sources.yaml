@@ -1,0 +1,103 @@
+# omloader sources + mirrors catalog (built in; installed as /etc/omloader/sources.yaml in the live ISO).
+# A copy at <VTOYDATA>/omloader/sources.yaml (or <OMLOADER>/omloader/sources.yaml, or `omloader -c DIR/omloader.yaml` + DIR/sources.yaml,
+# or $OML_SOURCES) is merged on top of this file: add sources/mirrors, change a field, or switch one off with `enabled: false`.
+# Format and merge rules: docs/sources.md.  Only the keys `sources` and `default_source` are allowed here.
+#
+# Every mirror below was verified from a real machine (index + catalog download + HTTP Range request on an image file, see
+# docs/sources.md). Mirrors only supply bytes: every downloaded image file is sha256-checked against the catalog.
+#
+# selecting:  sources.<name>.mirror = official (default) | auto (fastest working, falls back to the others) | a server id below
+#             CLI: --source NAME --mirror ID|auto|official      TUI: Pull screen, `m` cycles the mirror
+default_source: lxc-images
+sources:
+  # linuxcontainers.org community images: debian, ubuntu (+ desktop variants), alpine, arch, fedora, opensuse, mint (containers only), ...
+  lxc-images:
+    title: linuxcontainers.org images (LXC/LXD/Incus)
+    type: simplestreams
+    url: https://images.linuxcontainers.org
+    mirror: official
+    mirrors: []            # extra plain URLs, tried after the official server (legacy; prefer `servers`)
+    servers:
+      tuna:
+        title: Tsinghua TUNA
+        url: https://mirrors.tuna.tsinghua.edu.cn/lxc-images
+        region: cn
+        # TUNA/NJU keep the simplestreams metadata in meta/simplestreams/v1/ (streams/v1 is a redirect on TUNA, a 404 on NJU);
+        # the image files are under images/..., exactly as in the catalog.
+        rewrite: [{from: "streams/v1/", to: "meta/simplestreams/v1/"}]
+      nju:
+        title: Nanjing University
+        url: https://mirror.nju.edu.cn/lxc-images
+        region: cn
+        rewrite: [{from: "streams/v1/", to: "meta/simplestreams/v1/"}]
+      cernet:
+        title: CERNET unified entry (redirects to the nearest university mirror that has lxc-images; BFSU is an alias of TUNA)
+        url: https://mirrors.cernet.edu.cn/lxc-images
+        region: cn
+        rewrite: [{from: "streams/v1/", to: "meta/simplestreams/v1/"}]
+      # USTC (mirrors.ustc.edu.cn) has NO lxc-images repository (404): deliberately not listed.
+  # Canonical's own LXD image server (ubuntu, debian, ... same layout as linuxcontainers.org)
+  lxd-images:
+    title: Canonical LXD image server (images.lxd.canonical.com)
+    type: simplestreams
+    url: https://images.lxd.canonical.com
+    mirror: official
+  # Ubuntu cloud images (server/cloud, NO desktop): squashfs for containers, qcow2 disk1.img for VMs. Pull with `ubuntu:` is not
+  # aliased; use `--source ubuntu-releases` (or ubuntu-daily): omloader pull lxc:ubuntu/noble --source ubuntu-releases [--vm]
+  ubuntu-releases:
+    title: Ubuntu cloud images - releases (cloud-images.ubuntu.com)
+    type: simplestreams
+    url: https://cloud-images.ubuntu.com/releases
+    mirror: official
+    servers:
+      nju:
+        title: Nanjing University
+        url: https://mirror.nju.edu.cn/ubuntu-cloud-images/releases
+        region: cn
+      # TUNA, USTC, BFSU, CERNET mirror /ubuntu-cloud-images/ but carry no releases/streams/ index (404): not listed here.
+  ubuntu-daily:
+    title: Ubuntu cloud images - daily (cloud-images.ubuntu.com)
+    type: simplestreams
+    url: https://cloud-images.ubuntu.com/daily
+    mirror: official
+    servers:
+      tuna:
+        title: Tsinghua TUNA
+        url: https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cloud-images/daily
+        region: cn
+      ustc:
+        title: USTC
+        url: https://mirrors.ustc.edu.cn/ubuntu-cloud-images/daily
+        region: cn
+      nju:
+        title: Nanjing University
+        url: https://mirror.nju.edu.cn/ubuntu-cloud-images/daily
+        region: cn
+      cernet:
+        title: CERNET unified entry (redirects to the nearest university mirror)
+        url: https://mirrors.cernet.edu.cn/ubuntu-cloud-images/daily
+        region: cn
+  # Docker Hub (EXPERIMENTAL, experimental.oci_images). omloader has no registry client: these entries feed `omloader source test`
+  # and `omloader source ref IMAGE` (prints the image reference rewritten for the chosen proxy, for skopeo/crane on a host).
+  dockerhub:
+    title: Docker Hub
+    type: oci-registry
+    url: registry-1.docker.io
+    mirror: official
+    servers:
+      1ms:
+        title: 1ms.run proxy
+        url: docker.1ms.run
+        region: cn
+      daocloud:
+        title: DaoCloud proxy
+        url: docker.m.daocloud.io
+        region: cn
+      xuanyuan:
+        title: Xuanyuan proxy
+        url: docker.xuanyuan.me
+        region: cn
+      # docker.nju.edu.cn answers 403 (restricted to campus), hub.rat.dev redirects elsewhere, ustc/163/baidu/tencent/sjtug docker
+      # mirrors were unreachable when checked: not listed (add them in your own sources.yaml if they work for you).
+  # Deepin, Linux Mint, Debian desktop etc. have NO LXD/simplestreams catalog: define your own source (docs/sources.md) or convert
+  # an image yourself and use `omloader import`.

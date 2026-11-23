@@ -11,7 +11,7 @@ bin:
 
 sync: bin
 	$(SSH) 'mkdir -p ~/$(OML_RDIR)/bin'
-	tar -c --exclude=omloader.bin build test | $(SSH) 'cd ~/$(OML_RDIR) && tar -x'
+	tar -c --exclude=omloader.bin build test configs | $(SSH) 'cd ~/$(OML_RDIR) && tar -x'
 	cat build/omloader.bin | $(SSH) 'cat > ~/$(OML_RDIR)/bin/omloader.new && chmod +x ~/$(OML_RDIR)/bin/omloader.new && mv ~/$(OML_RDIR)/bin/omloader.new ~/$(OML_RDIR)/bin/omloader'
 
 iso: sync

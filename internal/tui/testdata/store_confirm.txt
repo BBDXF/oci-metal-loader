@@ -1,0 +1,24 @@
+ OCI Metal Loader   1:Images  2:Pull [3:Storage] 4:Network  5:Settings    ASCII
+ omloader v9.9  |  store 3.0 GiB free / 8.0 GiB (store-file)  |  net 10.0.0.5
+ Storage
+
+  kind         store-file
+  path         /mnt/host/omloader/store.img
+  host fs      exfat
+  file size    20.0 GiB (allocated 20.0 GiB)
+  ext+- WARNING: Store file wizard ---------------------------------------+
+  att| Grow /mnt/host/omloader/store.img to 20G? The store is RELEASED    |
+  fs | (unmounted) now: snapshot operations stop until you reboot the     |
+     | loader.                                                            |
+  Spa|                                                                    |
+  ext| [Enter/y] Yes    [Esc/n] No                                        |
+     +--------------------------------------------------------------------+
+
+
+
+
+
+
+
+
+ Enter:ok  Esc:cancel

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -49,7 +50,7 @@ func waitOp(t *testing.T, m *Model) {
 func TestImagesList(t *testing.T) {
 	m, _ := newModel(t, true)
 	mustHave(t, m, "alpine", "lxd-container", "overlayfs"[:0]+"3.0 MiB", "deb", "lxd-vm", "1:Images")
-	if got := m.View().Lines()[2]; !strings.Contains(got, "alpine") {
+	if got := m.View().Lines()[3]; !strings.Contains(got, "alpine") {
 		t.Fatalf("first row: %q", got)
 	}
 	m.Update(R('j'))
@@ -358,7 +359,7 @@ func TestCtrlCCancelsOpNotQuit(t *testing.T) {
 		t.Fatal("pull op expected")
 	}
 	time.Sleep(50 * time.Millisecond)
-	mustHave(t, m, "pull lxc:alpine/3.20/default", "downloaded 1.0 MiB / 3.0 MiB")
+	mustHave(t, m, "pull lxc:alpine/3.20/default", "33%", "1.0 MiB / 3.0 MiB")
 	m.Update(N("enter")) // not finished: ignored
 	if m.op == nil {
 		t.Fatal("enter must not close a running op")
@@ -376,13 +377,279 @@ func TestCtrlCCancelsOpNotQuit(t *testing.T) {
 }
 
 func TestPullFilter(t *testing.T) {
+	m, _ := newModel(t, true)
+	m.Update(R('2'))
+	m.Update(N("enter"))
+	waitOp(t, m)
+	if len(m.catalog) != 2 || !m.pullCat {
+		t.Fatalf("catalog %d focus %v", len(m.catalog), m.pullCat)
+	}
+	keys(m, "arch") // live: letters and digits are text, not tab shortcuts
+	if len(m.catalog) != 1 || m.catalog[0].OS != "archlinux" || m.Screen != ScrPull {
+		t.Fatalf("after arch: %+v screen %v", m.catalog, m.Screen)
+	}
+	mustHave(t, m, "Search: arch_", "(1 of 2)", "lxc:archlinux/current/cloud")
+	keys(m, " vm")
+	if len(m.catalog) != 1 {
+		t.Fatal("arch vm")
+	}
+	keys(m, "x")
+	mustHave(t, m, "No image matches")
+	m.Update(N("bs"))
+	if len(m.catalog) != 1 {
+		t.Fatal("backspace re-filters")
+	}
+	m.Update(N("esc")) // clears the search, stays in the catalog
+	if m.filter.Text != "" || len(m.catalog) != 2 || !m.pullCat {
+		t.Fatalf("esc must clear: %q %d %v", m.filter.Text, len(m.catalog), m.pullCat)
+	}
+	keys(m, "2")
+	if m.Screen != ScrPull || m.filter.Text != "2" {
+		t.Fatal("digit is search text while typing")
+	}
+	m.Update(N("esc"))
+	m.Update(N("esc")) // second Esc: back to the sources
+	if m.pullCat {
+		t.Fatal("second esc leaves the catalog")
+	}
+	m.Update(R('/')) // / returns to the (already loaded) search box
+	if !m.pullCat {
+		t.Fatal("/ focuses the search")
+	}
+	m.Update(N("tab"))
+	if m.Screen != ScrStorage {
+		t.Fatal("Tab changes tab while typing")
+	}
+}
+
+func TestPullSelectionAndEnter(t *testing.T) {
+	m, _ := newModel(t, true)
+	m.Update(R('2'))
+	m.Update(N("enter"))
+	waitOp(t, m)
+	keys(m, "a") // both match; alpine/archlinux ordering is by score
+	m.Update(N("down"))
+	sel := m.catalog[m.csel]
+	keys(m, "l") // "al" narrows to alpine only (selection moves when the item vanishes)
+	if len(m.catalog) == 0 {
+		t.Fatal("none")
+	}
+	_ = sel
+	m.Update(N("enter"))
+	mustHave(t, m, "Pull image")
+}
+
+func TestHeaderAndBars(t *testing.T) {
+	m, _ := newModel(t, true)
+	l := m.View().Lines()
+	if !strings.Contains(l[1], "omloader v9.9") || !strings.Contains(l[1], "10.0.0.5") || !strings.Contains(l[1], "free") {
+		t.Fatalf("header row: %q", l[1])
+	}
+	if !strings.HasPrefix(l[23], " Enter:open") {
+		t.Fatalf("images bar: %q", l[23])
+	}
+	m.Update(R('2'))
+	if !strings.Contains(m.View().Lines()[23], "Enter:load catalog") {
+		t.Fatal("pull bar")
+	}
+	m.Update(N("enter"))
+	waitOp(t, m)
+	if !strings.Contains(m.View().Lines()[23], "type:search") {
+		t.Fatal("catalog bar")
+	}
+	m.Svc.(*fakeSvc).offline = true
+	m.refreshHeader(true)
+	if !strings.Contains(m.View().Lines()[1], "[offline]") {
+		t.Fatal("offline in header")
+	}
+	m.W, m.H = 80, 24
+	if w := strWidth(m.headerText(40)); w > 40 {
+		t.Fatalf("narrow header %d", w)
+	}
+}
+
+func TestPositionAndScrollBar(t *testing.T) {
+	m, _ := newModel(t, true)
+	m.Update(R('2'))
+	m.Update(N("enter"))
+	waitOp(t, m)
+	for i := 0; i < 40; i++ {
+		m.catAll = append(m.catAll, CatalogItem{OS: "os", Release: fmt.Sprint(i), Variant: "default", Arch: "amd64", Kind: "container"})
+	}
+	m.applyFilter()
+	m.Update(N("end"))
+	s := screen(m)
+	if !strings.Contains(s, "42/42") || !strings.Contains(s, "#") {
+		t.Fatalf("position / scroll bar:\n%s", s)
+	}
+	m.Update(N("home"))
+	m.Update(N("pgdn"))
+	if m.csel == 0 || !strings.Contains(screen(m), fmt.Sprintf("%d/42", m.csel+1)) {
+		t.Fatal("pgdn")
+	}
+	for _, l := range m.View().Lines() {
+		if strWidth(l) > 80 {
+			t.Fatalf("line too wide: %q", l)
+		}
+	}
+}
+
+func TestResultPanelAndLogToggle(t *testing.T) {
 	m, f := newModel(t, true)
 	m.Update(R('2'))
-	m.Update(R('/'))
-	keys(m, "alpine\n3.20\nvm\n")
+	m.Update(R('t'))
 	waitOp(t, m)
-	if !f.called(`catalog lxc-images {OS:alpine Release:3.20 Kind:vm}`) {
-		t.Fatalf("%v", f.calls)
+	mustHave(t, m, "[finished]", "SUCCESS", "elapsed", "Enter/Esc: dismiss", "OK      12ms")
+	m.Update(R('l'))
+	mustHave(t, m, "SUCCESS", "log hidden")
+	if strings.Contains(screen(m), "OK      12ms") {
+		t.Fatal("log must be hidden")
+	}
+	m.Update(R('l'))
+	mustHave(t, m, "OK      12ms")
+	m.Update(N("enter"))
+	if m.op != nil {
+		t.Fatal("dismiss")
+	}
+	// failure panel
+	f.verifyErr = fmt.Errorf("boom layer")
+	m.Update(R('1'))
+	m.Update(N("enter"))
+	m.Update(R('v'))
+	m.Update(R('1'))
+	waitOp(t, m)
+	mustHave(t, m, "[FAILED]", "X FAILED", "boom layer")
+}
+
+func TestProgressBarETA(t *testing.T) {
+	now := time.Unix(1000, 0)
+	o := &Op{Started: now}
+	var b int64
+	o.Bytes, o.Total = func() int64 { return b }, 100<<20
+	g := Theme{ASCII: true}.g()
+	o.ProgressBar(now, 20, g)
+	b = 10 << 20
+	line, known := o.ProgressBar(now.Add(time.Second), 20, g)
+	if !known || !strings.Contains(line, "10%") || !strings.Contains(line, "10.0 MiB/s") || !strings.Contains(line, "ETA 0:09") {
+		t.Fatalf("%q", line)
+	}
+	sp := &Op{Started: now}
+	l, k := sp.ProgressBar(now.Add(65*time.Second), 20, g)
+	if k || !strings.Contains(l, "working") || !strings.Contains(l, "1:05") {
+		t.Fatalf("spinner %q", l)
+	}
+}
+
+func TestConfirmTexts(t *testing.T) {
+	m, f := newModel(t, true)
+	m.Update(N("enter"))
+	m.Update(R('j'))
+	m.Update(R('j'))
+	m.Update(R('r'))
+	m.Update(R('1'))
+	mustHave(t, m, "WARNING", "will be DISCARDED", "cannot be recovered", "continues from")
+	m.Update(N("esc"))
+	m.Update(R('d'))
+	mustHave(t, m, "permanently", "merge")
+	m.Update(N("esc"))
+	m.Update(R('p'))
+	m.Update(R('1'))
+	mustHave(t, m, "permanently", "Retention prune")
+	m.Update(N("esc"))
+	_ = f
+	m.Update(N("esc"))
+	m.Update(R('3'))
+	m.Update(R('c'))
+	m.Update(R('2'))
+	keys(m, "\n\n")
+	mustHave(t, m, "RELEASED", "reboot the")
+}
+
+func TestHelpPage(t *testing.T) {
+	m, _ := newModel(t, true)
+	m.Update(R('?'))
+	mustHave(t, m, "Help", "this screen", "Images")
+	if !strings.Contains(m.View().Lines()[23], "Esc/q/?:close") {
+		t.Fatal("help bar")
+	}
+	m.Update(N("pgdn"))
+	if !m.help || m.helpTop == 0 {
+		t.Fatal("scroll")
+	}
+	m.Update(N("end"))
+	mustHave(t, m, "Dialogs")
+	m.Update(R('q'))
+	if m.help {
+		t.Fatal("q closes help")
+	}
+	// the page of the current screen comes first
+	m.Update(R('2'))
+	m.Update(R('?'))
+	if l := m.View().Lines(); !strings.Contains(l[3], "Pull") {
+		t.Fatalf("pull help first: %q", l[3])
+	}
+}
+
+func TestWideCharsAlignment(t *testing.T) {
+	if strWidth("世界a") != 5 || trunc("世界世界", 5) != "世界~" || strWidth(pad("世", 4)) != 4 {
+		t.Fatal("width helpers")
+	}
+	m, f := newModel(t, true)
+	f.cjk = true
+	m.RefreshImages()
+	lines := m.View().Lines()
+	row := lines[3]
+	if strWidth(row) > 80 {
+		t.Fatalf("row too wide %d: %q", strWidth(row), row)
+	}
+	col := strings.Index(lines[2], "TYPE")
+	if w := strWidth(row[:strings.Index(row, "lxd-")]); w != col {
+		t.Fatalf("columns misaligned with CJK: type at %d, header at %d: %q", w, col, row)
+	}
+	c := m.View()
+	for y := range c.Cells {
+		for x, cl := range c.Cells[y] {
+			if cl.R != 0 && runeWidth(cl.R) == 2 && (x+1 >= c.W || c.Cells[y][x+1].R != 0) {
+				t.Fatalf("wide rune without continuation at %d,%d", x, y)
+			}
+		}
+	}
+}
+
+func TestColourDegrades(t *testing.T) {
+	m := New(newFake(), Theme{ASCII: false, Color: true})
+	m.Init()
+	m.Update(N("enter"))
+	c := m.View()
+	var all string
+	for y := 0; y < c.H; y++ {
+		all += c.ANSI(y, m.Th)
+	}
+	for _, want := range []string{"\x1b[0;1;32m", "\x1b[0;36m", "\x1b[0;35m", "\x1b[0;7m", "\x1b[0;2m"} {
+		if !strings.Contains(all, want) {
+			t.Fatalf("colour output lacks %q", want)
+		}
+	}
+	for y := 0; y < c.H; y++ {
+		l := c.ANSI(y, Theme{ASCII: true})
+		if strings.Contains(l, ";3") || strings.Contains(l, "[0;2m") {
+			t.Fatalf("no-colour theme leaks colour: %q", l)
+		}
+	}
+}
+
+func TestStatusColours(t *testing.T) {
+	m, _ := newModel(t, true)
+	m.warn("careful")
+	if !m.stWarn || m.stErr {
+		t.Fatal("warn")
+	}
+	m.say("fine")
+	if m.stWarn || m.stErr {
+		t.Fatal("say resets")
+	}
+	if sgr(StWarn, Theme{Color: true}) != "\x1b[0;1;33m" || sgr(StErr, Theme{Color: true}) != "\x1b[0;1;31m" || sgr(StOK, Theme{Color: true}) != "\x1b[0;32m" {
+		t.Fatal("colours")
 	}
 }
 
@@ -479,3 +746,70 @@ func TestOpWriter(t *testing.T) {
 }
 
 func TestMain(m *testing.M) { os.Exit(m.Run()) }
+
+func TestCatalogSearchFilter(t *testing.T) {
+	m := &Model{Svc: newFake(), catAll: []CatalogItem{
+		{OS: "alpine", Release: "3.20", Variant: "default", Arch: "amd64", Kind: "container"},
+		{OS: "archlinux", Release: "current", Variant: "cloud", Arch: "amd64", Kind: "vm"},
+	}}
+	for q, want := range map[string]int{"": 2, "arch": 1, "arch vm": 1, "arch container": 0, "AMD64": 2, "alp 3.2": 1} {
+		m.filter = Filter{Text: q}
+		m.applyFilter()
+		if len(m.catalog) != want {
+			t.Errorf("%q: %d want %d", q, len(m.catalog), want)
+		}
+	}
+}
+
+// goldenFrame compares the 80x24 text frame with testdata/<name>.txt (UPDATE_GOLDEN=1 rewrites it).
+func goldenFrame(t *testing.T, name string, m *Model) {
+	t.Helper()
+	got := m.View().Text() + "\n"
+	for i, l := range strings.Split(got, "\n") {
+		if strWidth(l) > m.W {
+			t.Fatalf("%s line %d wider than %d: %q", name, i, m.W, l)
+		}
+	}
+	p := "testdata/" + name + ".txt"
+	if os.Getenv("UPDATE_GOLDEN") != "" {
+		os.WriteFile(p, []byte(got), 0o644)
+	}
+	want, err := os.ReadFile(p)
+	if err != nil || string(want) != got {
+		t.Fatalf("frame %s differs from %s (UPDATE_GOLDEN=1 to refresh):\n%s", name, p, got)
+	}
+	t.Logf("%s:\n%s", name, got)
+}
+
+func TestFrames80x24(t *testing.T) {
+	m, f := newModel(t, true)
+	goldenFrame(t, "images", m)
+	m.Update(N("enter"))
+	m.Update(R('j'))
+	goldenFrame(t, "detail", m)
+	m.Update(R('1'))
+	m.Update(R('2'))
+	m.Update(N("enter"))
+	waitOp(t, m)
+	keys(m, "arch")
+	goldenFrame(t, "pull_search", m)
+	m.Update(N("esc"))
+	m.Update(N("esc"))
+	m.Update(N("tab"))
+	m.Update(R('c'))
+	_ = f
+	m.Update(R('2'))
+	goldenFrame(t, "store_confirm", m.afterKeys(N("enter"), N("enter")))
+	m.Update(N("esc"))
+	m.Update(R('4'))
+	m.Update(R('t'))
+	waitOp(t, m)
+	goldenFrame(t, "op_done", m)
+}
+
+func (m *Model) afterKeys(ks ...Key) *Model {
+	for _, k := range ks {
+		m.Update(k)
+	}
+	return m
+}

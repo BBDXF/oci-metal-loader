@@ -157,8 +157,12 @@ func file(it *Item) File {
 func (c *Catalog) Find(q Query) []Image {
 	var out []Image
 	for key, p := range c.Products {
+		pv := p.Variant // cloud-images.ubuntu.com products carry no variant: they are the "default" one
+		if pv == "" {
+			pv = "default"
+		}
 		if q.OS != "" && !strings.EqualFold(p.OS, q.OS) || q.Arch != "" && p.Arch != q.Arch ||
-			q.Variant != "" && p.Variant != q.Variant || !aliasMatch(p, q.Release) {
+			q.Variant != "" && pv != q.Variant || !aliasMatch(p, q.Release) {
 			continue
 		}
 		var vers []string
@@ -179,7 +183,7 @@ func (c *Catalog) Find(q Query) []Image {
 				if meta == nil || root == nil {
 					continue
 				}
-				out = append(out, Image{Product: key, OS: p.OS, Release: p.Release, Arch: p.Arch, Variant: p.Variant,
+				out = append(out, Image{Product: key, OS: p.OS, Release: p.Release, Arch: p.Arch, Variant: pv,
 					Version: vers[i], VM: kind == 1, Meta: file(meta), Root: file(root)})
 				break
 			}

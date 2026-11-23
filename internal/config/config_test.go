@@ -174,6 +174,9 @@ func TestDefaultGuestAccounts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !r.Config.Boot.VMFixESPFstab {
+		t.Error("boot.vm_fix_esp_fstab must default to true")
+	}
 	g := r.Config.GuestDefaults
 	if !*g.Autologin || g.AutologinUser != "oci" || g.RootPassword != "Oci123" || len(g.Users) != 1 || g.Users[0].Name != "oci" || g.Users[0].Password != "Oci123" || !g.Users[0].Sudo {
 		t.Errorf("guest_defaults: %+v", g)

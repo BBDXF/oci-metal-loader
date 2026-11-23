@@ -1,9 +1,6 @@
 package tui
 
-import (
-	"os"
-	"strings"
-)
+import "strings"
 
 // Style of a cell.
 type Style uint8
@@ -16,39 +13,18 @@ const (
 	StErr
 	StOK
 	StWarn
-	StBar // tab/status bar
+	StBar    // tab/status bar
+	StCur    // live state marker/row (green bold)
+	StFrozen // frozen snapshot (cyan)
+	StTag    // tags (magenta)
+	StFaint  // sizes, secondary text (dim)
+	StEph    // ephemeral (yellow)
+	StBase   // base image (bold)
+	StTitle  // title bar block (tab row)
+	StTabOn  // active tab inside the title block
+	StKeys   // bottom key bar
+	StFrame  // box frames
 )
-
-// Theme decides glyphs and colours.
-type Theme struct {
-	ASCII bool // no UTF-8 box drawing
-	Color bool
-}
-
-// DetectTheme picks ASCII when forced or when the locale/terminal do not promise UTF-8; colour unless TERM is dumb/vt100.
-func DetectTheme(getenv func(string) string, forceASCII bool) Theme {
-	loc := strings.ToUpper(getenv("LC_ALL") + " " + getenv("LC_CTYPE") + " " + getenv("LANG"))
-	if g := getenv("LC_ALL"); g != "" {
-		loc = strings.ToUpper(g)
-	}
-	utf := strings.Contains(loc, "UTF-8") || strings.Contains(loc, "UTF8")
-	term := getenv("TERM")
-	t := Theme{ASCII: forceASCII || !utf || term == "" || term == "dumb" || strings.HasPrefix(term, "vt")}
-	t.Color = term != "" && term != "dumb" && !strings.HasPrefix(term, "vt")
-	return t
-}
-
-// EnvTheme is DetectTheme over the process environment.
-func EnvTheme(forceASCII bool) Theme { return DetectTheme(os.Getenv, forceASCII) }
-
-type glyphs struct{ h, v, tl, tr, bl, br, branch, last, pipe, blank, cur, up string }
-
-func (t Theme) g() glyphs {
-	if t.ASCII {
-		return glyphs{"-", "|", "+", "+", "+", "+", "|-- ", "`-- ", "|   ", "    ", "*", "^"}
-	}
-	return glyphs{"─", "│", "┌", "┐", "└", "┘", "├── ", "└── ", "│   ", "    ", "●", "↑"}
-}
 
 // Cell is one screen cell.
 type Cell struct {
@@ -60,6 +36,7 @@ type Cell struct {
 type Canvas struct {
 	W, H  int
 	Cells [][]Cell
+	oy    int // vertical offset applied by Put/Fill (body drawing below the header)
 }
 
 // NewCanvas allocates a blank canvas.
@@ -74,13 +51,19 @@ func NewCanvas(w, h int) *Canvas {
 	return c
 }
 
-// Put writes s at (x,y), clipped to the canvas; control characters become spaces.
+// Put writes s at (x,y), clipped to the canvas; control characters become spaces. Wide (CJK) runes take two cells
+// (the second holds R == 0 and is skipped on output); zero-width runes are dropped.
 func (c *Canvas) Put(x, y int, s string, st Style) {
+	y += c.oy
 	if y < 0 || y >= c.H {
 		return
 	}
 	for _, r := range s {
-		if x >= c.W {
+		w := runeWidth(r)
+		if w == 0 {
+			continue
+		}
+		if x+w > c.W {
 			return
 		}
 		if r < 0x20 || r == 0x7f {
@@ -88,13 +71,17 @@ func (c *Canvas) Put(x, y int, s string, st Style) {
 		}
 		if x >= 0 {
 			c.Cells[y][x] = Cell{r, st}
+			if w == 2 {
+				c.Cells[y][x+1] = Cell{0, st}
+			}
 		}
-		x++
+		x += w
 	}
 }
 
 // Fill paints a rectangle's style/blank.
 func (c *Canvas) Fill(x, y, w, h int, st Style) {
+	y += c.oy
 	for j := y; j < y+h && j < c.H; j++ {
 		for i := x; i < x+w && i < c.W; i++ {
 			if i >= 0 && j >= 0 {
@@ -128,7 +115,9 @@ func (c *Canvas) Lines() []string {
 	for y, row := range c.Cells {
 		var b strings.Builder
 		for _, cl := range row {
-			b.WriteRune(cl.R)
+			if cl.R != 0 {
+				b.WriteRune(cl.R)
+			}
 		}
 		out[y] = strings.TrimRight(b.String(), " ")
 	}
@@ -137,38 +126,6 @@ func (c *Canvas) Lines() []string {
 
 // Text is Lines joined.
 func (c *Canvas) Text() string { return strings.Join(c.Lines(), "\n") }
-
-func sgr(st Style, th Theme) string {
-	switch st {
-	case StSel:
-		return "\x1b[0;7m"
-	case StBar:
-		return "\x1b[0;7m"
-	case StBold:
-		return "\x1b[0;1m"
-	case StDim:
-		if th.Color {
-			return "\x1b[0;36m"
-		}
-		return "\x1b[0m"
-	case StErr:
-		if th.Color {
-			return "\x1b[0;1;31m"
-		}
-		return "\x1b[0;1m"
-	case StOK:
-		if th.Color {
-			return "\x1b[0;32m"
-		}
-		return "\x1b[0m"
-	case StWarn:
-		if th.Color {
-			return "\x1b[0;1;33m"
-		}
-		return "\x1b[0;1m"
-	}
-	return "\x1b[0m"
-}
 
 // ANSI renders row y with escape sequences (one string per row, no trailing newline).
 func (c *Canvas) ANSI(y int, th Theme) string {
@@ -179,7 +136,9 @@ func (c *Canvas) ANSI(y int, th Theme) string {
 			b.WriteString(sgr(cl.St, th))
 			cur = cl.St
 		}
-		b.WriteRune(cl.R)
+		if cl.R != 0 {
+			b.WriteRune(cl.R)
+		}
 	}
 	b.WriteString("\x1b[0m")
 	return b.String()

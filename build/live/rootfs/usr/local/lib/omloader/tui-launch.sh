@@ -9,6 +9,13 @@ omloader_tui_main() {
   . /run/omloader/env 2>/dev/null
   for a in $(cat /proc/cmdline); do case "$a" in omloader.experimental=*) export OML_EXPERIMENTAL="${a#*=}";; esac; done
   export DM_DISABLE_UDEV=1
+  # tty1 / VNC / screen only (never serial): size-matched Terminus font + UTF-8 (the boot unit did it already; this re-applies
+  # when omloader.font= / console.conf only became readable after the data partitions were mounted), then UTF-8 + 16/256 colours.
+  case "$(tty 2>/dev/null)" in
+    /dev/tty[0-9]*)
+      /usr/local/lib/omloader/console-font.sh apply
+      if [ "$(cat /run/omloader/font 2>/dev/null)" != default ] && [ -s /run/omloader/font ]; then export LC_CTYPE=C.UTF-8; fi;;
+  esac
   local args=(tui --images-root "${IMAGES_ROOT:-/mnt/images/images}" --snap-root /mnt/snap/snapshots)
   [ -s /run/omloader/uicfg ] && args+=(-c "$(cat /run/omloader/uicfg)")
   omloader "${args[@]}"

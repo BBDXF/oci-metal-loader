@@ -35,10 +35,12 @@ type Fetcher struct {
 	Warn    io.Writer
 	Client  *http.Client
 	Sleep   func(time.Duration)
+	// Mirror overrides sources.<name>.mirror (official | auto | server id); "" = use the configuration.
+	Mirror string
 
 	src    config.Source
 	mu     sync.Mutex
-	ranked []string
+	ranked []string // server names, best first
 }
 
 // New prepares a fetcher for a configured source; it enforces policy.allowed_sources.
@@ -73,13 +75,32 @@ func (f *Fetcher) rewrite(u string) string {
 	return u
 }
 
-// bases returns primary + mirrors in configured order, filtered by the strategy (rewrite rules not yet applied).
-func (f *Fetcher) bases() []string {
-	m := f.Cfg.SourceMirrors(f.Source)
-	if f.Cfg.MirrorPolicy.Strategy == "mirror-only" {
-		return m
+// bases returns the candidate servers in configured order (rewrite rules of the source not yet applied).
+func (f *Fetcher) bases() []config.Base {
+	b, err := f.Cfg.SourceBases(f.Source, f.Mirror)
+	if err != nil {
+		fmt.Fprintf(f.Warn, "warning: %v\n", err)
+		b, _ = f.Cfg.SourceBases(f.Source, config.MirrorOfficial)
 	}
-	return append([]string{f.src.URL}, m...)
+	return b
+}
+
+// ranking reports whether candidates are ordered by measured latency (mirror: auto or mirror_policy.strategy fastest).
+func (f *Fetcher) ranking() bool {
+	m := f.Mirror
+	if m == "" {
+		m = f.src.Mirror
+	}
+	return m == config.MirrorAuto || f.Cfg.MirrorPolicy.Strategy == "fastest"
+}
+
+// SetMirror selects the mirror (official | auto | server id) and fails early for an unknown one.
+func (f *Fetcher) SetMirror(name string) error {
+	if _, err := f.Cfg.SourceBases(f.Source, name); err != nil {
+		return err
+	}
+	f.Mirror, f.ranked = name, nil
+	return nil
 }
 
 func join(base, rel string) string {
@@ -88,6 +109,7 @@ func join(base, rel string) string {
 
 // Probe is the health/timing result for one base URL.
 type Probe struct {
+	Name string // server id (official, extra#N, tuna, ...)
 	Base string
 	URL  string
 	OK   bool
@@ -101,15 +123,16 @@ func (f *Fetcher) ProbeAll(ctx context.Context) []Probe {
 	bs := f.bases()
 	out := make([]Probe, len(bs))
 	var wg sync.WaitGroup
-	for i, b := range bs {
+	for i, bb := range bs {
 		wg.Add(1)
-		go func(i int, b string) {
+		go func(i int, bb config.Base) {
 			defer wg.Done()
+			b := bb.URL
 			u := f.rewrite(b)
 			if f.src.Type == "simplestreams" {
-				u = f.rewrite(join(b, simplestreams.IndexPath))
+				u = f.rewrite(join(b, bb.Rel(simplestreams.IndexPath)))
 			}
-			p := Probe{Base: b, URL: u}
+			p := Probe{Name: bb.Name, Base: b, URL: u}
 			t0 := time.Now()
 			req, err := http.NewRequestWithContext(ctx, http.MethodHead, u, nil)
 			if err == nil {
@@ -123,16 +146,16 @@ func (f *Fetcher) ProbeAll(ctx context.Context) []Probe {
 			}
 			p.Dur, p.Err, p.OK = time.Since(t0), err, err == nil
 			out[i] = p
-		}(i, b)
+		}(i, bb)
 	}
 	wg.Wait()
 	return out
 }
 
-// order returns the bases in the order to try them.
-func (f *Fetcher) order(ctx context.Context) []string {
+// order returns the servers in the order to try them.
+func (f *Fetcher) order(ctx context.Context) []config.Base {
 	bs := f.bases()
-	if f.Cfg.MirrorPolicy.Strategy != "fastest" || len(bs) < 2 {
+	if !f.ranking() || len(bs) < 2 {
 		return bs
 	}
 	f.mu.Lock()
@@ -146,10 +169,18 @@ func (f *Fetcher) order(ctx context.Context) []string {
 			return ps[i].Dur < ps[j].Dur
 		})
 		for _, p := range ps {
-			f.ranked = append(f.ranked, p.Base)
+			f.ranked = append(f.ranked, p.Name)
 		}
 	}
-	return f.ranked
+	out := make([]config.Base, 0, len(bs))
+	for _, n := range f.ranked {
+		for _, b := range bs {
+			if b.Name == n {
+				out = append(out, b)
+			}
+		}
+	}
+	return out
 }
 
 func (f *Fetcher) retries() int { return f.Cfg.Network.Retries }
@@ -190,7 +221,7 @@ func (f *Fetcher) MetaDoc(ctx context.Context, rel string) ([]byte, error) {
 	}
 	var last error
 	for bi, b := range f.order(ctx) {
-		u := f.rewrite(join(b, rel))
+		u := f.rewrite(join(b.URL, b.Rel(rel)))
 		var body []byte
 		for try := 0; try <= f.retries(); try++ {
 			if try > 0 {
@@ -208,8 +239,8 @@ func (f *Fetcher) MetaDoc(ctx context.Context, rel string) ([]byte, error) {
 			fmt.Fprintf(f.Warn, "warning: %v\n", last)
 			continue
 		}
-		if bi > 0 || b != f.src.URL {
-			fmt.Fprintf(f.Warn, "warning: metadata %s came from mirror %s and is not signature-verified; downloads are still sha256-checked against it\n", rel, b)
+		if bi > 0 || b.URL != f.src.URL {
+			fmt.Fprintf(f.Warn, "warning: metadata %s came from mirror %s and is not signature-verified; downloads are still sha256-checked against it\n", rel, b.URL)
 		}
 		f.Cache.PutMeta(key, body)
 		return body, nil
@@ -256,7 +287,7 @@ func (f *Fetcher) Blob(ctx context.Context, rel, sha string, size int64) (string
 	}
 	var last error
 	for _, b := range f.order(ctx) {
-		u := f.rewrite(join(b, rel))
+		u := f.rewrite(join(b.URL, b.Rel(rel)))
 		if last = f.download(ctx, u, sha, size); last == nil {
 			return f.Cache.Blob(sha), nil
 		}

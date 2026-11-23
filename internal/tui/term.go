@@ -100,7 +100,7 @@ func (t *Terminal) Run(m *Model, ready func()) Result {
 	}
 	defer t.Restore()
 	defer fmt.Fprint(t.Out, "\x1b[?25h\x1b[0m\x1b[2J\x1b[H")
-	fmt.Fprint(t.Out, "\x1b[?25l\x1b[0m\x1b[2J")
+	fmt.Fprint(t.Out, "\x1b[?25l\x1b[0m"+baseSGR(m.Th)+"\x1b[2J")
 	keys := make(chan []byte, 16)
 	stop := make(chan struct{})
 	rdone := make(chan struct{})

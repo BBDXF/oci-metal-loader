@@ -11,11 +11,17 @@ import (
 )
 
 type fakeSvc struct {
-	mu       sync.Mutex
-	trees    map[string]*TreeInfo
-	calls    []string
-	offline  bool
-	pullHold chan struct{}
+	mu        sync.Mutex
+	trees     map[string]*TreeInfo
+	calls     []string
+	offline   bool
+	pullHold  chan struct{}
+	verifyErr error
+	cjk       bool
+}
+
+func (f *fakeSvc) Header() HeaderInfo {
+	return HeaderInfo{Version: "v9.9", StoreKind: "store-file", StoreFree: 3 << 30, StoreTotal: 8 << 30, ImagesUsed: 2 << 30, Net: "10.0.0.5", Offline: f.offline}
 }
 
 func newFake() *fakeSvc {
@@ -47,8 +53,12 @@ func (f *fakeSvc) called(sub string) bool {
 }
 
 func (f *fakeSvc) Images() ([]ImageInfo, error) {
+	n := "alpine"
+	if f.cjk {
+		n = "世界镜像"
+	}
 	return []ImageInfo{
-		{Name: "alpine", Type: "lxd-container", Mode: "overlayfs", Size: 3 << 20, BaseOK: "ok", Snaps: 3, Current: "b", LastUsed: time.Date(2026, 1, 3, 11, 0, 0, 0, time.UTC)},
+		{Name: n, Type: "lxd-container", Mode: "overlayfs", Size: 3 << 20, BaseOK: "ok", Snaps: 3, Current: "b", LastUsed: time.Date(2026, 1, 3, 11, 0, 0, 0, time.UTC)},
 		{Name: "deb", Type: "lxd-vm", Mode: "dm-snapshot", Size: 2 << 30, BaseOK: "-"},
 	}, nil
 }
@@ -91,7 +101,7 @@ func (f *fakeSvc) Prune(i string, gc, dry bool) ([]string, error) {
 func (f *fakeSvc) Verify(ctx context.Context, i string, deep bool, w io.Writer) error {
 	f.rec("verify %s deep=%v", i, deep)
 	fmt.Fprintln(w, "verify alpine: OK (3 snapshots)")
-	return nil
+	return f.verifyErr
 }
 func (f *fakeSvc) Flatten(ctx context.Context, i, n, name string, w io.Writer) error {
 	f.rec("flatten %s %s %s", i, n, name)
@@ -126,7 +136,8 @@ func (f *fakeSvc) SourceTest(ctx context.Context, n string, w io.Writer) error {
 }
 func (f *fakeSvc) Catalog(ctx context.Context, s string, fl Filter) ([]CatalogItem, error) {
 	f.rec("catalog %s %+v", s, fl)
-	return []CatalogItem{{OS: "alpine", Release: "3.20", Variant: "default", Kind: "container", Version: "20260101", Size: 3 << 20}}, nil
+	return []CatalogItem{{OS: "alpine", Release: "3.20", Variant: "default", Arch: "amd64", Kind: "container", Version: "20260101", Size: 3 << 20},
+		{OS: "archlinux", Release: "current", Variant: "cloud", Arch: "amd64", Kind: "vm", Version: "20260101", Size: 3 << 20}}, nil
 }
 func (f *fakeSvc) Pull(ctx context.Context, s string, it CatalogItem, name string, w io.Writer) error {
 	f.rec("pull %s %s %s", s, it.Spec(), name)

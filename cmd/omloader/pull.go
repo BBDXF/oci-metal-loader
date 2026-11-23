@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"omloader/internal/imgsearch"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,11 +24,12 @@ import (
 	"omloader/internal/simplestreams"
 )
 
-const usageM4 = `  omloader images list [--source S] [--type container|vm] [--os X] [--release R] [--variant V] [--arch amd64] [--offline] [-c omloader.yaml]
-  omloader pull lxc:<os>/<release>[/<variant>] [--vm|--container] [--arch amd64] [--name N] [--out IMAGES_ROOT] [--source S]
+const usageM4 = `  omloader images list [--source S] [--mirror M] [--type container|vm] [--os X] [--release R] [--variant V] [--arch amd64] [--offline] [-c omloader.yaml]
+  omloader pull lxc:<os>/<release>[/<variant>] [--vm|--container] [--arch amd64] [--name N] [--out IMAGES_ROOT] [--source S] [--mirror M] [--variant V]
             [-c omloader.yaml] [--offline] [--force] [--no-probe] [--tmp DIR]
   omloader import lxd-vm PATH --name N --out IMAGES_ROOT [--no-probe]   (disk.qcow2 | dir with disk.qcow2 [+lxd.tar.xz])
-  omloader source list|test [NAME] [-c omloader.yaml] [--offline]
+  omloader source list|test [NAME] [--mirror M] [-c omloader.yaml] [--offline]   (M: official | auto | a server id from sources.yaml; docs/sources.md)
+  omloader source ref IMAGE [--source dockerhub] [--mirror M] [-c omloader.yaml]    (Docker Hub image reference rewritten for a proxy mirror; experimental)
   omloader cache ls|gc [--max-size-gb N] [-c omloader.yaml]
   omloader net status [-c omloader.yaml] [--offline]
 `
@@ -71,11 +72,29 @@ func loadCfg(path string) (*config.Config, error) {
 	return c, nil
 }
 
+// defaultSource: --source, else default_source (sources.yaml), else lxc-images.
 func defaultSource(c *config.Config, flagVal string) string {
 	if flagVal != "" {
 		return flagVal
 	}
+	if c.DefaultSource != "" {
+		return c.DefaultSource
+	}
 	return "lxc-images"
+}
+
+// newMirrorFetcher is newFetcher plus the --mirror selection ("" = the source's configured mirror).
+func newMirrorFetcher(c *config.Config, src, mirror string, offline bool, errw io.Writer) (*fetch.Fetcher, error) {
+	f, err := fetch.New(c, src, offline, errw)
+	if err != nil {
+		return nil, err
+	}
+	if mirror != "" {
+		if err := f.SetMirror(mirror); err != nil {
+			return nil, err
+		}
+	}
+	return f, nil
 }
 
 // opCtx is the parent context of the network operations; the TUI sets it so that a running pull/probe can be cancelled.
@@ -118,16 +137,20 @@ func runImages(args []string, out, errw io.Writer) int {
 	fs := flag.NewFlagSet("images list", flag.ContinueOnError)
 	fs.SetOutput(errw)
 	cfgp := fs.String("c", "", "global omloader.yaml")
-	srcn := fs.String("source", "", "source name (default lxc-images)")
+	srcn := fs.String("source", "", "source name (default: default_source, lxc-images)")
+	mirn := fs.String("mirror", "", "mirror: official | auto | server id (default: the source's `mirror`)")
 	typ := fs.String("type", "", "container|vm")
 	osn := fs.String("os", "", "distribution (e.g. ubuntu)")
 	rel := fs.String("release", "", "release (e.g. noble)")
 	vr := fs.String("variant", "", "variant (e.g. default, cloud)")
 	arch := fs.String("arch", "amd64", "architecture")
 	off := fs.Bool("offline", false, "use only the cache")
-	if pos, err := parse(fs, args[1:]); err != nil || len(pos) > 0 {
+	srch := fs.String("search", "", "keywords (all must match os/release/variant/arch/type; e.g. \"arch vm\"); positional words also work")
+	pos, perr := parse(fs, args[1:])
+	if perr != nil {
 		return 1
 	}
+	query := strings.TrimSpace(*srch + " " + strings.Join(pos, " "))
 	if *typ != "" && *typ != "container" && *typ != "vm" {
 		fmt.Fprintln(errw, "error: --type must be container or vm")
 		return 1
@@ -138,7 +161,7 @@ func runImages(args []string, out, errw io.Writer) int {
 		return 1
 	}
 	name := defaultSource(c, *srcn)
-	f, err := newFetcher(c, name, *off, errw)
+	f, err := newMirrorFetcher(c, name, *mirn, *off, errw)
 	if err == nil {
 		var cat *simplestreams.Catalog
 		ctx, cancel := ctxTimeout()
@@ -147,8 +170,12 @@ func runImages(args []string, out, errw io.Writer) int {
 			imgs := cat.Find(simplestreams.Query{OS: *osn, Release: *rel, Variant: *vr, Arch: *arch, Kind: *typ})
 			tw := tabwriter.NewWriter(out, 2, 4, 2, ' ', 0)
 			fmt.Fprintln(tw, "IMAGE\tTYPE\tVERSION\tSIZE")
-			for _, i := range imgs {
-				fmt.Fprintf(tw, "lxc:%s/%s/%s\t%s\t%s\t%s\n", strings.ToLower(i.OS), i.Release, i.Variant, i.Kind(), i.Version, humanSize(i.Root.Size))
+			for _, k := range imgsearch.Filter(query, len(imgs), func(n int) imgsearch.Item {
+				i := imgs[n]
+				return imgsearch.Item{OS: i.OS, Release: i.Release, Variant: i.Variant, Arch: i.Arch, Kind: i.Kind()}
+			}) {
+				i := imgs[k]
+				fmt.Fprintf(tw, "%s:%s/%s/%s\t%s\t%s\t%s\n", specPrefix(c, name), strings.ToLower(i.OS), i.Release, i.Variant, i.Kind(), i.Version, humanSize(i.Root.Size))
 			}
 			tw.Flush()
 			return 0
@@ -158,9 +185,17 @@ func runImages(args []string, out, errw io.Writer) int {
 	return 1
 }
 
-// parseSpec splits "lxc:os/release[/variant]".
+// specPrefix is the image-spec prefix printed by `images list`: "lxc" for the default source, else the source name.
+func specPrefix(c *config.Config, source string) string {
+	if source == defaultSource(c, "") {
+		return "lxc"
+	}
+	return source
+}
+
+// parseSpec splits "<prefix>:os/release[/variant]"; prefix lxc (or none) = the default source, anything else names a source.
+// src is "" for the default source.
 func parseSpec(spec string) (src, osn, rel, variant string, err error) {
-	src = "lxc-images"
 	if p, rest, ok := strings.Cut(spec, ":"); ok {
 		if p != "lxc" {
 			src = p
@@ -193,7 +228,9 @@ func runPull(args []string, out, errw io.Writer) int {
 	fs := flag.NewFlagSet("pull", flag.ContinueOnError)
 	fs.SetOutput(errw)
 	cfgp := fs.String("c", "", "global omloader.yaml")
-	srcn := fs.String("source", "", "source name (default from the spec prefix)")
+	srcn := fs.String("source", "", "source name (default from the spec prefix, else default_source)")
+	mirn := fs.String("mirror", "", "mirror: official | auto | server id (default: the source's `mirror`)")
+	vrn := fs.String("variant", "", "variant (default, cloud, desktop, ...); overrides the third part of the spec")
 	vm := fs.Bool("vm", false, "pull the VM image")
 	ct := fs.Bool("container", false, "pull the container image (default)")
 	arch := fs.String("arch", "amd64", "architecture")
@@ -218,11 +255,15 @@ func runPull(args []string, out, errw io.Writer) int {
 	if *srcn != "" {
 		src = *srcn
 	}
+	if *vrn != "" {
+		variant = *vrn
+	}
 	c, err := loadCfg(*cfgp)
 	if err != nil {
 		return fail(err)
 	}
-	f, err := newFetcher(c, src, *off, errw)
+	src = defaultSource(c, src)
+	f, err := newMirrorFetcher(c, src, *mirn, *off, errw)
 	if err != nil {
 		return fail(err)
 	}
@@ -288,7 +329,7 @@ func runPull(args []string, out, errw io.Writer) int {
 }
 
 func runSource(args []string, out, errw io.Writer) int {
-	if len(args) < 1 || args[0] != "list" && args[0] != "test" {
+	if len(args) < 1 || args[0] != "list" && args[0] != "test" && args[0] != "ref" {
 		fmt.Fprint(errw, "usage:\n"+usageM4)
 		return 1
 	}
@@ -296,6 +337,8 @@ func runSource(args []string, out, errw io.Writer) int {
 	fs.SetOutput(errw)
 	cfgp := fs.String("c", "", "global omloader.yaml")
 	off := fs.Bool("offline", false, "do not touch the network")
+	mirn := fs.String("mirror", "", "mirror: official | auto | server id (default: the source's `mirror`)")
+	srcn := fs.String("source", "", "source (ref: default dockerhub)")
 	pos, err := parse(fs, args[1:])
 	if err != nil {
 		return 1
@@ -305,13 +348,15 @@ func runSource(args []string, out, errw io.Writer) int {
 		fmt.Fprintln(errw, "error:", err)
 		return 1
 	}
+	if args[0] == "ref" {
+		return runSourceRef(c, pos, *srcn, *mirn, out, errw)
+	}
 	var names []string
-	for n := range c.Sources {
+	for _, n := range c.SourceNames() {
 		if len(pos) == 0 || pos[0] == n {
 			names = append(names, n)
 		}
 	}
-	sort.Strings(names)
 	if len(names) == 0 {
 		fmt.Fprintln(errw, "error: no such source")
 		return 1
@@ -325,43 +370,144 @@ func runSource(args []string, out, errw io.Writer) int {
 		} else if !c.SourceUsable(n) {
 			usable = "offline only (policy.allow_online: false)"
 		}
+		sel := s.Mirror
+		if *mirn != "" {
+			sel = *mirn
+		}
+		if sel == "" {
+			sel = config.MirrorOfficial
+		}
 		if args[0] == "list" {
-			fmt.Fprintf(out, "%s  type=%s  url=%s  strategy=%s  %s\n", n, s.Type, s.URL, c.MirrorPolicy.Strategy, usable)
-			for _, m := range c.SourceMirrors(n) {
-				fmt.Fprintf(out, "    mirror %s\n", m)
+			def := ""
+			if n == defaultSource(c, "") {
+				def = "  [default]"
+			}
+			fmt.Fprintf(out, "%s  type=%s  url=%s  mirror=%s  strategy=%s  %s%s\n", n, s.Type, s.URL, sel, c.MirrorPolicy.Strategy, usable, def)
+			if s.Title != "" {
+				fmt.Fprintf(out, "    %s\n", s.Title)
+			}
+			for _, id := range c.ServerNames(n) {
+				m := s.Servers[id]
+				mark := " "
+				if id == sel {
+					mark = "*"
+				}
+				fmt.Fprintf(out, "   %s mirror %-9s %-6s %s  %s\n", mark, id, m.Region, strings.TrimRight(m.URL, "/")+"/"+strings.Trim(m.Path, "/"), m.Title)
+			}
+			for _, m := range s.Mirrors {
+				fmt.Fprintf(out, "      mirror (extra)   %s\n", m)
 			}
 			if s.Proxy != "" {
 				fmt.Fprintf(out, "    proxy %s\n", s.Proxy)
 			}
 			continue
 		}
-		fmt.Fprintf(out, "source %s (%s):\n", n, usable)
-		if s.Type != "simplestreams" && s.Type != "http" {
+		fmt.Fprintf(out, "source %s (%s, mirror=%s):\n", n, usable, sel)
+		var probes []fetch.Probe
+		switch s.Type {
+		case "simplestreams", "http":
+			f, err := newMirrorFetcher(c, n, *mirn, *off, errw)
+			if err != nil {
+				fmt.Fprintf(out, "    %v\n", err)
+				rc = 1
+				continue
+			}
+			if f.Offline {
+				fmt.Fprintln(out, "    skipped: offline mode")
+				continue
+			}
+			ctx, cancel := ctxTimeout()
+			probes = f.ProbeAll(ctx)
+			cancel()
+		case "oci-registry":
+			if *off || c.Cache.Offline == "on" || !c.Policy.AllowOnline {
+				fmt.Fprintln(out, "    skipped: offline mode")
+				continue
+			}
+			ctx, cancel := ctxTimeout()
+			probes, err = fetch.ProbeRegistry(ctx, c, n, *mirn)
+			cancel()
+			if err != nil {
+				fmt.Fprintf(out, "    %v\n", err)
+				rc = 1
+				continue
+			}
+		default:
 			fmt.Fprintf(out, "    skipped: type %s is not testable\n", s.Type)
 			continue
 		}
-		f, err := newFetcher(c, n, *off, errw)
-		if err != nil {
-			fmt.Fprintf(out, "    %v\n", err)
-			rc = 1
-			continue
+		best := -1
+		for i, p := range probes {
+			if p.OK && (best < 0 || p.Dur < probes[best].Dur) {
+				best = i
+			}
 		}
-		if f.Offline {
-			fmt.Fprintln(out, "    skipped: offline mode")
-			continue
-		}
-		ctx, cancel := ctxTimeout()
-		for _, p := range f.ProbeAll(ctx) {
+		for i, p := range probes {
+			star := " "
+			if i == best && len(probes) > 1 {
+				star = "*"
+			}
 			if p.OK {
-				fmt.Fprintf(out, "    OK    %6dms  %s\n", p.Dur.Milliseconds(), p.URL)
+				fmt.Fprintf(out, "   %sOK    %6dms  %-9s %s\n", star, p.Dur.Milliseconds(), p.Name, p.URL)
 			} else {
-				fmt.Fprintf(out, "    FAIL  %6dms  %s: %v\n", p.Dur.Milliseconds(), p.URL, p.Err)
+				fmt.Fprintf(out, "    FAIL  %6dms  %-9s %s: %v\n", p.Dur.Milliseconds(), p.Name, p.URL, p.Err)
 				rc = 1
 			}
 		}
-		cancel()
+		if best >= 0 && len(probes) > 1 {
+			fmt.Fprintf(out, "    fastest: %s\n", probes[best].Name)
+		}
 	}
 	return rc
+}
+
+// runSourceRef prints a Docker Hub image reference rewritten for a Hub proxy: omloader has no registry client, so the
+// reference is meant for `skopeo copy docker://REF oci-archive:x.tar` on a host, then `omloader import oci x.tar`.
+func runSourceRef(c *config.Config, pos []string, src, mirror string, out, errw io.Writer) int {
+	if len(pos) != 1 {
+		fmt.Fprint(errw, "usage:\n"+usageM4)
+		return 1
+	}
+	if src == "" {
+		src = "dockerhub"
+	}
+	s, ok := c.Sources[src]
+	if !ok || s.Type != "oci-registry" {
+		fmt.Fprintf(errw, "error: %q is not an oci-registry source\n", src)
+		return 1
+	}
+	bs, err := c.SourceBases(src, mirror)
+	if err != nil {
+		fmt.Fprintln(errw, "error:", err)
+		return 1
+	}
+	host := bs[0].URL
+	if mirror == config.MirrorAuto {
+		ctx, cancel := ctxTimeout()
+		ps, _ := fetch.ProbeRegistry(ctx, c, src, mirror)
+		cancel()
+		host = ""
+		for _, p := range ps {
+			if p.OK && (host == "" || p.Dur < bestDur(ps, host)) {
+				host = p.Base
+			}
+		}
+		if host == "" {
+			fmt.Fprintln(errw, "error: no registry server answered")
+			return 1
+		}
+	}
+	fmt.Fprintln(out, config.RewriteImageRef(pos[0], host))
+	return 0
+}
+
+func bestDur(ps []fetch.Probe, base string) time.Duration {
+	for _, p := range ps {
+		if p.Base == base {
+			return p.Dur
+		}
+	}
+	return 0
 }
 
 func runCache(args []string, out, errw io.Writer) int {
@@ -488,13 +634,12 @@ func runNet(args []string, out, errw io.Writer) int {
 	}
 	fmt.Fprintf(out, "proxy: %s  no_proxy: %q  extra_ca: %q\n", px, c.Network.NoProxy, c.Network.ExtraCA)
 	fmt.Fprintf(out, "policy: allow_online=%v allowed_sources=%v  cache: path=%s offline=%s\n", c.Policy.AllowOnline, c.Policy.AllowedSources, c.Cache.Path, c.Cache.Offline)
-	var names []string
-	for n := range c.Sources {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	for _, n := range names {
+	for _, n := range c.SourceNames() {
 		fmt.Fprintf(out, "source %s:\n", n)
+		if c.Sources[n].Type == "oci-registry" {
+			fmt.Fprintln(out, "    skipped: registry (omloader source test "+n+")")
+			continue
+		}
 		f, err := newFetcher(c, n, *off, errw)
 		if err != nil {
 			fmt.Fprintf(out, "    %v\n", err)

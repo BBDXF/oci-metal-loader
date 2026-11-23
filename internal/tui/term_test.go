@@ -166,3 +166,66 @@ func TestTerminalPTYLinuxConsole(t *testing.T) {
 		t.Fatal("alternate screen must not be used (Linux console)")
 	}
 }
+
+// TestTerminalPTYLiveSearch drives the Pull screen over a pty: typing filters the catalog live, the frame is the 80x24 text
+// a Linux console would show.
+func TestTerminalPTYLiveSearch(t *testing.T) {
+	master, slave := openPTY(t)
+	defer master.Close()
+	defer slave.Close()
+	ws := struct{ Row, Col, X, Y uint16 }{24, 80, 0, 0}
+	ioctl(slave.Fd(), syscall.TIOCSWINSZ, unsafe.Pointer(&ws))
+	scr := newVT(80, 24)
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := master.Read(buf)
+			if n > 0 {
+				scr.feed(buf[:n])
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	m := New(newFake(), Theme{ASCII: true})
+	m.Init()
+	term := &Terminal{In: slave, Out: slave}
+	resc := make(chan Result, 1)
+	go func() { resc <- term.Run(m, nil) }()
+	waitFor := func(sub string) {
+		t.Helper()
+		for i := 0; i < 100; i++ {
+			if strings.Contains(scr.text(), sub) {
+				return
+			}
+			time.Sleep(30 * time.Millisecond)
+		}
+		t.Fatalf("screen never showed %q:\n%s", sub, scr.text())
+	}
+	waitFor("omloader v9.9")
+	master.Write([]byte("2\r"))
+	waitFor("lxc:alpine/3.20/default")
+	master.Write([]byte("arch"))
+	waitFor("Search: arch_  (1 of 2)")
+	if strings.Contains(scr.text(), "lxc:alpine") {
+		t.Fatalf("alpine must be filtered out:\n%s", scr.text())
+	}
+	t.Logf("frame after typing 'arch':\n%s", scr.text())
+	master.Write([]byte("\x7f\x7f\x7f\x7f"))
+	waitFor("(2 of 2)")
+	for i := 0; i < 3; i++ { // sources, images list, shell question (a lone ESC is recognised after a short timeout)
+		master.Write([]byte("\x1b"))
+		time.Sleep(250 * time.Millisecond)
+	}
+	waitFor("open the shell")
+	master.Write([]byte("\r"))
+	select {
+	case r := <-resc:
+		if r.Kind != ResShell {
+			t.Fatalf("result %+v", r)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatalf("TUI did not exit:\n%s", scr.text())
+	}
+}

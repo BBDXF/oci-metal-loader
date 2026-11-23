@@ -25,7 +25,7 @@ policy:
 		t.Fatal(err)
 	}
 	m := r.Config.SourceMirrors("lxc-images")
-	if len(m) != 3 || m[0] != "https://m.example/lxc" || !strings.Contains(m[1], "tsinghua") {
+	if len(m) != 4 || m[0] != "https://m.example/lxc" || !strings.Contains(m[1], "cernet") || !strings.Contains(m[3], "tsinghua") {
 		t.Fatalf("%v", m)
 	}
 	if !r.Config.SourceAllowed("lxc-images") || r.Config.SourceAllowed("dockerhub") || r.Config.SourceUsable("dockerhub") {

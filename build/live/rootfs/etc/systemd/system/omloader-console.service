@@ -1,0 +1,17 @@
+[Unit]
+Description=omloader console font (Terminus, sized for the framebuffer) and UTF-8 mode on tty1-6
+DefaultDependencies=no
+After=systemd-tmpfiles-setup-dev.service
+Before=sysinit.target omloader-autoboot.service getty@tty1.service
+ConditionPathExists=/sys/class/graphics/fb0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/omloader/console-font.sh apply
+StandardInput=null
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=sysinit.target

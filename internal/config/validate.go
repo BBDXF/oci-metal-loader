@@ -78,6 +78,9 @@ func (r *Resolved) Validate() ErrorList {
 	c := &r.Config
 	gd := c.GuestDefaults
 	validateRuntime("guest_defaults", Runtime{AutologinUser: gd.AutologinUser, Users: gd.Users, RootPassword: gd.RootPassword, RootPasswordHash: gd.RootPasswordHash}, add, enum)
+	if h := gd.Hostname; h != "" && h != "image" && h != "keep" && !hostLabelRe.MatchString(h) {
+		add("guest_defaults.hostname", "invalid hostname %q (want image, keep or an RFC 1123 label: [a-z0-9-], max 63, no leading/trailing -)", h)
+	}
 	nopath("storage.images.path", c.Storage.Images.Path)
 	nopath("storage.snapshots.path", c.Storage.Snapshots.Path)
 	nopath("cache.path", c.Cache.Path)
@@ -165,6 +168,8 @@ func (r *Resolved) Validate() ErrorList {
 			add("sources."+n+".url", "required")
 		}
 	}
+
+	c.validateSources(add)
 
 	img := r.Image
 	if img == nil {

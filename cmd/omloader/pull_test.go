@@ -95,8 +95,11 @@ func TestPullContainerOnlineThenOffline(t *testing.T) {
 
 func TestSpec(t *testing.T) {
 	s, o, r, v, err := parseSpec("lxc:ubuntu/noble/cloud")
-	if err != nil || s != "lxc-images" || o != "ubuntu" || r != "noble" || v != "cloud" {
+	if err != nil || s != "" || o != "ubuntu" || r != "noble" || v != "cloud" {
 		t.Fatal(s, o, r, v, err)
+	}
+	if s, o, r, _, err := parseSpec("ubuntu-releases:ubuntu/noble"); err != nil || s != "ubuntu-releases" || o != "ubuntu" || r != "noble" {
+		t.Fatal(s, o, r, err)
 	}
 	if _, _, _, _, err := parseSpec("lxc:ubuntu"); err == nil {
 		t.Fatal("bad spec")

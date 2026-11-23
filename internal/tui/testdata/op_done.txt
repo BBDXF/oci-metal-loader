@@ -1,0 +1,24 @@
+ OCI Metal Loader   1:Images  2:Pull  3:Storage [4:Network] 5:Settings    ASCII
+ omloader v9.9  |  store 3.0 GiB free / 8.0 GiB (store-file)  |  net 10.0.0.5
+ network status + source probes  [finished]
+ elapsed 0:00
+ +----------------------------------------------------------------------------+
+ | OK SUCCESS  elapsed 0:00                                                   |
+ | Completed without errors.                                                  |
+ | Enter/Esc: dismiss   l: log   Up/Down: scroll                              |
+ +----------------------------------------------------------------------------+
+ interfaces:
+   eth0 up 10.0.2.15/24
+ default route: via 10.0.2.2
+ probe=true
+
+
+
+
+
+
+
+
+
+
+ Enter/Esc:dismiss  l:log on/off  Up/Down PgUp/PgDn:scroll log
