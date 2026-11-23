@@ -5,7 +5,7 @@ export SSHPASS := $(OML_REMOTE_PASS)
 SSH  = sshpass -e ssh -o StrictHostKeyChecking=no $(OML_REMOTE)
 RSH  = sshpass -e ssh -o StrictHostKeyChecking=no
 
-.PHONY: bin sync iso fixture disk e2e e2e-oci e2e-snap e2e-live e2e-ui e2e-pull e2e-ventoy e2e-store e2e-tui licenses clean-remote
+.PHONY: bin sync iso fixture disk e2e e2e-oci e2e-snap e2e-live e2e-ui e2e-pull e2e-ventoy e2e-store e2e-tui e2e-real licenses clean-remote
 bin:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/omloader.bin ./cmd/omloader
 
@@ -42,3 +42,5 @@ licenses: sync
 	$(SSH) 'cd ~/$(OML_RDIR) && build/licenses.sh' && mkdir -p out && $(SSH) 'cat ~/$(OML_RDIR)/out/licenses.tsv' > out/licenses.tsv
 clean-remote:
 	-$(SSH) 'pkill -u $$USER -f "[o]mloader-test/.*qemu" || true; pkill -u $$USER -f "[o]mloader-test/test/" || true; rm -rf ~/$(OML_RDIR)/out ~/$(OML_RDIR)/work; true'
+e2e-real: sync
+	$(SSH) 'cd ~/$(OML_RDIR) && test/e2e-real.sh'

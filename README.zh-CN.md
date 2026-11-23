@@ -70,7 +70,7 @@ Ventoy / UEFI → GRUB → 加载器（Debian live：systemd、networkd、工具
 
 | `type` | 是什么 | 内核 | 快照 | 主要限制 |
 |---|---|---|---|---|
-| `lxd-vm` | LXD **VM 镜像**：整盘镜像（导入时把 `disk.qcow2` 转成 `base.raw`）。"VM"只是格式的名字，不涉及虚拟化。 | 镜像自带（`kexec`） | `dm-snapshot` 的 COW 文件 | 需要 UEFI + GPT，根文件系统为 ext4 或 xfs，`/boot` 里要有内核和 initrd；不支持 LVM/LUKS 根；客户机的 initramfs 必须能被加载器扩展（目前只在 Debian/initramfs-tools 的客户机上验证过）；没有独立数据卷；没有账号/控制台配置和干净卸载（由客户机自己管理）；Secure Boot 会阻止 `kexec` |
+| `lxd-vm` | LXD **VM 镜像**：整盘镜像（导入时把 `disk.qcow2` 转成 `base.raw`）。"VM"只是格式的名字，不涉及虚拟化。 | 镜像自带（`kexec`） | `dm-snapshot` 的 COW 文件 | 需要 UEFI + GPT，根文件系统为 ext4 或 xfs，`/boot` 里要有内核和 initrd；不支持 LVM/LUKS 根；客户机的 initramfs 必须能被加载器扩展（目前只在 Debian/initramfs-tools 的客户机上验证过）；没有独立数据卷；没有账号/控制台配置和干净卸载（由客户机自己管理） |
 | `lxd-container` | LXD **容器镜像**：`rootfs.squashfs`（加 `metadata.yaml`） | 加载器的内核（Debian 6.1），模块以只读绑定方式提供给客户机 | `overlayfs` 的可写层 | 需要带 init 的 Linux 根；硬件支持取决于加载器内核；首次启动时配置控制台登录和用户（仅 systemd 客户机，其他的只有 busybox 调试 shell）；数据卷支持 `dir` / `ext4-file` |
 | `oci` | Docker/OCI 镜像——**实验性，默认关闭**（`experimental.oci_images: true`） | 加载器的内核 | `overlayfs` | 应用镜像通常没有 init 和登录；不支持从 registry 拉取 |
 
@@ -94,7 +94,8 @@ omloader 是对 Ventoy 的补充，不是替代。
 ## 状态
 
 Alpha。已经可用的：LXD 虚拟机和容器启动、快照、数据卷、在线拉取、存储文件、经 Ventoy 启动、终端界面——都由 QEMU/OVMF 里的端到端测试验证过。
-缺少或未验证的：真机、Secure Boot、LUKS/LVM 客户机、Windows（请用 Ventoy）、公共服务器的实测（拉取目前只对本地模拟的 simplestreams 服务器测过）、非 Debian 系的虚拟机客户机。
+缺少或未验证的：真机（测试推后）、LUKS/LVM 客户机、Windows（请用 Ventoy）、公共服务器的实测（拉取目前只对本地模拟的 simplestreams 服务器测过）、非 Debian 系的虚拟机客户机。
+**限制：** **不支持 UEFI Secure Boot**，必须关闭。omloader 刻意与 Ventoy 绑定：把 `omloader.iso` 放到 Ventoy U 盘上即可（没有 `omloader install`）。
 Docker/OCI 镜像是**实验性功能，默认关闭**（它们是应用镜像，不是完整系统）。更详细的说明和全部已知限制见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
 
 ## 文档

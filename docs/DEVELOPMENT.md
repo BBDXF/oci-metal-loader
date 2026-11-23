@@ -36,21 +36,22 @@ To opt in: `experimental.oci_images: true` in `omloader.yaml`, `--experimental-o
 | Usability | container console login (tty1 + ttyS0 autologin, users/passwords/sudo/ssh keys, busybox debug-shell fallback) and clean shutdown of the OMLOADER/VTOYDATA partitions | ✅ done for containers (VM: see limitations) |
 | Ventoy | `omloader.iso` boots through Ventoy 1.1.17 (normal + GRUB2 mode, UEFI): stage-1 iso-scan, `boot.yaml` default image with countdown, see [docs/ventoy.md](ventoy.md) | ✅ done (QEMU-tested: `make e2e-ventoy`) |
 | Store file | the OMLOADER store as an ext4 image file (Ventoy `.dat` convention) on exFAT/NTFS/…, containers and VMs, `omloader store create|info|check|grow`, see [docs/store-file.md](store-file.md) | ✅ done (QEMU-tested: `make e2e-store`) |
-| M5 | device isolation, real-hardware testing, Secure Boot, LUKS | ⬜ |
+| M5 | device isolation, LUKS (real-hardware testing postponed; Secure Boot and an installer are out of scope) | ⬜ |
 | TUI | keyboard-only terminal UI (`omloader tui`, boots by default; see [tui.md](tui.md)) | ✅ done (QEMU-tested: `make e2e-tui`) |
 | Windows | **not a goal**: use Ventoy's native Windows ISO/WIM/VHD(x) boot on the same drive (see "Windows" below) | — |
 
 Rough overall estimate: M0–M4, the Debian live loader, container usability, Ventoy compatibility and the store-file mode are done; about **85 %** of the planned
-scope. What is left is real-hardware work (M5), the installer, polish and optimisations.
+scope. What is left is M5, polish and optimisations; real-hardware testing is postponed.
 
 ### Next steps (queued, not started)
 
-1. **Installer** (`omloader install`, UEFI/GPT, free space only) to run from the loader on an internal disk; Ventoy2Disk can already install Ventoy itself to a local disk.
-2. **Optimisations** (deliberately postponed until the core is finished): COW size margin (dm-snapshot needs ~0.4 % more than the base size in the worst case; currently the COW is sized exactly to the base) and usage warnings; storing `base.raw` inside squashfs to save space on exFAT (no sparse files); VM data volumes; hot snapshots from a running guest; more LXD images in a compatibility matrix (currently one container and one VM fixture only); LXD template rendering / cloud-init.
-3. M5 (device isolation, real hardware, Secure Boot, LUKS).
+1. **Optimisations** (deliberately postponed until the core is finished): COW size margin (dm-snapshot needs ~0.4 % more than the base size in the worst case; currently the COW is sized exactly to the base) and usage warnings; storing `base.raw` inside squashfs to save space on exFAT (no sparse files); VM data volumes; hot snapshots from a running guest; more LXD images in a compatibility matrix (currently one container and one VM fixture only); LXD template rendering / cloud-init.
+2. M5 (device isolation, LUKS). Real-hardware testing: later.
+
+Out of scope by decision: Secure Boot, and an `omloader install` installer (omloader is deliberately bound to Ventoy: put the ISO on a Ventoy stick).
 
 Known limits of the Ventoy/store-file work: the loader kernel has no `ntfs3` driver (NTFS is mounted with ntfs-3g/FUSE after stage 1, so an ISO on an NTFS Ventoy partition is not found — use exFAT/ext4/xfs/FAT32);
-Ventoy under UEFI Secure Boot needs its key enrolled; the NTFS dirty-volume fallback and VM + NTFS store are not verified end to end.
+The NTFS dirty-volume fallback and VM + NTFS store are not verified end to end.
 
 ### Windows
 
@@ -71,8 +72,8 @@ If someone wants to pick it up later: the only realistic route to snapshots for 
   Removing a user from `runtime.users` does not delete the account (accounts are only created/updated); passwords in the image config are only hashed on the loader (prefer `password_hash`).
 - **VM path has no independent data volumes**: all guest data lives in the COW layer of the snapshot node (data volumes exist for containers only).
 - **VM path is verified only on the Debian/initramfs-tools fixture.** The `rdinit` guest reassembly is generic in principle but untested elsewhere; no Windows guests (see "Windows" above), no LVM or encrypted (LUKS) root.
-- **Secure Boot is not supported** (unsigned GRUB/kernel chain); kexec has restrictions under Secure Boot / kernel lockdown.
-- **Only QEMU/OVMF has been tested, no real hardware yet** (NIC/disk/USB enumeration timing, firmware quirks and kexec on real drivers are unknown).
+- **Secure Boot is not supported**: UEFI Secure Boot must be disabled.
+- **Only QEMU/OVMF has been tested, real-hardware testing is postponed** (NIC/disk/USB enumeration timing, firmware quirks and kexec on real drivers are unknown).
 - **The live system's upper layer is tmpfs (RAM)**: `/tmp`, flatten staging and the like use memory, so flattening big images needs enough RAM.
 - **Wi-Fi is not configured**: iwd and wireless-regdb are installed, nothing sets them up; wired DHCP only.
 - **Online pull**: only Simplestreams sources (images.linuxcontainers.org layout); SHA256 verification only (no GPG: the index/catalog is not signed-checked, blobs are digest-checked against it; a malicious *mirror* could therefore lie in the index when the primary is unreachable — a warning is printed). No Wi-Fi, no registry/Docker pull. The VM kernel probe needs root (losetup/kpartx/mount) — inside the loader, or use `--no-probe`.
@@ -333,6 +334,17 @@ policy: {allow_online: true, allowed_sources: [lxc-images]}
 ```
 `make e2e-pull` (`test/e2e-pull.sh`): fake simplestreams tree on the remote host (python http.server, guest sees it as 10.0.2.2), dead primary + working mirror, pull + boot of a container and a VM,
 then server stopped and `--offline` / `cache.offline: on` pulls from the cache that boot again.
+
+### Real public images (`make e2e-real`)
+`test/e2e-real.sh` pulls real images from images.linuxcontainers.org (or `REAL_SOURCE_URL`, a mirror) with `omloader pull` inside the loader, boots each under QEMU/OVMF
+until a login/multi-user marker appears on the serial console, powers off via the QEMU monitor, and does snapshot create/boot/revert on one container and one VM.
+Default list: containers ubuntu/noble, debian/bookworm, alpine/3.21; VMs ubuntu/noble, debian/bookworm (`REAL_IMAGES`). Skipped (exit 0) without network.
+`REAL_OCI=<registry path>` adds an experimental OCI image (fetched with skopeo on the host, since omloader has no registry pull). `REAL_KEEP=1` keeps `out/real-usb.raw`;
+`test/manual-run.sh` starts a persistent QEMU/OVMF VM on a copy of that store for manual tries.
+Real-image findings: **LXD VM images mount `LABEL=UEFI` at `/boot/efi`, but the guest's udev does not create `/dev/disk/by-label/*` for the kpartx (dm) partitions
+(udev ignores dm devices that lack libdm's cookie flags once the initramfs udev database is cleaned), so systemd waits 90 s and drops to emergency mode.**
+`e2e-real` works around it with `kernel.cmdline: ... systemd.mask=boot-efi.mount` (`REAL_VM_CMDLINE`); a real fix is an open design question. Alpine containers
+expect `eth0` (the loader kernel names NICs `en*`) and have no acpid, so ACPI power-off is forced.
 
 ## Tests (remote KVM)
 `make e2e-snap` (`test/e2e-snap.sh`): snapshot management on the OCI fixture (continue-current (no new layer per boot)/create/list/stacking/delete with overlay merge/revert + --keep/ephemeral boots and gc/prune/verify/export/space guard/overlay flatten + boot of the flattened image/data volumes surviving revert)
