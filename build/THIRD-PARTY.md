@@ -28,3 +28,9 @@ redistributes the ISO must comply with those licenses (source offer / pointer to
 | ISO build only (builder image, not in the ISO) | grub-efi-amd64-bin, grub-common, xorriso, mtools, dosfstools, cpio, xz-utils |
 
 The stage-1 initramfs contains busybox, util-linux (`mount`, `umount`, `blkid`, `losetup`), kmod and a handful of kernel modules from the same packages.
+
+## Go dependencies of the `omloader` binary
+
+* `gopkg.in/yaml.v3` — MIT / Apache-2.0 (config parsing).
+* The terminal UI (`internal/tui`, see `../docs/tui.md`) is written against the Go standard library only: no extra third-party
+  code or licenses were added for it.

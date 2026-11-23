@@ -5,7 +5,7 @@ export SSHPASS := $(OML_REMOTE_PASS)
 SSH  = sshpass -e ssh -o StrictHostKeyChecking=no $(OML_REMOTE)
 RSH  = sshpass -e ssh -o StrictHostKeyChecking=no
 
-.PHONY: bin sync iso fixture disk e2e e2e-oci e2e-snap e2e-live e2e-ui e2e-pull e2e-ventoy licenses clean-remote
+.PHONY: bin sync iso fixture disk e2e e2e-oci e2e-snap e2e-live e2e-ui e2e-pull e2e-ventoy e2e-store e2e-tui licenses clean-remote
 bin:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/omloader.bin ./cmd/omloader
 
@@ -36,6 +36,8 @@ e2e-ventoy: sync
 	$(SSH) 'cd ~/$(OML_RDIR) && test/e2e-ventoy.sh'
 e2e-store: sync
 	$(SSH) 'cd ~/$(OML_RDIR) && test/e2e-store.sh'
+e2e-tui: sync
+	$(SSH) 'cd ~/$(OML_RDIR) && test/e2e-tui.sh'
 licenses: sync
 	$(SSH) 'cd ~/$(OML_RDIR) && build/licenses.sh' && mkdir -p out && $(SSH) 'cat ~/$(OML_RDIR)/out/licenses.tsv' > out/licenses.tsv
 clean-remote:

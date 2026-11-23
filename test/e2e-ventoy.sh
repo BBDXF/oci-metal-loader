@@ -54,13 +54,13 @@ stop() { [ -f $W/$1.pid ] && kill -9 "$(cat $W/$1.pid)" 2>/dev/null; sleep 1; }
 stage1line() { grep -a 'OMLOADER_STAGE1: live medium' $W/$1.clean | head -1; }
 for mode in ${MODES:-normal grub2}; do
   tag=vt-$mode
-  if vboot $tag $mode $D 'OMLOADER_SHELL_READY' 150; then
+  if vboot $tag $mode $D 'OMLOADER_SHELL_READY|OMLOADER_TUI_READY' 150; then
     L=$(stage1line $tag)
     echo "--- $mode: $L"; grep -a 'OMLOADER_LOADER: snap=' $W/$tag.clean | head -1
-    pass "Ventoy $mode mode: loader reached the live shell"
+    pass "Ventoy $mode mode: loader reached the live console (TUI)"
     echo "$L" | grep -q 'iso-scan: dev=/dev/nvme0n1p1 fs=exfat file=/omloader.iso' && pass "Ventoy $mode mode: stage 1 iso-scan found /omloader.iso on the exFAT Ventoy partition" || fail "Ventoy $mode: stage 1 line: $L"
     grep -aq 'OMLOADER_LOADER: snap=/dev/vda2(mounted=1) images=/dev/vda1' $W/$tag.clean && pass "Ventoy $mode mode: OMLOADER/VTOYDATA data disk mounted by omloader-mounts" || fail "Ventoy $mode: data partitions not mounted"
-    ! grep -aq 'auto boot image' $W/$tag.clean && pass "Ventoy $mode mode: no boot.yaml -> plain shell (no auto boot)" || fail "Ventoy $mode: unexpected auto boot"
+    ! grep -aq 'auto boot image' $W/$tag.clean && pass "Ventoy $mode mode: no boot.yaml -> plain console TUI (no auto boot)" || fail "Ventoy $mode: unexpected auto boot"
   else fail "Ventoy $mode mode: no live shell (see $W/$tag.clean)"; grep -a 'STAGE1\|FATAL' $W/$tag.clean | tail -5; fi
   stop $tag
 done
@@ -79,7 +79,7 @@ done
 tag=vt-cancel
 if vboot $tag normal $O/usb.raw 'booting .omloci. in' 150; then
   $T/ventoy-ser.py $W/$tag.ser '\n'
-  waitfor $tag 'boot cancelled|OMLOADER_SHELL_READY' 20
+  waitfor $tag 'boot cancelled|OMLOADER_SHELL_READY|OMLOADER_TUI_READY' 20
   grep -aq 'boot cancelled' $W/$tag.clean && ! grep -aq 'OMLOADER_GUEST_OK' $W/$tag.clean && pass "Enter on the serial console cancels the boot.yaml countdown" || fail "countdown cancel"
 else fail "cancel test: no countdown seen"; fi
 stop $tag

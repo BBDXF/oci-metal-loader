@@ -29,7 +29,7 @@ esac
 [ -n "${DISK2:-}" ] && DEV="$DEV -drive if=none,id=d2,file=$DISK2,format=raw -device virtio-blk-pci,drive=d2"
 if [ -n "${INTERACTIVE:-}" ]; then SER="-nographic -serial mon:stdio"; else SER="-display none -monitor none -serial file:$LOG"; : > $LOG; fi
 echo "run-kvm: args='$ARGS' bus=$BUS log=$LOG"
-timeout -s KILL $TIMEOUT qemu-system-x86_64 -enable-kvm -machine q35 -cpu host -m $MEM -smp 2 -no-reboot \
+timeout ${INTERACTIVE:+--foreground} -s KILL $TIMEOUT qemu-system-x86_64 -enable-kvm -machine q35 -cpu host -m $MEM -smp 2 -no-reboot \
   -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
   -drive if=pflash,format=raw,file=$RUN/vars.fd \
   -drive if=none,id=cd,file=$RUN/boot.iso,media=cdrom,readonly=on -device ide-cd,drive=cd,bootindex=1 \

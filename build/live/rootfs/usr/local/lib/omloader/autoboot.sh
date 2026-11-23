@@ -45,6 +45,26 @@ bootcfg_apply() {
   done
   return 1
 }
+# ---- console UI: omloader.ui=tui|shell (kernel flag) > boot.ui of the boot config file > default tui. The TUI never starts when
+# something else drives the console (omloader.image= / hook / selftest). The result is read by /etc/profile.d/omloader-banner.sh
+# (-> tui-launch.sh) on tty1/ttyS*. /run/omloader/uicfg names the config file to pass to `omloader tui -c`.
+decide_ui() {
+  local ui f v
+  ui=$(arg omloader.ui)
+  for f in /mnt/images/omloader/boot.yaml /mnt/images/omloader.yaml /mnt/snap/omloader/boot.yaml /mnt/snap/omloader.yaml \
+           "${MEDIUM_HOST_MNT:-/nonexistent}/omloader/boot.yaml"; do
+    [ -f "$f" ] || continue
+    omloader config validate -c "$f" >/dev/null 2>&1 || continue
+    echo "$f" > /run/omloader/uicfg
+    [ -z "$ui" ] && ui=$(omloader config get -c "$f" boot.ui 2>/dev/null)
+    break
+  done
+  case "$ui" in tui|shell) ;; *) ui=tui;; esac
+  if [ -n "$(arg omloader.image)" ] || [ "$(arg omloader.hook)" = 1 ] || [ "$(arg omloader.selftest)" = 1 ]; then ui=shell; fi
+  echo "$ui" > /run/omloader/ui
+}
+mkdir -p /run/omloader; rm -f /run/omloader/uicfg
+decide_ui
 if [ -z "$(arg omloader.image)" ] && [ "$(arg omloader.hook)" != 1 ] && [ "$(arg omloader.selftest)" != 1 ]; then bootcfg_apply; fi
 # omloader.experimental=oci -> opt in to the experimental Docker/OCI image support (disabled by default)
 EXP=$(arg omloader.experimental); [ -n "$EXP" ] && export OML_EXPERIMENTAL="$EXP"
@@ -77,44 +97,10 @@ if [ -n "$IMG" ]; then
   udevadm control --stop-exec-queue 2>/dev/null
   omloader "$@"
   RC=$?
-  # container (oci / lxd-container) handoff: omloader mounted /newroot and wrote /run/omloader-switch
-  # (line 1 = new root, then init + args, one per line).
+  # container (oci / lxd-container) handoff: omloader mounted /newroot and wrote /run/omloader-switch -> switch-root.sh
   if [ "$RC" = 0 ] && [ -s /run/omloader-switch ]; then
-    mapfile -t SW < /run/omloader-switch
-    NR=${SW[0]}; INIT=("${SW[@]:1}")
-    rm -f /run/omloader-switch
-    # systemd switch-root execs a *wrapper* so the new init starts fresh (no --deserialize of the live system's state)
-    # and arbitrary init arguments / env are possible; the wrapper interpreter is the guest's own static busybox.
-    if [ ! -x "$NR/.omloader/busybox" ] && BB=$(command -v busybox); then
-      mkdir -p "$NR/.omloader" 2>/dev/null && cp "$BB" "$NR/.omloader/busybox" 2>/dev/null && chmod 755 "$NR/.omloader/busybox"
-    fi
-    {
-      echo '#!/.omloader/busybox sh'
-      printf 'exec'
-      for a in "${INIT[@]}"; do printf " '%s'" "${a//\'/\'\\\'\'}"; done
-      echo
-    } > "$NR/.omloader/switch-init" 2>/dev/null && chmod 755 "$NR/.omloader/switch-init" && SWINIT=/.omloader/switch-init || SWINIT=${INIT[0]}
-    # keep the loader partitions reachable (and cleanly shut-downable) inside the guest: the overlay upper/work live on
-    # OMLOADER so it can never be unmounted while the root is mounted; the guest's shutdown hook (/.omloader/sync.sh)
-    # remounts these read-only at poweroff. /.omloader/devs lists "<name> <device> <fstype>" for the hook.
-    : > "$NR/.omloader/devs" 2>/dev/null
-    for pair in "snap:$SNAPDEV:/mnt/snap" "images:$IMGDEV:/mnt/images"; do
-      n=${pair%%:*}; r=${pair#*:}; dev=${r%%:*}; mp=${r#*:}
-      if [ -n "$dev" ] && mountpoint -q "$mp"; then
-        mkdir -p "$NR/.omloader/$n" && mount --bind "$mp" "$NR/.omloader/$n" \
-          && echo "$n $dev $(blkid -o value -s TYPE "$dev")" >> "$NR/.omloader/devs"
-      fi
-    done
-    mountpoint -q "$NR/run" || mount -t tmpfs -o mode=755 tmpfs "$NR/run"   # fresh /run for the new init (systemd moves /proc /sys /dev itself)
-    echo "OMLOADER_LOADER: switch-root $NR ${INIT[*]} (loader kernel $(uname -r))"
-    sync
-    if systemctl switch-root "$NR" "$SWINIT"; then
-      sleep 30   # PID 1 now kills everything and execs the new init; reaching the next line means it did not happen
-      echo "OMLOADER_LOADER: systemctl switch-root was accepted but the system did not switch"
-    else
-      echo "OMLOADER_LOADER: systemctl switch-root failed"
-    fi
-    RC=127
+    /usr/local/lib/omloader/switch-root.sh
+    RC=$?
   fi
   udevadm control --start-exec-queue 2>/dev/null
   echo "OMLOADER_LOADER: 'omloader boot' returned rc=$RC (exec failed or no kexec)"

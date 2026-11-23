@@ -92,25 +92,32 @@ DISK=$D EXTRA=omloader.selftest=1 LOG=$W/live-self.log $T/run-kvm.sh > /dev/null
 tr -d '\r' < $W/live-self.log | sed 's/\x1b\[[0-9;]*[mK]//g' > $W/live-self.clean
 grep -q OMLOADER_LOADER_SELFTEST_DONE $W/live-self.clean && pass "omloader.selftest=1 works (powers off)" || fail "selftest"
 
-# ---- boot-to-shell time (plain boot, no omloader.* flags): poll the serial log for the shell banner marker ----
-# The shell-boot measurement is retried once: an empty serial log (qemu failed to start right after the
-# previous suite, seen as a rare harness flake) is not a loader failure.
-for ATTEMPT in 1 2; do
-  rm -f $W/live-shell.log
-  T1=$(date +%s.%N)
-  ( DISK=$D TIMEOUT=120 LOG=$W/live-shell.log $T/run-kvm.sh > /dev/null 2>&1 & )
-  for i in $(seq 1 240); do grep -q OMLOADER_SHELL_READY $W/live-shell.log 2>/dev/null && break; sleep 0.5; done
-  T2=$(date +%s.%N)
-  pkill -u $USER -f "file:$W/live-shell.log" 2>/dev/null
-  sleep 2
-  tr -d '\r' < $W/live-shell.log | sed 's/\x1b\[[0-9;]*[mK]//g' > $W/live-shell.clean
-  UP=$(grep -o 'OMLOADER_SHELL_READY uptime=[0-9.]*' $W/live-shell.clean | head -1 | cut -d= -f2)
-  [ -n "$UP" ] && break
-  echo "NOTE: no shell banner on attempt $ATTEMPT (log bytes: $(stat -c %s $W/live-shell.log 2>/dev/null || echo 0)); retrying"
-done
-WALL=$(awk "BEGIN{printf \"%.0f\", $T2-$T1}")
-[ -n "$UP" ] && pass "boot-to-shell: kernel uptime ${UP}s at the omloader shell banner (wall ${WALL}s incl. OVMF/GRUB/qemu start)" || fail "no shell banner (autologin getty) on serial"
-grep -q 'OMLOADER_LOADER: starting' $W/live-shell.clean && ! grep -q 'auto boot image' $W/live-shell.clean && pass "no omloader.image= -> shell (no automatic boot)" || echo "NOTE: shell-run log check inconclusive"
+# ---- boot-to-console time. Plain boot (no omloader.* flags) now shows the TUI (boot.ui default tui): the marker is
+# OMLOADER_TUI_READY (printed when the TUI first renders). With omloader.ui=shell the old shell banner marker
+# OMLOADER_SHELL_READY is measured. Each measurement is retried once: an empty serial log (qemu failed to start right after
+# the previous suite, seen as a rare harness flake) is not a loader failure.
+measure() { # $1 name  $2 marker  $3 extra cmdline  -> sets UP WALL
+  for ATTEMPT in 1 2; do
+    rm -f $W/live-$1.log
+    T1=$(date +%s.%N)
+    ( DISK=$D TIMEOUT=120 EXTRA="$3" LOG=$W/live-$1.log $T/run-kvm.sh > /dev/null 2>&1 & )
+    for i in $(seq 1 240); do grep -q $2 $W/live-$1.log 2>/dev/null && break; sleep 0.5; done
+    T2=$(date +%s.%N)
+    pkill -u $USER -f "file:$W/live-$1.log" 2>/dev/null
+    sleep 2
+    tr -d '\r' < $W/live-$1.log | sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' > $W/live-$1.clean
+    UP=$(grep -ao "$2 uptime=[0-9.]*" $W/live-$1.clean | head -1 | cut -d= -f2)
+    [ -n "$UP" ] && break
+    echo "NOTE: no $2 on attempt $ATTEMPT (log bytes: $(stat -c %s $W/live-$1.log 2>/dev/null || echo 0)); retrying"
+  done
+  WALL=$(awk "BEGIN{printf \"%.0f\", $T2-$T1}")
+}
+measure tui OMLOADER_TUI_READY ""
+[ -n "$UP" ] && pass "boot-to-TUI: kernel uptime ${UP}s at OMLOADER_TUI_READY (wall ${WALL}s incl. OVMF/GRUB/qemu start)" || fail "no TUI marker (autologin getty -> tui-launch) on serial"
+grep -q 'OMLOADER_LOADER: starting' $W/live-tui.clean && ! grep -q 'auto boot image' $W/live-tui.clean && ! grep -q OMLOADER_SHELL_READY $W/live-tui.clean && pass "no omloader.image= -> TUI (no automatic boot, no shell banner)" || echo "NOTE: tui-run log check inconclusive"
+measure shell OMLOADER_SHELL_READY "omloader.ui=shell"
+[ -n "$UP" ] && pass "boot-to-shell (omloader.ui=shell): kernel uptime ${UP}s at the omloader shell banner (wall ${WALL}s incl. OVMF/GRUB/qemu start)" || fail "no shell banner (autologin getty) on serial with omloader.ui=shell"
+! grep -q OMLOADER_TUI_READY $W/live-shell.clean && pass "omloader.ui=shell: the TUI does not start" || fail "TUI started despite omloader.ui=shell"
 ISZ=$(stat -c %s $O/omloader.iso); LSZ=$(stat -c %s $O/live.squashfs)
 echo "OMLOADER_ISO_BYTES=$ISZ ($((ISZ/1048576)) MiB) live.squashfs=$((LSZ/1048576)) MiB"
 [ $ISZ -le $((450*1048576)) ] && pass "ISO size $((ISZ/1048576)) MiB <= 450 MiB target" || fail "ISO size $((ISZ/1048576)) MiB exceeds the 450 MiB target"
