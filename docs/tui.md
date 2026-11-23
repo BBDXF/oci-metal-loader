@@ -7,6 +7,10 @@ The loader boots into a keyboard-only terminal UI. The whole CLI keeps working u
 omloader tui [-c omloader.yaml] [--images-root DIR] [--snap-root DIR] [--data-root DIR] [--ascii]
 ```
 
+![Snapshot tree](img/tui-tree.png)
+
+*Simulated render of the real TUI with sample data (`make screenshots`).*
+
 ## Screens and keys
 
 Tabs: `1` Images, `2` Pull, `3` Storage, `4` Network, `5` Settings (also Tab / Shift+Tab). Always: `?` / `F1` full-screen help (all keys

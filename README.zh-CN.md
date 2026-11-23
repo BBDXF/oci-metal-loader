@@ -103,6 +103,15 @@ TUI 里 **按 Enter 立即启动**（镜像或 `current`）；在旧快照或 `b
 
 omloader 是对 Ventoy 的补充，不是替代。
 
+## 截图
+
+| | |
+|---|---|
+| ![Images](docs/img/tui-images.png) | ![Snapshot tree](docs/img/tui-tree.png) |
+| ![Revert confirmation](docs/img/tui-revert.png) | ![Pull search](docs/img/tui-pull.png) |
+
+*由真实 TUI 代码以示例数据渲染（80x25，可用 `make screenshots` 重新生成），并非真实硬件的照片。*
+
 ## 状态
 
 Alpha。已经可用的：LXD 虚拟机和容器启动、快照、数据卷、在线拉取、存储文件、经 Ventoy 启动、终端界面——都由 QEMU/OVMF 里的端到端测试验证过。

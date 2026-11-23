@@ -210,7 +210,11 @@ type seg struct {
 // putSegs draws coloured segments left to right inside w cells; a selected row is one reverse-video bar.
 func (m *Model) putSegs(c *Canvas, x, y, w int, segs []seg, sel bool) {
 	if sel {
-		c.Fill(0, y, m.W, 1, StSel)
+		fw := m.W
+		if m.Screen == ScrDetail && m.sideDetail() {
+			fw = m.W - sidePanelW - 1 // stop before the side panel divider
+		}
+		c.Fill(0, y, fw, 1, StSel)
 	}
 	for _, sg := range segs {
 		if w <= 0 {

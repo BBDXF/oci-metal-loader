@@ -103,6 +103,15 @@ x86_64 UEFI only. Details: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 omloader complements Ventoy rather than replacing it.
 
+## Screenshots
+
+| | |
+|---|---|
+| ![Images](docs/img/tui-images.png) | ![Snapshot tree](docs/img/tui-tree.png) |
+| ![Revert confirmation](docs/img/tui-revert.png) | ![Pull search](docs/img/tui-pull.png) |
+
+*Rendered from the real TUI code with sample data at 80x25 (regenerate: `make screenshots`) — not photos of real hardware.*
+
 ## Status
 
 Alpha. What works: LXD VM and container boot, snapshots, data volumes, online pull, store file, Ventoy booting, TUI — verified by the end-to-end suites in QEMU/OVMF.
