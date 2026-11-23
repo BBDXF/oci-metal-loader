@@ -63,7 +63,7 @@ policy:
   allowed_sources: []   # empty = all sources
 experimental:
   oci_images: false   # Docker/OCI images: experimental, disabled by default (env OML_EXPERIMENTAL=oci / --experimental-oci)
-# Console accounts for every lxd-container image (NOT lxd-vm, which has no provisioning; not oci). The password below is PUBLIC:
+# Console accounts provisioned at boot into every image (lxd-container, lxd-vm and experimental oci). The password below is PUBLIC:
 # change it here, in your omloader.yaml, or per image in image.yaml. Merge rules (the image always wins): see docs/DEVELOPMENT.md.
 #   image `runtime.users` set (even `[]`)      -> replaces `users`
 #   image root_password / root_password_hash   -> replaces root_password

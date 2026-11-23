@@ -1,20 +1,55 @@
-# Remote build/test harness. Password via env OML_REMOTE_PASS (never stored).
-OML_REMOTE ?= philips@192.168.8.26
+# Local targets: bin, test, vet, iso (= iso-local), e2e-live-local.
+# Remote targets (*-remote, fixture, disk, e2e*): optional KVM test harness over ssh. Set OML_REMOTE=user@host and
+# OML_REMOTE_PASS (or use ssh keys; never stored in the repo). See build/README.md.
+VERSION    ?= $(shell build/version.sh)
+LDFLAGS    := -s -w -X main.version=$(VERSION)
+OML_REMOTE ?=
 OML_RDIR   ?= omloader-test
 export SSHPASS := $(OML_REMOTE_PASS)
-SSH  = sshpass -e ssh -o StrictHostKeyChecking=no $(OML_REMOTE)
-RSH  = sshpass -e ssh -o StrictHostKeyChecking=no
+SSH  = $(if $(OML_REMOTE_PASS),sshpass -e )ssh -o StrictHostKeyChecking=no $(OML_REMOTE)
+RSH  = $(if $(OML_REMOTE_PASS),sshpass -e )ssh -o StrictHostKeyChecking=no
+CONTAINER_ENGINE ?= $(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
+export CONTAINER_ENGINE
 
-.PHONY: bin sync iso fixture disk e2e e2e-oci e2e-snap e2e-live e2e-ui e2e-pull e2e-ventoy e2e-store e2e-tui e2e-real licenses clean-remote
+.PHONY: bin test vet fmt version iso iso-local e2e-live-local sync iso-remote fixture disk e2e e2e-oci e2e-snap e2e-live e2e-ui e2e-pull e2e-ventoy e2e-store e2e-tui e2e-real licenses clean clean-remote check-remote
+
+version:
+	@echo $(VERSION)
+
+# static binary (the loader ISO and the release tarball use this)
 bin:
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/omloader.bin ./cmd/omloader
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags '$(LDFLAGS)' -o bin/omloader ./cmd/omloader
 
-sync: bin
+fmt:
+	@test -z "$$(gofmt -l .)" || { gofmt -l .; exit 1; }
+vet:
+	go vet ./...
+test: fmt vet
+	go test ./...
+
+# ---- local ISO build (podman or docker; no remote host): out/omloader-<version>.iso + out/SHA256SUMS ----
+# Needs: podman|docker, mksquashfs (squashfs-tools). Override: CONTAINER_ENGINE=docker DEBIAN_MIRROR=http://mirrors.ustc.edu.cn/debian
+iso: iso-local
+iso-local: bin
+	build/build-iso.sh
+
+# boots out/omloader.iso under QEMU/KVM (needs qemu-system-x86, ovmf, /dev/kvm) and waits for the shell-ready marker
+e2e-live-local:
+	test/smoke-local.sh
+
+clean:
+	rm -rf bin out work cache
+
+# ---- optional remote KVM harness ----
+check-remote:
+	@test -n "$(OML_REMOTE)" || { echo "set OML_REMOTE=user@host (and OML_REMOTE_PASS or ssh keys)"; exit 1; }
+
+sync: bin check-remote
 	$(SSH) 'mkdir -p ~/$(OML_RDIR)/bin'
-	tar -c --exclude=omloader.bin build test configs | $(SSH) 'cd ~/$(OML_RDIR) && tar -x'
-	cat build/omloader.bin | $(SSH) 'cat > ~/$(OML_RDIR)/bin/omloader.new && chmod +x ~/$(OML_RDIR)/bin/omloader.new && mv ~/$(OML_RDIR)/bin/omloader.new ~/$(OML_RDIR)/bin/omloader'
+	tar -c build test configs VERSION | $(SSH) 'cd ~/$(OML_RDIR) && tar -x'
+	cat bin/omloader | $(SSH) 'cat > ~/$(OML_RDIR)/bin/omloader.new && chmod +x ~/$(OML_RDIR)/bin/omloader.new && mv ~/$(OML_RDIR)/bin/omloader.new ~/$(OML_RDIR)/bin/omloader'
 
-iso: sync
+iso-remote: sync
 	$(SSH) 'cd ~/$(OML_RDIR) && build/build-iso.sh'
 fixture: sync
 	$(SSH) 'cd ~/$(OML_RDIR) && test/make-fixture.sh'

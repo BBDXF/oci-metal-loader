@@ -57,7 +57,7 @@ ${UUID:+  <uuid>$UUID</uuid>
 </domain>
 XML
   $V define $M/domain.xml >/dev/null || exit 1
-  $V start $DOM && echo "started: Cockpit https://192.168.8.26:9090 -> Virtual machines -> $DOM; or: virsh -c qemu:///system console $DOM";;
+  $V start $DOM && echo "started: Cockpit https://<host>:9090 -> Virtual machines -> $DOM; or: virsh -c qemu:///system console $DOM";;
 console) echo "(Ctrl-] detaches)"; exec $V console $DOM;;
 status) echo "state: $(state)"; $V dominfo $DOM 2>&1 | grep -E "State|CPU\(s\)|Max memory"; $V domdisplay $DOM 2>/dev/null; $V domifaddr $DOM 2>/dev/null | tail -n +3;;
 stop)

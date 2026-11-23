@@ -459,8 +459,9 @@
     "guest_defaults": {
       "type": "object",
       "additionalProperties": false,
-      "description": "accounts + console autologin for every lxd-container image (public default password; see docs)",
+      "description": "accounts + console autologin for every image type (public default password; see docs/INSTALL.md)",
       "properties": {
+        "hostname": {"type": "string"},
         "autologin": {
           "type": "boolean"
         },

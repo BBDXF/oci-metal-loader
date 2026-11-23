@@ -1,6 +1,6 @@
 # OCI Metal Loader — development notes
 
-Architecture, status, roadmap, limitations and test suites. For an overview see the [README](../README.md) ([简体中文](../README.zh-CN.md)).
+Architecture, status, roadmap, limitations and test suites. For an overview see the [README](../README.md) ([简体中文](../README.zh-CN.md)); to install and configure, see [INSTALL.md](INSTALL.md) ([中文](INSTALL.zh-CN.md)).
 
 A Ventoy-style UEFI x86_64 bare-metal (“metal”) loader for **LXD images**: put LXD images on a USB stick/disk, boot the loader ISO and run them
 directly on the hardware, without installing anything.
@@ -59,6 +59,42 @@ Windows is intentionally out of scope. Ventoy already boots Windows ISO/WIM/VHD(
 There are no ready-to-boot Windows images for LXD or OCI: LXD ships no Windows images (licensing; you repack your own ISO with `distrobuilder repack-windows` and get a virtio-based VM disk
 meant for virtualisation), and Windows container images share the Windows host kernel, so they cannot boot on Linux. Our VM path (dm-snapshot + kexec) cannot start a Windows kernel.
 If someone wants to pick it up later: the only realistic route to snapshots for Windows is native differencing-VHDX boot (BCD `vhd=` entry on NTFS); it is unverified here and would need a Windows image and a differencing-disk writer.
+
+## Repository layout
+
+    cmd/omloader/        CLI entry point (main, boot/import/pull/snapshot/store/tui commands) and its tests
+    internal/            config (types, layers, validation), snapmgr (tree.json, snapshots, store file), boot (VM/container boot, firstboot adapter),
+                         fetch + imgsearch + cache (simplestreams, mirrors), imgimport, snapshot, tui, cpio, ...
+    configs/             defaults.yaml + sources.yaml (embedded into the binary; sources.yaml is also installed at /etc/omloader in the ISO)
+    schema/              JSON schemas: omloader.schema.json, image.schema.json, sources.schema.json
+    examples/            example omloader.yaml and an image.yaml
+    build/               ISO build: Containerfile (live + builder targets), build-iso.sh, mk-iso-inner.sh, stage1-init, grub.cfg,
+                         live/rootfs (units + scripts copied into the live system), version.sh, THIRD-PARTY.md, README.md
+    test/                QEMU/KVM end-to-end suites (e2e-*.sh), fixtures, smoke-local.sh (local/CI boot check), validate-schemas.py
+    docs/                this file, INSTALL(.zh-CN).md, ventoy.md, store-file.md, sources.md, tui.md
+    .github/workflows/   ci.yml (fast checks), iso.yml (manual ISO build), release.yml (tag -> GitHub Release)
+    VERSION              fallback version when git has no tag (the real version comes from the git tag, see build/version.sh)
+    bin/ out/ work/ cache/   build outputs and scratch space (git-ignored)
+
+## Building, CI and releases
+
+    make test            # gofmt check + go vet + go test ./...
+    make bin             # static linux/amd64 binary -> bin/omloader (version embedded)
+    make iso             # out/omloader-<version>.iso + out/SHA256SUMS (podman or docker; see build/README.md)
+    make e2e-live-local  # boot the ISO under QEMU+OVMF and wait for OMLOADER_SHELL_READY (test/smoke-local.sh)
+
+CI (`.github/workflows/ci.yml`, on push and pull requests) is deliberately minimal (< 3 min): gofmt, `go vet`, `go test ./...` and a static `CGO_ENABLED=0` build, with the Go module cache.
+The ISO is **not** built on pushes. Build it on demand with the manual workflow `.github/workflows/iso.yml` (Actions → *ISO (manual)* → *Run workflow*; optional QEMU smoke test; the ISO + `SHA256SUMS` are uploaded as artifacts),
+or locally with `make iso`. Script syntax and schema checks are run locally: `bash -n test/*.sh build/*.sh`, `python3 test/validate-schemas.py` (needs `jsonschema`, `pyyaml`).
+Release (`.github/workflows/release.yml`): pushing a tag `0.1.0` or `v0.1.0` builds the binary and the ISO and publishes a GitHub Release (pre-release while the major version is 0)
+with `omloader-<version>.iso`, `omloader-<version>-linux-amd64.tar.gz`, `omloader-<version>-examples.tar.gz` and `SHA256SUMS`. The workflow can be re-run from the *Actions* tab
+(*Re-run jobs*, or *Run workflow* with a tag name for an existing tag). The ISO build and the smoke test have **not run on GitHub runners yet** — treat the first manual/tag run as the test.
+
+## Contributing
+
+Keep changes small and tested: `make test` must pass; run the relevant `e2e-*` suite (remote harness or a local KVM host) for boot/snapshot changes.
+User-visible strings live in `internal/tui/strings.go`; configuration keys must be added to `internal/config/types.go`, `schema/*.json`, `configs/defaults.yaml`
+and the key reference in [INSTALL.md](INSTALL.md)/[INSTALL.zh-CN.md](INSTALL.zh-CN.md) together (`test/validate-schemas.py` catches schema drift). Never commit passwords, host names of private test machines or ISO/disk images.
 
 ## Known limitations
 
@@ -384,15 +420,15 @@ Default list: containers ubuntu/noble, debian/bookworm, alpine/3.21; VMs ubuntu/
 Real-image findings: LXD VM images mount `LABEL=UEFI` at `/boot/efi`; this needed a loader fix, see "VM guests and the ESP" below (no workaround any more). Alpine containers
 expect `eth0` (the loader kernel names NICs `en*`) and have no acpid, so ACPI power-off is forced.
 
-## Tests (remote KVM)
+## Tests (optional remote KVM harness)
 `make e2e-snap` (`test/e2e-snap.sh`): snapshot management on the OCI fixture (continue-current (no new layer per boot)/create/list/stacking/delete with overlay merge/revert + --keep/ephemeral boots and gc/prune/verify/export/space guard/overlay flatten + boot of the flattened image/data volumes surviving revert)
 and on the VM fixture (continue-current/create/list/verify/dm delete-merge refusal/revert/ephemeral base boot/qcow2 export/dm flatten + boot of the flattened VM). Snapshot commands that need root run in the loader through the `omloader.hook=1` stage disk.
 
-## Usability test (remote KVM)
+## Usability test (remote harness)
     make e2e-ui      # test/e2e-ui.sh: users/autologin on tty1+ttyS0, password+sudo checks, 2nd boot idempotency, busybox-only image (debug shell), ext4/exfat clean-state check, shutdown_sync:false baseline
 The clean-state check reads the ext4 superblock (`s_state`, `needs_recovery`) and the exfat `VolumeDirty` flag straight from the disk image after the guest powered off.
 
-## M3 test (remote KVM)
-    export OML_REMOTE_PASS=...   # never stored
+## M3 test (remote harness)
+    export OML_REMOTE=user@host   # + OML_REMOTE_PASS or ssh keys; never stored in the repo
     make e2e-oci                # builds ISO, OCI fixture (podman, rootless), disk, then boots 4 times
 See `test/make-fixture-oci.sh` and `test/e2e-oci.sh`; assertions: guest kernel == loader kernel, overlay root, counter 1 / 2 (current continued) / 1 (ephemeral base) / 3 (current again), adapter applied once, DHCP lease, modules visible.

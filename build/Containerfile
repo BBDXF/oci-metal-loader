@@ -2,7 +2,7 @@
 #   live    - the Debian bookworm live userspace; exported (podman export) and squashed to live.squashfs
 #   builder - live + ISO tooling (grub, xorriso, ...); runs build/mk-iso-inner.sh (stage-1 initramfs + ISO)
 FROM debian:bookworm AS live
-ARG DEBIAN_MIRROR=http://mirrors.ustc.edu.cn/debian
+ARG DEBIAN_MIRROR=http://deb.debian.org/debian
 ENV DEBIAN_FRONTEND=noninteractive
 RUN sed -i "s#http://deb.debian.org/debian#$DEBIAN_MIRROR#g; s#^Components: main\$#Components: main non-free-firmware#" /etc/apt/sources.list.d/debian.sources
 RUN apt-get update && apt-get install -y --no-install-recommends \

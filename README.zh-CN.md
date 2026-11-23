@@ -1,8 +1,16 @@
 # OCI Metal Loader (`omloader`)
 
+[![CI](https://github.com/BBDXF/oci-metal-loader/actions/workflows/ci.yml/badge.svg)](https://github.com/BBDXF/oci-metal-loader/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/BBDXF/oci-metal-loader?include_prereleases)](https://github.com/BBDXF/oci-metal-loader/releases) [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+
 **从 U 盘直接在裸机上启动 LXD 镜像，并且自带快照。**
 
 [English](README.md) | 简体中文
+
+> 📖 **完整安装与配置指南：[docs/INSTALL.zh-CN.md](docs/INSTALL.zh-CN.md)**（[English](docs/INSTALL.md)）——全部配置项、目录布局、命令行、FAQ。
+
+## 下载
+
+从 [Releases 页面](https://github.com/BBDXF/oci-metal-loader/releases)下载 `omloader-<版本>.iso`（以及 `SHA256SUMS`、静态二进制、示例配置），用 `sha256sum -c --ignore-missing SHA256SUMS` 校验，然后把 ISO 拷到 Ventoy 盘（UEFI，关闭 Secure Boot）。也可自行构建：`make iso`（[build/README.md](build/README.md)）。
 
 `omloader.iso` 是一个 UEFI 加载器，可以放在 [Ventoy](https://github.com/ventoy/Ventoy) 盘里（也能单独启动）。把 **LXD VM（整盘）镜像和容器镜像**放进盘里，选一个，
 它就直接在真实硬件上运行：**不用安装，不用虚拟化**，支持类似虚拟机的快照，数据重启后不丢。
@@ -31,7 +39,7 @@ Ventoy / UEFI → GRUB → 加载器（Debian live：systemd、networkd、工具
 
 ## 快速开始
 
-1. **获取 ISO。** 目前没有预编译的发布版，需要从源码构建（rootless podman），见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
+1. **获取 ISO。** 从 [Releases](https://github.com/BBDXF/oci-metal-loader/releases) 下载（见*下载*），或用 `make iso` 构建。分步说明：[docs/INSTALL.zh-CN.md](docs/INSTALL.zh-CN.md)。
 2. **放进 Ventoy 盘**，在 Ventoy 菜单里启动它（[docs/ventoy.md](docs/ventoy.md)）。
 3. **获取镜像**（在加载器里执行，或者把镜像复制到数据分区的 `images/` 目录）：
    ```sh
@@ -106,6 +114,7 @@ Docker/OCI 镜像是**实验性功能，默认关闭**（它们是应用镜像�
 
 ## 文档
 
+- [docs/INSTALL.zh-CN.md](docs/INSTALL.zh-CN.md)（[English](docs/INSTALL.md)）— 安装、配置参考、目录布局、命令行、FAQ
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — 架构、状态、路线图、限制、测试
 - [docs/ventoy.md](docs/ventoy.md) · [docs/store-file.md](docs/store-file.md) · [docs/tui.md](docs/tui.md) · [build/README.md](build/README.md)
 - 镜像源与 mirror（USTC/南大/清华/CERNET/官方）、Deepin/Mint 现状：[docs/sources.md](docs/sources.md) — `omloader source list|test`、`pull --source S --mirror M`。

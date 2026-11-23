@@ -5,7 +5,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; O=$ROOT/out; W=$ROOT/work; mkdir -p $O $W
 NAME=${OCI_NAME:-omloci}
-MIRROR=${DEBIAN_MIRROR:-http://mirrors.ustc.edu.cn/debian}
+MIRROR=${DEBIAN_MIRROR:-http://deb.debian.org/debian}
 TAG=${OCI_TAG:-omloader-fixture-oci-$(basename $ROOT)}   # per-checkout tag: several test dirs share one podman store
 BASE=docker.io/library/debian:bookworm-slim
 # remote can't reach Docker Hub: pull via a mirror and tag locally (see build/README.md)

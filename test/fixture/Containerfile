@@ -1,5 +1,5 @@
 FROM debian:bookworm
-ARG DEBIAN_MIRROR=http://mirrors.ustc.edu.cn/debian
+ARG DEBIAN_MIRROR=http://deb.debian.org/debian
 ENV DEBIAN_FRONTEND=noninteractive
 RUN sed -i "s#http://deb.debian.org/debian#$DEBIAN_MIRROR#g" /etc/apt/sources.list.d/debian.sources
 RUN mkdir -p /etc/initramfs-tools && printf 'dm-mod\ndm-snapshot\ndm-linear\nloop\nvirtio_blk\nvirtio_pci\nnvme\next4\nsd_mod\n' >> /etc/initramfs-tools/modules \

@@ -1,15 +1,15 @@
 # build artifacts
-/build/omloader.bin
-/build/*.bin
+/bin/
 /out/
+/work/
+/cache/
+/omloader
 *.iso
+*.squashfs
 *.raw
 *.qcow2
 *.img
 *.cow
-/omloader
 # local env / secrets
 .env
 *.pass
-/cache/
-/work/

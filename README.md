@@ -1,8 +1,16 @@
 # OCI Metal Loader (`omloader`)
 
+[![CI](https://github.com/BBDXF/oci-metal-loader/actions/workflows/ci.yml/badge.svg)](https://github.com/BBDXF/oci-metal-loader/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/BBDXF/oci-metal-loader?include_prereleases)](https://github.com/BBDXF/oci-metal-loader/releases) [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+
 **Boot LXD images on bare metal from a USB drive — with snapshots.**
 
 English | [简体中文](README.zh-CN.md)
+
+> 📖 **Full install & configuration guide: [docs/INSTALL.md](docs/INSTALL.md)** ([中文](docs/INSTALL.zh-CN.md)) — every config key, file layout, CLI, FAQ.
+
+## Download
+
+Get `omloader-<version>.iso` (+ `SHA256SUMS`, static binary, example configs) from the [Releases page](https://github.com/BBDXF/oci-metal-loader/releases), verify with `sha256sum -c --ignore-missing SHA256SUMS`, and copy the ISO to a Ventoy stick (UEFI, Secure Boot off). Or build it: `make iso` ([build/README.md](build/README.md)).
 
 `omloader.iso` is a UEFI loader that sits on a [Ventoy](https://github.com/ventoy/Ventoy) drive (or boots on its own). Put **LXD VM (whole-disk) and container images** on the drive,
 pick one, and it runs directly on the real hardware: **no installation, no hypervisor**, with VM-style snapshots and data that survives reboots.
@@ -31,7 +39,7 @@ snapshots / data / cache → ext4 store (a partition, or an ext4 file on exFAT/N
 
 ## Quick start
 
-1. **Get the ISO.** There is no prebuilt release yet; build it from source (rootless podman) — see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+1. **Get the ISO** from [Releases](https://github.com/BBDXF/oci-metal-loader/releases) (see *Download*), or build it with `make iso`. Step-by-step: [docs/INSTALL.md](docs/INSTALL.md).
 2. **Put it on a Ventoy drive** and boot it from the Ventoy menu ([docs/ventoy.md](docs/ventoy.md)).
 3. **Get images** (inside the loader, or copy them to `images/` on the data partition):
    ```sh
@@ -106,6 +114,7 @@ Docker/OCI images are **experimental and off by default** (they are application 
 
 ## Documentation
 
+- [docs/INSTALL.md](docs/INSTALL.md) ([中文](docs/INSTALL.zh-CN.md)) — install, config reference, layout, CLI, FAQ
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — architecture, status, roadmap, limitations, tests
 - [docs/ventoy.md](docs/ventoy.md) · [docs/store-file.md](docs/store-file.md) · [docs/tui.md](docs/tui.md) · [build/README.md](build/README.md)
 - Sources, mirrors (USTC/NJU/TUNA/CERNET/official), Deepin/Mint status: [docs/sources.md](docs/sources.md) — `omloader source list|test`, `pull --source S --mirror M`.

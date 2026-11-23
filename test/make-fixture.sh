@@ -5,7 +5,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; O=$ROOT/out; mkdir -p $O $ROOT/work
 SIZE_MB=${FIXTURE_MB:-1024}
-podman build -q --build-arg DEBIAN_MIRROR=${DEBIAN_MIRROR:-http://mirrors.ustc.edu.cn/debian} -t omloader-fixture -f $ROOT/test/fixture/Containerfile $ROOT/test/fixture
+podman build -q --build-arg DEBIAN_MIRROR=${DEBIAN_MIRROR:-http://deb.debian.org/debian} -t omloader-fixture -f $ROOT/test/fixture/Containerfile $ROOT/test/fixture
 c=$(podman create localhost/omloader-fixture /sbin/init)
 podman export $c > $ROOT/work/rootfs.tar
 rm -rf $ROOT/work/bootdir; podman cp $c:/boot $ROOT/work/bootdir

@@ -15,6 +15,7 @@ import (
 )
 
 const usage = `usage:
+  omloader version
   omloader config validate [-c omloader.yaml] [-i image.yaml]
   omloader config show --resolved [-c omloader.yaml] [-i image.yaml]
   omloader config get [-c omloader.yaml] KEY   (print one resolved value, e.g. boot.default_image; for scripts)
@@ -49,6 +50,10 @@ func parse(fs *flag.FlagSet, args []string) ([]string, error) {
 
 func run(args []string, out, errw io.Writer) int {
 	fail := func(err error) int { fmt.Fprintln(errw, "error:", err); return 1 }
+	if len(args) == 1 && (args[0] == "version" || args[0] == "--version") {
+		fmt.Fprintln(out, "omloader", version)
+		return 0
+	}
 	if len(args) < 1 || (len(args) < 2 && args[0] != "boot" && args[0] != "guest-assemble" && args[0] != "snapshot" && args[0] != "tui") {
 		fmt.Fprint(errw, usage)
 		return 1

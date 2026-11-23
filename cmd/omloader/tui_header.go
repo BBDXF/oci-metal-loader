@@ -9,7 +9,7 @@ import (
 	"omloader/internal/tui"
 )
 
-// version is the loader version shown in the TUI header (set with -ldflags "-X main.version=...").
+// version is the loader version shown in the TUI header (set with -ldflags "-X main.version=..."; `omloader version` prints it).
 var version = "dev"
 
 // Header implements tui.HeaderProvider: statfs of the snapshot store and the images partition plus the local addresses.
