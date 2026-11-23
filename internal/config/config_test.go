@@ -137,3 +137,45 @@ func TestOldVMTypeRejected(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestEffectiveRuntime(t *testing.T) {
+	on := true
+	g := GuestDefaults{Autologin: &on, AutologinUser: "oci", RootPassword: "Oci123", Users: []User{{Name: "oci", Password: "Oci123", Sudo: true}}}
+	// bare container image: all defaults
+	rt := EffectiveRuntime(g, Runtime{})
+	if !rt.AutologinOn() || rt.AutologinUser != "oci" || rt.RootPassword != "Oci123" || len(rt.Users) != 1 || !rt.FromDefaults {
+		t.Errorf("defaults not applied: %+v", rt)
+	}
+	// image users (even empty) replace the list; autologin user falls back to root when it vanished
+	rt = EffectiveRuntime(g, Runtime{Users: []User{}})
+	if len(rt.Users) != 0 || rt.AutologinUser != "" || !rt.AutologinOn() || rt.RootPassword != "Oci123" {
+		t.Errorf("users: [] : %+v", rt)
+	}
+	// image root hash wins ('!' locks root)
+	rt = EffectiveRuntime(g, Runtime{RootPasswordHash: "!"})
+	if rt.RootPassword != "" || rt.RootPasswordHash != "!" {
+		t.Errorf("root override: %+v", rt)
+	}
+	// image sets autologin_user or autologin: the pair comes from the image
+	off := false
+	rt = EffectiveRuntime(g, Runtime{Autologin: &off})
+	if rt.AutologinOn() || rt.AutologinUser != "" {
+		t.Errorf("autologin: false: %+v", rt)
+	}
+	rt = EffectiveRuntime(g, Runtime{AutologinUser: "alice", Users: []User{{Name: "alice"}}})
+	if rt.AutologinUser != "alice" || rt.Autologin != nil {
+		t.Errorf("image autologin_user: %+v", rt)
+	}
+	// applies to every image type (container, vm, oci): the type is not an input
+}
+
+func TestDefaultGuestAccounts(t *testing.T) {
+	r, err := Load("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := r.Config.GuestDefaults
+	if !*g.Autologin || g.AutologinUser != "oci" || g.RootPassword != "Oci123" || len(g.Users) != 1 || g.Users[0].Name != "oci" || g.Users[0].Password != "Oci123" || !g.Users[0].Sudo {
+		t.Errorf("guest_defaults: %+v", g)
+	}
+}

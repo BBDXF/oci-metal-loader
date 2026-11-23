@@ -59,15 +59,17 @@ HEAD
 bootimg() { # log image snapshot kind
   local L=$1 MON=$W/mon.$$ t0=$(date +%s) pid i
   rm -f $MON; : > $W/$L.log
-  TIMEOUT=$BOOT_TIMEOUT MONITOR=$MON NAME=$2 SNAP=$3 LOG=$W/$L.log $T/run-kvm.sh > /dev/null 2>&1 & pid=$!
+  TIMEOUT=$BOOT_TIMEOUT MONITOR=$MON SERIALSOCK=$W/ser.$$ NAME=$2 SNAP=$3 LOG=$W/$L.log $T/run-kvm.sh > /dev/null 2>&1 & pid=$!
   BOOT_OK=0; EVID=
   while kill -0 $pid 2>/dev/null; do
     sleep 3; clean $L
-    if grep -qE '^[^ ]+ login: ?$|login: *$|Reached target.*(Multi-User|Graphical)|Startup finished in|OpenRC.*default|Welcome to Alpine|root@[^ ]+:.*[#$] ' $W/$L.clean; then BOOT_OK=1; break; fi
+    if grep -qE '^[^ ]+ login: ?$|login: *$|Reached target.*(Multi-User|Graphical)|Startup finished in|OpenRC.*default|Welcome to Alpine|[a-z]+@[^ ]+:.*[#$] ' $W/$L.clean; then BOOT_OK=1; break; fi
     grep -qE 'omloader: error|kexec.*fail|Kernel panic|^error:|You are in emergency mode|Cannot open access to console' $W/$L.clean && break
   done
   BOOT_SECS=$(( $(date +%s)-t0 ))
-  EVID=$(grep -E 'login: *$|Reached target.*(Multi-User|Graphical)|Startup finished in|Welcome to Alpine|root@[^ ]+:.*[#$] |Kernel panic|error:|emergency mode' $W/$L.clean | head -2 | tr '\n' '|' | cut -c1-150)
+  EVID=$(grep -E 'login: *$|Reached target.*(Multi-User|Graphical)|Startup finished in|Welcome to Alpine|[a-z]+@[^ ]+:.*[#$] |Kernel panic|error:|emergency mode' $W/$L.clean | head -2 | tr '\n' '|' | cut -c1-150)
+  PROOF_RES=
+  if [ $BOOT_OK = 1 ] && [ -n "${PROOF:-}" ]; then loginproof $L $W/ser.$$; fi
   if [ $BOOT_OK = 1 ]; then
     sleep 8; python3 - $MON <<'PY'
 import socket,sys,time
@@ -80,6 +82,25 @@ PY
   fi
   if kill -0 $pid 2>/dev/null; then POWER=forced; pkill -u $USER -f "$W/run\.$pid/" ; else POWER=clean; fi
   pkill -u $USER -f "$W/run\.$pid/" 2>/dev/null; wait $pid 2>/dev/null; clean $L; rm -f $MON; }
+# default-account proof over the serial console (autologin shell as oci; sudo with the password; su to root with the password)
+loginproof() { # log sock
+  sleep 6; python3 - $2 <<'PY'
+import socket,sys,time
+s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1]); s.settimeout(1)
+def snd(t,w=2.5):
+    s.send(t.encode()); time.sleep(w)
+    try: s.recv(65536)
+    except Exception: pass
+snd("\r"); snd("\r")
+snd("echo OMLPROOF_ID=$(id -un)\r")
+snd("echo Oci123 | sudo -S -p '' id -un 2>&1 | sed 's/^/OMLPROOF_SUDO=/'\r", 4)
+snd("su - root -c 'echo OMLPROOF_SU=$(id -un)'\r", 2.5)
+snd("Oci123\r", 4)
+snd("grep -c '^root:\\$' /etc/shadow | sed 's/^/OMLPROOF_ROOTHASH=/'\r")
+PY
+  clean $1
+  PROOF_RES=$(grep -ao 'OMLPROOF_[A-Z]*=[a-z0-9]*' $W/$1.clean | tr '\n' ' ')
+}
 report() { SUMMARY+=("$(printf '%-34s pull=%-6s size=%-10s boot=%-4s (%ss) power=%-6s %s' "$1" "$2" "$3" "$4" "$5" "$6" "$7")"); }
 
 VMCL=${REAL_VM_CMDLINE-systemd.mask=boot-efi.mount}; [ "$VMCL" = - ] && VMCL=
@@ -104,10 +125,19 @@ if [ -n "$VMCL" ]; then   # WORKAROUND for the by-label UEFI problem (VM images 
   { for i in $REAL_IMAGES; do case $i in vm:*) n=$(nm $i); echo "grep -q -- '$VMCL' /mnt/images/images/$n/image.yaml || sed -i 's|^\\( *cmdline: .*\\)\$|\\1 $VMCL|' /mnt/images/images/$n/image.yaml; grep cmdline /mnt/images/images/$n/image.yaml";; esac; done; } > $W/patch.body
   hook rpatch < $W/patch.body; grep -a 'cmdline' $W/rpatch.clean | head -4
 fi
+VMS=$(for i in $REAL_IMAGES; do case $i in vm:*) nm $i;; esac; done)
+if [ -n "$VMS" ] && [ -z "${REAL_NOBASECHECK:-}" ]; then   # the default-account provisioning must only write to the COW layer, never to base.raw
+  { for n in $VMS; do echo "t sha-$n sha256sum /mnt/images/images/$n/base.raw"; done; } > $W/sha.body
+  HOOK_TIMEOUT=900 hook rsha1 < $W/sha.body
+fi
 for i in "${PULLED[@]}"; do
   n=$(nm $i); secs=$(sect rp pull-$n | grep -o 'SECS=[0-9]*' | cut -d= -f2); sz=$(sect rp size-$n | head -2 | tail -1 | cut -f1)
-  bootimg b-$n $n ""
+  PROOF=1 bootimg b-$n $n ""
   if [ $BOOT_OK = 1 ]; then pass "boot $i reached userspace in ${BOOT_SECS}s (power-off: $POWER)"; else fail "boot $i (see $W/b-$n.clean): $EVID"; fi
+  echo "PROOF $i: $PROOF_RES"
+  case "$PROOF_RES" in *OMLPROOF_ID=oci*) pass "$i: autologin shell as oci";; *) fail "$i: no autologin shell as oci";; esac
+  case "$PROOF_RES" in *OMLPROOF_SUDO=root*) pass "$i: sudo with the password works";; *) echo "NOTE: $i: sudo did not work (sudo not installed?)";; esac
+  case "$PROOF_RES" in *OMLPROOF_SU=root*) pass "$i: su - root with Oci123 works";; *) fail "$i: su - root with the default password failed";; esac
   report "$i" "${secs}s" "$sz" "$([ $BOOT_OK = 1 ] && echo ok || echo FAIL)" "$BOOT_SECS" "$POWER" "$EVID"
 done
 for i in $REAL_SNAP; do
@@ -142,6 +172,13 @@ BODY
       report "oci:$REAL_OCI" "-" "-" "$([ $BOOT_OK = 1 ] && echo ok || echo FAIL)" "$BOOT_SECS" "$POWER" "$EVID"
     else fail "oci import: $(sect ro imp | tail -3 | tr '\n' '|')"; fi
   else echo "SKIP: OCI: skopeo/registry unavailable ($(tail -1 $W/skopeo.err 2>/dev/null))"; fi
+fi
+if [ -n "$VMS" ] && [ -z "${REAL_NOBASECHECK:-}" ]; then
+  HOOK_TIMEOUT=900 hook rsha2 < $W/sha.body
+  for n in $VMS; do
+    a=$(sect rsha1 sha-$n | grep -o '^[0-9a-f]\{64\}'); b=$(sect rsha2 sha-$n | grep -o '^[0-9a-f]\{64\}')
+    [ -n "$a" ] && [ "$a" = "$b" ] && pass "$n: base.raw unchanged after provisioning/boots/snapshots (sha256 ${a:0:12}...)" || fail "$n: base.raw sha256 before='$a' after='$b'"
+  done
 fi
 echo; echo "== summary"; printf '%s\n' "${SUMMARY[@]}"
 [ -n "${REAL_KEEP:-}" ] || rm -f $D

@@ -130,7 +130,7 @@ func TestOverlayBootNewAndFrozen(t *testing.T) {
 	}
 	// second run: marker present => nothing reapplied
 	os.WriteFile(filepath.Join(nr, "etc/hostname"), []byte("custom\n"), 0o644)
-	if applied, err := Adapt(AdaptInput{Root: nr, Image: "c", Runtime: f.res.Image.Runtime}); err != nil || applied {
+	if applied, err := Adapt(AdaptInput{Root: nr, Image: "c", Runtime: config.EffectiveRuntime(f.res.Config.GuestDefaults, f.res.Image.Runtime)}); err != nil || applied {
 		t.Errorf("re-applied: %v %v", applied, err)
 	}
 	if rd("etc/hostname") != "custom\n" {

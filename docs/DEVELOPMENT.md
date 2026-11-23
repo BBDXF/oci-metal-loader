@@ -62,10 +62,9 @@ If someone wants to pick it up later: the only realistic route to snapshots for 
 
 ## Known limitations
 
-- **VM guests: no account/console provisioning and no clean unmount of the OMLOADER partition.** `runtime.users`/`autologin`/`debug_shell`/`shutdown_sync` are container-only: a VM boots its own
-  disk image through kexec and the loader never edits the guest's root disk. Its COW files live on the OMLOADER partition that the guest's *initramfs* mounted (`/omlmnt-*`); that mount is
-  kept busy by the loop/dm-snapshot stack under the guest root, so it can be neither unmounted nor remounted read-only by the guest at poweroff (the loader cannot hook the guest's shutdown
-  without modifying the guest's root filesystem). After a VM poweroff the OMLOADER ext4 is therefore left needing journal replay (the next loader mount replays it; the guest's own `sync` at
+- **VM guests: only the default accounts are provisioned, and there is no clean unmount of the OMLOADER partition.** `guest_defaults` / `runtime.users` / `root_password` / `autologin` are applied to VMs too (see "Default accounts"); `debug_shell` and `shutdown_sync` stay container-only: a VM boots its own
+  disk image through kexec and the loader only writes the account files into the live COW layer. Its COW files live on the OMLOADER partition that the guest's *initramfs* mounted (`/omlmnt-*`); that mount is
+  kept busy by the loop/dm-snapshot stack under the guest root, so it can be neither unmounted nor remounted read-only by the guest at poweroff (the loader does not install a shutdown hook in VM guests). After a VM poweroff the OMLOADER ext4 is therefore left needing journal replay (the next loader mount replays it; the guest's own `sync` at
   shutdown makes data loss unlikely, an abrupt power cut can still lose the last writes). Workaround: `poweroff` from the guest's normal shutdown path, then boot the loader once (it replays the journal).
 - **Container console login is only implemented for systemd guests** (autologin drop-ins); sysvinit/busybox-init/OpenRC guests get the busybox debug shell (`debug_shell`) and best-effort shutdown hooks
   (sysvinit `K99omloader-sync`, busybox-init `::shutdown:`; OpenRC: none). The tty1 console is only useful with a display; with `console=tty0 console=ttyS0,115200` (the loader's grub.cfg) the guest's `/dev/console` is ttyS0.
@@ -214,6 +213,24 @@ Init selection: `runtime.entrypoint` (+`cmd`) -> `/sbin/init` -> `runtime.cmd` -
 `init`/`systemd` it is exec'd directly; otherwise it is wrapped by `/.omloader/entrypoint` (static-busybox shell script: mounts
 proc/sys/dev/devpts/run, applies `runtime.env`/`workdir` from `/.omloader/env`, starts DHCP, `exec "$@"`; the app becomes PID 1).
 Guest `/proc /sys /dev` are moved from the loader; systemd/sysv mount the rest themselves.
+
+### Default accounts (`guest_defaults`, all image types)
+One global config section gives **every** image (lxd-container, lxd-vm, experimental oci) a console account at boot. Built-in defaults (`configs/defaults.yaml`):
+user `oci`, password `Oci123`, `sudo: true` (drop-in `/etc/sudoers.d/90-omloader-oci` = `oci ALL=(ALL:ALL) ALL`, password required; the `sudo` group is created/joined),
+**root enabled with the same password `Oci123`**, console autologin (tty1 + ttyS0) as `oci`. **The password is public by design** - change it.
+Where to override: `guest_defaults:` in the loader config file, i.e. `omloader/boot.yaml` (or `omloader.yaml`) on VTOYDATA, else on OMLOADER, else on the Ventoy/ISO partition
+(`<VTOYDATA>/omloader/boot.yaml`; the first valid file is the global config of `omloader boot`, the TUI and the pull commands), or `-c FILE` on the command line. To switch off globally:
+`guest_defaults: {autologin: false, root_password: "", root_password_hash: "", users: []}`. Per image (`image.yaml`, the image always wins):
+- `runtime.users` set (even `users: []`) replaces the default user list; unset takes the defaults;
+- `runtime.root_password` / `root_password_hash` set replaces the default root password (`root_password_hash: '!'` locks root);
+- `runtime.autologin` or `autologin_user` set: both come from the image (empty user = root); unset: both from the defaults (a default `autologin_user` that is not in the final user list falls back to root).
+Containers/OCI: applied by the firstboot adapter (re-applied when the effective config changes). **lxd-vm**: after the dm-snapshot stack of the live layer is assembled and `kexec -l` has
+loaded kernel+initrd, the loader remounts the guest root partition (`kernel.root_partition`, ext4/xfs) read-write **on the final snapshot device**, creates the user (passwd/shadow/group, home,
+`/etc/skel`, sudoers drop-in, group), sets the root hash (this unlocks root), writes the `getty@tty1`/`serial-getty@ttyS0` autologin drop-ins (systemd guests with `agetty`), adds
+`/etc/ssh/sshd_config.d/00-omloader.conf` (`PasswordAuthentication yes`) when `/usr/sbin/sshd` exists and `sshd_config` includes `sshd_config.d` (best effort), writes the marker
+`/var/lib/omloader/provisioned` and unmounts. Writes go to the COW layer only (the base is never opened read-write); it happens once per live layer (the marker), so later changes in the guest
+survive reboots, and a fresh layer (after a revert, an ephemeral boot) is provisioned again. If the root cannot be mounted read-write it only logs a warning and boots on. Not done for VMs: debug shell, shutdown sync,
+sysvinit/busybox-init autologin, LVM/LUKS roots (not supported at all). Cloud-init in a guest may still manage users/ssh itself.
 
 ### Console login and clean shutdown (containers; part of the firstboot adapter)
 Written offline into the node's upper (symlink-safe: every path is resolved inside the new root and never escapes it) and **re-applied whenever the hash of these keys changes**

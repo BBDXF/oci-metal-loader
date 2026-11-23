@@ -76,6 +76,8 @@ func (r *Resolved) Validate() ErrorList {
 		}
 	}
 	c := &r.Config
+	gd := c.GuestDefaults
+	validateRuntime("guest_defaults", Runtime{AutologinUser: gd.AutologinUser, Users: gd.Users, RootPassword: gd.RootPassword, RootPasswordHash: gd.RootPasswordHash}, add, enum)
 	nopath("storage.images.path", c.Storage.Images.Path)
 	nopath("storage.snapshots.path", c.Storage.Snapshots.Path)
 	nopath("cache.path", c.Cache.Path)
@@ -197,7 +199,7 @@ func (r *Resolved) Validate() ErrorList {
 			add("image.snapshots.mode", "type %s requires overlayfs, got %q", img.Type, img.Snapshots.Mode)
 		}
 	}
-	validateRuntime(img.Runtime, add, enum)
+	validateRuntime("image.runtime", img.Runtime, add, enum)
 	if img.Base == "" {
 		add("image.base", "required")
 	} else if isRemote(img.Base) && !c.Policy.AllowOnline {
@@ -245,49 +247,49 @@ var nameRe = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
 
 func badField(s string) bool { return strings.ContainsAny(s, ":\n\r\x00") }
 
-func validateRuntime(rt Runtime, add func(string, string, ...any), enum func(string, string, ...string)) {
+func validateRuntime(pfx string, rt Runtime, add func(string, string, ...any), enum func(string, string, ...string)) {
 	if rt.DebugShell != "" {
-		enum("image.runtime.debug_shell", rt.DebugShell, "auto", "always", "never")
+		enum(pfx+".debug_shell", rt.DebugShell, "auto", "always", "never")
 	}
 	if rt.AutologinUser != "" && !nameRe.MatchString(rt.AutologinUser) {
-		add("image.runtime.autologin_user", "invalid user name %q", rt.AutologinUser)
+		add(pfx+".autologin_user", "invalid user name %q", rt.AutologinUser)
 	}
 	if badField(rt.RootPasswordHash) || badField(rt.RootPassword) {
-		add("image.runtime.root_password", "must not contain ':' or newlines")
+		add(pfx+".root_password", "must not contain ':' or newlines")
 	}
 	if rt.RootPassword != "" && rt.RootPasswordHash != "" {
-		add("image.runtime.root_password", "set either root_password or root_password_hash, not both")
+		add(pfx+".root_password", "set either root_password or root_password_hash, not both")
 	}
 	seen := map[string]bool{}
 	for i, u := range rt.Users {
 
 		if !nameRe.MatchString(u.Name) {
-			add("image.runtime.users", "entry %d: invalid user name %q (want [a-z_][a-z0-9_-]{0,31})", i, u.Name)
+			add(pfx+".users", "entry %d: invalid user name %q (want [a-z_][a-z0-9_-]{0,31})", i, u.Name)
 		}
 		if seen[u.Name] {
-			add("image.runtime.users", "entry %d: duplicate user %q", i, u.Name)
+			add(pfx+".users", "entry %d: duplicate user %q", i, u.Name)
 		}
 		seen[u.Name] = true
 		if u.Password != "" && u.PasswordHash != "" {
-			add("image.runtime.users", "entry %d (%s): set either password or password_hash, not both", i, u.Name)
+			add(pfx+".users", "entry %d (%s): set either password or password_hash, not both", i, u.Name)
 		}
 		if badField(u.Password) || badField(u.PasswordHash) {
-			add("image.runtime.users", "entry %d (%s): password must not contain ':' or newlines", i, u.Name)
+			add(pfx+".users", "entry %d (%s): password must not contain ':' or newlines", i, u.Name)
 		}
 		if u.PasswordHash != "" && !strings.HasPrefix(u.PasswordHash, "$") && u.PasswordHash != "!" && u.PasswordHash != "*" {
-			add("image.runtime.users", "entry %d (%s): password_hash must be a crypt hash ($6$...), '!' or '*'", i, u.Name)
+			add(pfx+".users", "entry %d (%s): password_hash must be a crypt hash ($6$...), '!' or '*'", i, u.Name)
 		}
 		if u.Shell != "" && (!strings.HasPrefix(u.Shell, "/") || badField(u.Shell)) {
-			add("image.runtime.users", "entry %d (%s): shell must be an absolute path", i, u.Name)
+			add(pfx+".users", "entry %d (%s): shell must be an absolute path", i, u.Name)
 		}
 		for _, g := range u.Groups {
 			if !nameRe.MatchString(g) {
-				add("image.runtime.users", "entry %d (%s): invalid group name %q", i, u.Name, g)
+				add(pfx+".users", "entry %d (%s): invalid group name %q", i, u.Name, g)
 			}
 		}
 		for _, k := range u.SSHKeys {
 			if strings.ContainsAny(k, "\n\r") || strings.TrimSpace(k) == "" {
-				add("image.runtime.users", "entry %d (%s): ssh_authorized_keys entries must be single non-empty lines", i, u.Name)
+				add(pfx+".users", "entry %d (%s): ssh_authorized_keys entries must be single non-empty lines", i, u.Name)
 			}
 		}
 

@@ -5,7 +5,10 @@ import (
 	"io"
 	"os"
 	"path"
+	"regexp"
 	"strings"
+
+	"omloader/internal/config"
 )
 
 // Loader partitions are bind-mounted by the loader at these places inside the guest
@@ -196,31 +199,16 @@ func adaptUI(in AdaptInput, warn io.Writer, sysd, hasBB bool) error {
 	if user == "" {
 		user = "root"
 	}
-	dropins := []string{"/etc/systemd/system/getty@tty1.service.d/omloader-autologin.conf", "/etc/systemd/system/serial-getty@ttyS0.service.d/omloader-autologin.conf"}
-	if rt.Autologin {
-		if !sysd {
-			fmt.Fprintln(warn, "warning: runtime.autologin is only implemented for systemd guests (use runtime.debug_shell for others)")
-		} else if agetty := firstExisting(root, "/sbin/agetty", "/usr/sbin/agetty"); agetty == "" {
-			fmt.Fprintln(warn, "warning: runtime.autologin: guest has no agetty; autologin skipped")
-		} else {
-			if findLine(LoadAccounts(root).Passwd, user) < 0 {
-				fmt.Fprintf(warn, "warning: runtime.autologin_user %q does not exist in the guest\n", user)
-			}
-			if u := firstExisting(root, "/lib/systemd/system/getty@.service", "/usr/lib/systemd/system/getty@.service"); u != "" {
-				// make sure tty1 has a getty even when the guest does not enable getty@tty1 itself
-				if err := guestSymlink(root, "/etc/systemd/system/getty.target.wants/getty@tty1.service", u); err != nil {
-					return err
-				}
-			}
-			for _, d := range dropins {
-				if err := W(d, "[Service]\nExecStart=\nExecStart=-"+agetty+" --autologin "+user+" --noclear %I $TERM\n", 0o644); err != nil {
-					return err
-				}
-			}
+	if flavour != "busybox" { // busybox-init guests (Alpine) are handled below
+		if err := applySystemdAutologin(root, rt, user, sysd, warn); err != nil {
+			return err
 		}
-	} else {
-		for _, d := range dropins {
-			guestRemove(root, d)
+	}
+
+	// autologin for busybox-init guests (Alpine): the inittab getty lines for tty1/ttyS0/console get `-n -l /.omloader/autologin`
+	if flavour == "busybox" {
+		if err := adaptBusyboxAutologin(root, rt, user, warn); err != nil {
+			return err
 		}
 	}
 
@@ -322,6 +310,86 @@ func adaptUI(in AdaptInput, warn io.Writer, sysd, hasBB bool) error {
 					guestSymlink(root, path.Join(d, "K99omloader-sync"), "../init.d/omloader-sync")
 				}
 			}
+		}
+	}
+	return nil
+}
+
+const inittabBackup = "/etc/inittab.omloader-orig"
+
+var gettyRe = regexp.MustCompile(`(getty)(\s)`)
+
+// adaptBusyboxAutologin rewrites the getty lines of a busybox /etc/inittab (original kept in inittabBackup, restored first so
+// the result only depends on the current config).
+func adaptBusyboxAutologin(root string, rt config.Runtime, user string, warn io.Writer) error {
+	if orig, ok := readGuest(root, inittabBackup); ok {
+		if err := guestWriteKeep(root, "/etc/inittab", orig, 0o644, -1); err != nil {
+			return err
+		}
+	}
+	if !rt.AutologinOn() {
+		return nil
+	}
+	s, ok := readGuest(root, "/etc/inittab")
+	if !ok {
+		return nil
+	}
+	if findLine(LoadAccounts(root).Passwd, user) < 0 {
+		fmt.Fprintf(warn, "warning: runtime.autologin_user %q does not exist in the guest\n", user)
+	}
+	var out []string
+	changed := false
+	for _, l := range strings.Split(s, "\n") {
+		t := strings.TrimSpace(l)
+		if !strings.HasPrefix(t, "#") && strings.Contains(t, "getty") && (strings.Contains(t, "tty1") || strings.Contains(t, "ttyS0") || strings.HasSuffix(t, " console")) && !strings.Contains(t, ".omloader/autologin") {
+			l = gettyRe.ReplaceAllString(l, "${1} -n -l /.omloader/autologin${2}")
+			changed = true
+		}
+		out = append(out, l)
+	}
+	if !changed {
+		fmt.Fprintln(warn, "warning: runtime.autologin: no tty1/ttyS0/console getty line found in /etc/inittab; autologin skipped")
+		return nil
+	}
+	if !guestExists(root, inittabBackup) {
+		if err := guestWrite(root, inittabBackup, []byte(s), 0o644); err != nil {
+			return err
+		}
+	}
+	if err := guestWrite(root, guestHelperDir+"/autologin", []byte("#!/bin/sh\nexec /bin/login -f "+user+"\n"), 0o755); err != nil {
+		return err
+	}
+	return guestWriteKeep(root, "/etc/inittab", strings.Join(out, "\n"), 0o644, -1)
+}
+
+// applySystemdAutologin installs (or removes) the getty@tty1 / serial-getty@ttyS0 autologin drop-ins of a systemd guest.
+func applySystemdAutologin(root string, rt config.Runtime, user string, sysd bool, warn io.Writer) error {
+	W := func(rel, data string, mode os.FileMode) error { return guestWrite(root, rel, []byte(data), mode) }
+	dropins := []string{"/etc/systemd/system/getty@tty1.service.d/omloader-autologin.conf", "/etc/systemd/system/serial-getty@ttyS0.service.d/omloader-autologin.conf"}
+	if rt.AutologinOn() {
+		if !sysd {
+			fmt.Fprintln(warn, "warning: runtime.autologin is only implemented for systemd guests (use runtime.debug_shell for others)")
+		} else if agetty := firstExisting(root, "/sbin/agetty", "/usr/sbin/agetty"); agetty == "" {
+			fmt.Fprintln(warn, "warning: runtime.autologin: guest has no agetty; autologin skipped")
+		} else {
+			if findLine(LoadAccounts(root).Passwd, user) < 0 {
+				fmt.Fprintf(warn, "warning: runtime.autologin_user %q does not exist in the guest\n", user)
+			}
+			if u := firstExisting(root, "/lib/systemd/system/getty@.service", "/usr/lib/systemd/system/getty@.service"); u != "" {
+				// make sure tty1 has a getty even when the guest does not enable getty@tty1 itself
+				if err := guestSymlink(root, "/etc/systemd/system/getty.target.wants/getty@tty1.service", u); err != nil {
+					return err
+				}
+			}
+			for _, d := range dropins {
+				if err := W(d, "[Service]\nExecStart=\nExecStart=-"+agetty+" --autologin "+user+" --noclear %I $TERM\n", 0o644); err != nil {
+					return err
+				}
+			}
+		}
+	} else {
+		for _, d := range dropins {
+			guestRemove(root, d)
 		}
 	}
 	return nil

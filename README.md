@@ -70,8 +70,8 @@ Prefer menus? Run `omloader tui` ([docs/tui.md](docs/tui.md)).
 
 | `type` | What it is | Kernel | Snapshots | Main limits |
 |---|---|---|---|---|
-| `lxd-vm` | LXD *VM* image: a whole-disk image (`disk.qcow2` is converted to `base.raw` on import). "VM" names the format — nothing is virtualised. | the image's own (`kexec`) | `dm-snapshot` COW files | UEFI + GPT, root filesystem ext4 or xfs with `/boot` holding the kernel and initrd; no LVM/LUKS root; guest must use an initramfs the loader can extend (verified only on Debian/initramfs-tools guests); no independent data volumes; no account/console provisioning or clean unmount (the guest manages itself) |
-| `lxd-container` | LXD *container* image: `rootfs.squashfs` (+ `metadata.yaml`) | the loader's (Debian 6.1), modules bind-mounted into the guest | `overlayfs` upper layers | needs a Linux root with an init; hardware support is whatever the loader's kernel offers; console login and users are provisioned at first boot (systemd guests only; others get a busybox debug shell); data volumes `dir` / `ext4-file` |
+| `lxd-vm` | LXD *VM* image: a whole-disk image (`disk.qcow2` is converted to `base.raw` on import). "VM" names the format — nothing is virtualised. | the image's own (`kexec`) | `dm-snapshot` COW files | UEFI + GPT, root filesystem ext4 or xfs with `/boot` holding the kernel and initrd; no LVM/LUKS root; guest must use an initramfs the loader can extend (verified only on Debian/initramfs-tools guests); no independent data volumes; default accounts only (`oci`/`Oci123`, sudo, root, autologin — public password, see below), no clean unmount |
+| `lxd-container` | LXD *container* image: `rootfs.squashfs` (+ `metadata.yaml`) | the loader's (Debian 6.1), modules bind-mounted into the guest | `overlayfs` upper layers | needs a Linux root with an init; hardware support is whatever the loader's kernel offers; default console accounts are provisioned at boot (autologin: systemd and busybox-init guests; others get a busybox debug shell); data volumes `dir` / `ext4-file` |
 | `oci` | Docker/OCI image — **experimental, off by default** (`experimental.oci_images: true`) | the loader's | `overlayfs` | application images usually have no init or login; no registry pull |
 
 Common to all types: the base image is read-only and checksummed, snapshots are never modified by booting (a snapshot boots as a throwaway layer), Linux guests only (use Ventoy for Windows),
@@ -95,6 +95,8 @@ omloader complements Ventoy rather than replacing it.
 
 Alpha. What works: LXD VM and container boot, snapshots, data volumes, online pull, store file, Ventoy booting, TUI — verified by the end-to-end suites in QEMU/OVMF.
 What is missing or unverified: real hardware (testing postponed), LUKS/LVM guests, Windows (use Ventoy), public-server testing (pull is tested against a local simplestreams server), non-Debian VM guests.
+**Default login (public password!):** every image — LXD container, LXD VM and experimental OCI — gets the account `oci` / `Oci123` (sudo with password), root enabled with the same password, and console autologin as `oci`. The password is public: change or disable it with `guest_defaults:` in `omloader/boot.yaml` on the data partition, or per image with `runtime.users` / `root_password_hash` / `autologin` in `image.yaml` (details: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#default-accounts-guest_defaults-all-image-types)). The loader only writes into the image's own COW layer.
+
 **Limitations:** UEFI **Secure Boot is not supported** and must be disabled. omloader is deliberately bound to Ventoy: put `omloader.iso` on a Ventoy stick (there is no `omloader install`).
 Docker/OCI images are **experimental and off by default** (they are application images, not systems). Details and the full list of limitations: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 

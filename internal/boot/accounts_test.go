@@ -152,7 +152,7 @@ func TestApplyAccountsPathSafety(t *testing.T) {
 func TestAdaptUIIdempotentAndReapply(t *testing.T) {
 	r := accRoot(t)
 	systemdRoot(r)
-	in := AdaptInput{Root: r, Image: "c", Busybox: "/bin/true", Runtime: config.Runtime{Network: "none", Autologin: true, AutologinUser: "alice",
+	in := AdaptInput{Root: r, Image: "c", Busybox: "/bin/true", Runtime: config.Runtime{Network: "none", Autologin: boolp(true), AutologinUser: "alice",
 		Users: []config.User{{Name: "alice", PasswordHash: "$6$a$b"}}}}
 	if ok, err := Adapt(in); !ok || err != nil {
 		t.Fatalf("first: %v %v", ok, err)
@@ -180,7 +180,7 @@ func TestAdaptUIIdempotentAndReapply(t *testing.T) {
 		t.Error("duplicate")
 	}
 	in.Runtime.Users = append(in.Runtime.Users, config.User{Name: "carol"})
-	in.Runtime.Autologin = false
+	in.Runtime.Autologin = boolp(false)
 	if ok, err := Adapt(in); !ok || err != nil {
 		t.Fatalf("changed config must re-apply: %v %v", ok, err)
 	}
@@ -253,4 +253,37 @@ func nl(data, name string) int {
 		}
 	}
 	return n
+}
+
+func boolp(b bool) *bool { return &b }
+
+func TestAdaptBusyboxAutologin(t *testing.T) {
+	r := accRoot(t)
+	mk := func(rel, data string) {
+		if err := guestWrite(r, rel, []byte(data), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("/bin/busybox", "x")
+	mk("/sbin/init", "x")
+	mk("/etc/inittab", "::sysinit:/sbin/openrc sysinit\ntty1::respawn:/sbin/getty 38400 tty1\nttyS0::respawn:/sbin/getty -L 0 ttyS0 vt100\n::respawn:/sbin/getty 38400 console\n# tty1 getty\n")
+	in := AdaptInput{Root: r, Image: "c", Busybox: "/bin/true", Runtime: config.Runtime{Network: "none", Autologin: boolp(true), AutologinUser: "oci",
+		Users: []config.User{{Name: "oci", Password: "Oci123", Sudo: true}}}}
+	if _, err := Adapt(in); err != nil {
+		t.Fatal(err)
+	}
+	it, _ := readGuest(r, "/etc/inittab")
+	if strings.Count(it, "getty -n -l /.omloader/autologin") != 3 || !strings.Contains(it, "# tty1 getty\n") {
+		t.Errorf("inittab: %q", it)
+	}
+	if al, _ := readGuest(r, "/.omloader/autologin"); !strings.Contains(al, "login -f oci") {
+		t.Errorf("autologin script: %q", al)
+	}
+	in.Runtime.Autologin = boolp(false)
+	if _, err := Adapt(in); err != nil {
+		t.Fatal(err)
+	}
+	if it, _ = readGuest(r, "/etc/inittab"); strings.Contains(it, "autologin") {
+		t.Errorf("autologin not reverted: %q", it)
+	}
 }

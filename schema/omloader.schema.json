@@ -355,6 +355,18 @@
         }
       }
     },
+    "guest_defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "accounts + console autologin for every lxd-container image (public default password; see docs)",
+      "properties": {
+        "autologin": {"type": "boolean"},
+        "autologin_user": {"type": "string", "pattern": "^[a-z_][a-z0-9_-]{0,31}$"},
+        "root_password": {"type": "string"},
+        "root_password_hash": {"type": "string"},
+        "users": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["name"], "properties": {"name": {"type": "string", "pattern": "^[a-z_][a-z0-9_-]{0,31}$"}, "password_hash": {"type": "string"}, "password": {"type": "string"}, "groups": {"type": "array", "items": {"type": "string"}}, "shell": {"type": "string", "pattern": "^/"}, "sudo": {"type": "boolean"}, "ssh_authorized_keys": {"type": "array", "items": {"type": "string"}}}}}
+      }
+    },
     "experimental": {
       "type": "object",
       "additionalProperties": false,

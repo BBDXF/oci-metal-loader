@@ -319,12 +319,16 @@ func ApplyAccounts(root string, rt config.Runtime, warn io.Writer) error {
 	if len(rt.Users) == 0 && rt.RootPassword == "" && rt.RootPasswordHash == "" {
 		return nil
 	}
+	pw := warn
+	if rt.FromDefaults {
+		pw = io.Discard // the built-in default password is public by design; no per-boot warning
+	}
 	db := LoadAccounts(root)
 	defShell := "/bin/sh"
 	if guestExists(root, "/bin/bash") {
 		defShell = "/bin/bash"
 	}
-	if h, err := ResolvePassword("runtime.root_password", rt.RootPasswordHash, rt.RootPassword, warn); err != nil {
+	if h, err := ResolvePassword("runtime.root_password", rt.RootPasswordHash, rt.RootPassword, pw); err != nil {
 		return err
 	} else if h != "" {
 		if findLine(db.Passwd, "root") < 0 {
@@ -339,7 +343,7 @@ func ApplyAccounts(root string, rt config.Runtime, warn io.Writer) error {
 	}
 	var posts []post
 	for _, u := range rt.Users {
-		h, err := ResolvePassword("runtime.users["+u.Name+"].password", u.PasswordHash, u.Password, warn)
+		h, err := ResolvePassword("runtime.users["+u.Name+"].password", u.PasswordHash, u.Password, pw)
 		if err != nil {
 			return err
 		}

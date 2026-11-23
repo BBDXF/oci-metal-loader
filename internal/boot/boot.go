@@ -425,6 +425,10 @@ func Execute(o Options, res *config.Resolved, p *Plan, r Runner) (string, error)
 	if _, err := r.Run("kexec", args...); err != nil {
 		return fail(err)
 	}
+	if realRoot && !o.DryRun {
+		// kernel + initrd are loaded in memory now: provision default accounts into the live COW layer, then unmount cleanly
+		ProvisionVMGuest(r, mnt, config.EffectiveRuntime(res.Config.GuestDefaults, img.Runtime), out, warn)
+	}
 	cleanup()
 	if !o.NoKexec && !o.DryRun {
 		r.Run("sync")

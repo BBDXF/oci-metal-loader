@@ -233,7 +233,7 @@ func uiConfigHash(rt config.Runtime) string {
 	v := struct {
 		V  int
 		RT config.Runtime
-	}{2, config.Runtime{Autologin: rt.Autologin, AutologinUser: rt.AutologinUser, Users: rt.Users, RootPasswordHash: rt.RootPasswordHash,
+	}{3, config.Runtime{Autologin: rt.Autologin, AutologinUser: rt.AutologinUser, Users: rt.Users, RootPasswordHash: rt.RootPasswordHash,
 		RootPassword: rt.RootPassword, DebugShell: rt.DebugShell, ShutdownSync: rt.ShutdownSync}}
 	b, _ := json.Marshal(v)
 	h := sha256.Sum256(b)

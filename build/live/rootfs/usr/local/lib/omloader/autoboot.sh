@@ -93,6 +93,8 @@ if [ -n "$IMG" ]; then
   echo "OMLOADER_LOADER: auto boot image=$IMG snapshot=${SNAP:-default}"
   set -- boot --image "$IMG" --images-root "${IMAGES_ROOT:-/mnt/images/images}" --snap-root /mnt/snap/snapshots
   [ -n "$SNAP" ] && set -- "$@" --snapshot "$SNAP"
+  # the boot config file found by decide_ui (VTOYDATA/OMLOADER omloader/boot.yaml or omloader.yaml) is the global config: guest_defaults etc.
+  [ -s /run/omloader/uicfg ] && set -- "$@" -c "$(cat /run/omloader/uicfg)"
   # no udev activity while loop/dm/kpartx devices are assembled and torn down (kexec path needs them closed)
   udevadm control --stop-exec-queue 2>/dev/null
   omloader "$@"

@@ -3,6 +3,7 @@
 # Env: NAME (image; => omloader.image=NAME) SNAP (=> omloader.snapshot) EXTRA (more cmdline)
 #      EXPERIMENTAL_OCI=1 (=> omloader.experimental=oci: opt in to the experimental OCI support)
 #      SELFTEST=1 (mount check + poweroff) LOG=serial log file TIMEOUT=sec (default 240)
+#      SERIALSOCK=unix-socket path (serial console as a socket for input; the log file still gets the output)
 #      MONITOR=unix-socket path (qemu monitor, e.g. for system_powerdown)
 #      DISK=path DISK2=path(optional extra virtio disk) BUS=nvme|virtio|usb ISO=path INTERACTIVE=1 (serial on stdio)
 # How cmdline args reach the kernel: the ISO's grub.cfg `source`s /boot/grub/extra.cfg if present.
@@ -28,8 +29,9 @@ case $BUS in
   usb)    DEV="-device qemu-xhci -device usb-storage,drive=usb";;
 esac
 [ -n "${DISK2:-}" ] && DEV="$DEV -drive if=none,id=d2,file=$DISK2,format=raw -device virtio-blk-pci,drive=d2"
-MON=none; [ -n "${MONITOR:-}" ] && MON="unix:$MONITOR,server,nowait"
-if [ -n "${INTERACTIVE:-}" ]; then SER="-nographic -serial mon:stdio"; else SER="-display none -monitor $MON -serial file:$LOG"; : > $LOG; fi
+MON=none; SERCH="-serial file:$LOG"; [ -n "${SERIALSOCK:-}" ] && { rm -f $SERIALSOCK; SERCH="-chardev socket,id=s0,path=$SERIALSOCK,server=on,wait=off,logfile=$LOG -serial chardev:s0"; }
+[ -n "${MONITOR:-}" ] && MON="unix:$MONITOR,server,nowait"
+if [ -n "${INTERACTIVE:-}" ]; then SER="-nographic -serial mon:stdio"; else SER="-display none -monitor $MON $SERCH"; : > $LOG; fi
 echo "run-kvm: args='$ARGS' bus=$BUS log=$LOG"
 timeout ${INTERACTIVE:+--foreground} -s KILL $TIMEOUT qemu-system-x86_64 -enable-kvm -machine q35 -cpu host -m $MEM -smp 2 -no-reboot \
   -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \

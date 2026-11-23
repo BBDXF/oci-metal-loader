@@ -21,6 +21,8 @@ type Config struct {
 	Cache        Cache             `yaml:"cache" json:"cache"`
 	Policy       Policy            `yaml:"policy" json:"policy"`
 	Experimental Experimental      `yaml:"experimental" json:"experimental"`
+	// GuestDefaults: console accounts/autologin applied to every image (all types) that does not set its own (see EffectiveRuntime).
+	GuestDefaults GuestDefaults `yaml:"guest_defaults" json:"guest_defaults"`
 }
 
 type Storage struct {
@@ -213,7 +215,7 @@ type Runtime struct {
 	Env        map[string]string `yaml:"env" json:"env"`
 	Network    string            `yaml:"network" json:"network"`
 	Hostname   string            `yaml:"hostname" json:"hostname"`
-	Autologin  bool              `yaml:"autologin" json:"autologin"` // console autologin on tty1 and ttyS0 (systemd guests)
+	Autologin  *bool             `yaml:"autologin" json:"autologin"` // console autologin on tty1 and ttyS0; nil = not set (guest_defaults decide)
 	// AutologinUser is the account for autologin (default root).
 	AutologinUser    string `yaml:"autologin_user" json:"autologin_user"`
 	Users            []User `yaml:"users" json:"users"`
@@ -223,7 +225,12 @@ type Runtime struct {
 	DebugShell string `yaml:"debug_shell" json:"debug_shell"`
 	// ShutdownSync (default true) installs the hooks that remount the loader partitions read-only at poweroff.
 	ShutdownSync *bool `yaml:"shutdown_sync" json:"shutdown_sync"`
+	// FromDefaults is set by EffectiveRuntime when accounts/autologin come from guest_defaults (not read from YAML).
+	FromDefaults bool `yaml:"-" json:"-"`
 }
+
+// AutologinOn reports the effective runtime.autologin.
+func (r Runtime) AutologinOn() bool { return r.Autologin != nil && *r.Autologin }
 
 // User is a guest account created offline by the firstboot adapter.
 type User struct {
@@ -269,3 +276,43 @@ func EnvOCI() bool {
 
 // OCIEnabled is true when the config key or the environment opts in to OCI images.
 func (c *Config) OCIEnabled() bool { return c.Experimental.OCIImages || EnvOCI() }
+
+// GuestDefaults are the accounts and console autologin that every image (lxd-container, lxd-vm, experimental oci) gets at boot
+// unless the image sets its own (merge rules: EffectiveRuntime). The password is public by design.
+type GuestDefaults struct {
+	Autologin        *bool  `yaml:"autologin" json:"autologin"`
+	AutologinUser    string `yaml:"autologin_user" json:"autologin_user"`
+	RootPassword     string `yaml:"root_password" json:"root_password"`
+	RootPasswordHash string `yaml:"root_password_hash" json:"root_password_hash"`
+	Users            []User `yaml:"users" json:"users"`
+}
+
+// EffectiveRuntime merges guest_defaults into an image's runtime (all image types; the image always wins):
+//   - users: a non-nil image list (even `users: []`) replaces the default list; nil takes the defaults.
+//   - root password: root_password / root_password_hash of the image (any non-empty) replace the default pair.
+//     To lock root instead, set root_password_hash: '!'.
+//   - autologin + autologin_user: if the image sets either, both come from the image (autologin_user empty = root);
+//     otherwise both come from the defaults. A default autologin_user that does not exist in the final user list falls back to root.
+func EffectiveRuntime(g GuestDefaults, rt Runtime) Runtime {
+	if rt.Users == nil {
+		rt.Users = g.Users
+		rt.FromDefaults = rt.FromDefaults || len(g.Users) > 0
+	}
+	if rt.RootPassword == "" && rt.RootPasswordHash == "" {
+		rt.RootPassword, rt.RootPasswordHash = g.RootPassword, g.RootPasswordHash
+		rt.FromDefaults = rt.FromDefaults || g.RootPassword != "" || g.RootPasswordHash != ""
+	}
+	if rt.Autologin == nil && rt.AutologinUser == "" {
+		rt.Autologin, rt.AutologinUser = g.Autologin, g.AutologinUser
+		if rt.AutologinUser != "" && rt.AutologinUser != "root" {
+			found := false
+			for _, u := range rt.Users {
+				found = found || u.Name == rt.AutologinUser
+			}
+			if !found {
+				rt.AutologinUser = ""
+			}
+		}
+	}
+	return rt
+}

@@ -108,6 +108,7 @@ func (o Options) def() Options {
 func ExecuteOverlay(o Options, res *config.Resolved, p *Plan, r Runner) (*SwitchSpec, error) {
 	o = o.def()
 	img := res.Image
+	rtc := config.EffectiveRuntime(res.Config.GuestDefaults, img.Runtime)
 	warn, out := o.Warn, o.Out
 	if warn == nil {
 		warn = io.Discard
@@ -185,7 +186,7 @@ func ExecuteOverlay(o Options, res *config.Resolved, p *Plan, r Runner) (*Switch
 			spec.Init = append(append([]string{}, img.Runtime.Entrypoint...), img.Runtime.Cmd...)
 		}
 	} else {
-		applied, err := Adapt(AdaptInput{Root: o.NewRoot, Image: o.Image, Runtime: img.Runtime, Busybox: o.Busybox, ResolvConf: o.ResolvConf, Warn: warn})
+		applied, err := Adapt(AdaptInput{Root: o.NewRoot, Image: o.Image, Runtime: rtc, Busybox: o.Busybox, ResolvConf: o.ResolvConf, Warn: warn})
 		if err != nil {
 			return fail(fmt.Errorf("firstboot adapter: %w", err))
 		}
@@ -198,7 +199,7 @@ func ExecuteOverlay(o Options, res *config.Resolved, p *Plan, r Runner) (*Switch
 		if err := o.bindModules(r, warn); err != nil {
 			return fail(err)
 		}
-		if spec.Init, err = SelectInit(o.NewRoot, img.Runtime, warn); err != nil {
+		if spec.Init, err = SelectInit(o.NewRoot, rtc, warn); err != nil {
 			return fail(err)
 		}
 	}
