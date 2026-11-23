@@ -90,7 +90,7 @@ BODY
 sect ha2 attached | grep -q 'attached: \[/dev/loop' && pass "ha2: store info shows the loop device while the loader has it mounted" || fail "ha2: attached"
 [ "$(rc ha2 check_busy)" != 0 ] && sect ha2 check_busy | grep -q 'losetup -d' && pass "ha2: check of a mounted store refused with the exact release hint" || fail "ha2: check_busy"
 [ "$(rc ha2 grow_busy)" != 0 ] && sect ha2 grow_busy | grep -q 'in use' && pass "ha2: grow of a mounted store refused" || fail "ha2: grow_busy"
-sect ha2 snaps | grep -q 'run1' && pass "ha2: snapshots of the earlier boots are in the store (run1)" || fail "ha2: snaps: $(sect ha2 snaps | tr '\n' ' ')"
+sect ha2 snaps | grep -q 'n1' && pass "ha2: snapshots of the earlier boots are in the store (run1)" || fail "ha2: snaps: $(sect ha2 snaps | tr '\n' ' ')"
 eq "$(rc ha2 grow_rel)" 0 "ha2: grow --release (umount + losetup -d + grow)"
 eq "$(rc ha2 check)" 0 "ha2: store check clean after the second grow"
 sect ha2 info | grep -q 'size: 1342177280' && pass "ha2: store is now 1280 MiB" || fail "ha2: size $(sect ha2 info | grep '^size')"

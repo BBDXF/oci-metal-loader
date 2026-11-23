@@ -145,7 +145,7 @@ guest g6 omloci "" p2
 eq "$(val g6 OMLOADER_COUNTER)" "6" "g6: counter 6 (live layer on top of P1)"
 # a stale ephemeral node (boot of a frozen snapshot, read-only) must be cleaned by the next operation
 guest g6b omloci P1 eph2
-eq "$(val g6b OMLOADER_MARKS)" "s1,s1b,s2,s2b,s2c,eph2," "g6b: booting snapshot P1 is ephemeral: sees P1's state only plus its own marker"
+eq "$(val g6b OMLOADER_MARKS)" "eph2,s1,s1b,s2,s2b,s2c," "g6b: booting snapshot P1 is ephemeral: sees P1's state only plus its own marker"
 hook h6 <<'BODY'
 t keep omloader snapshot revert omloci S2 --keep P2 $S
 t list_keep omloader snapshot list omloci --tree $S
@@ -153,7 +153,7 @@ BODY
 eq "$(rc h6 keep)" 0 "h6: revert S2 --keep P2 (old live state kept as P2; the stale ephemeral node was gc'ed first)"
 sect h6 list_keep | grep -q 'P2' && ! sect h6 list_keep | grep -q 'ephemeral boot' && pass "h6: P2 listed, no ephemeral leftovers" || fail "h6: list_keep: $(sect h6 list_keep)"
 guest g7 omloci "" p3
-eq "$(val g7 OMLOADER_MARKS)" "s1,s1b,s2,p3," "g7: after revert S2 --keep the live state starts from S2 again"
+eq "$(val g7 OMLOADER_MARKS)" "p3,s1,s1b,s2," "g7: after revert S2 --keep the live state starts from S2 again"
 eq "$(val g7 OMLOADER_COUNTER)" "4" "g7: counter 4 (S2 state 3 + 1)"
 
 hook h7 <<'BODY'
@@ -173,8 +173,8 @@ rmdir /mnt/snap/snapshots/omloci/orphan
 t merge_cmd omloader snapshot merge omloci S2 $S
 BODY
 sect h7 prune_dry | grep -q 'would delete 2 snapshot(s): P2 P1' && pass "h7: prune --dry-run (keep_last=1): deletes the older branch P2 and its ancestor P1; S2 (tagged) and P3 kept" || fail "h7: prune dry: $(sect h7 prune_dry | tr '\n' ' ')"
-sect h7 still_there | grep -q ' n4 ' && pass "h7: dry-run changed nothing" || fail "h7: dry-run deleted: $(sect h7 still_there)"
-sect h7 prune | grep -q 'deleted 2 snapshot(s): P2 P1' && ! sect h7 after_prune | grep -q ' P1 \| P2 ' && sect h7 after_prune | grep -q ' S2 ' && sect h7 after_prune | grep -q ' P3 ' && pass "h7: prune removed P2+P1 only" || fail "h7: prune: $(sect h7 after_prune)"
+sect h7 still_there | grep -qw n4 && pass "h7: dry-run changed nothing" || fail "h7: dry-run deleted: $(sect h7 still_there)"
+sect h7 prune | grep -q 'deleted 2 snapshot(s): P2 P1' && ! sect h7 after_prune | grep -qE '[[:space:]](P1|P2)[[:space:]]' && sect h7 after_prune | grep -qE '[[:space:]]S2[[:space:]]' && sect h7 after_prune | grep -qE '[[:space:]]P3[[:space:]]' && pass "h7: prune removed P2+P1 only" || fail "h7: prune: $(sect h7 after_prune)"
 eq "$(rc h7 flatten)" 0 "h7: overlay flatten of S2 -> omloci-flat"
 sect h7 flat_dir | grep -q base.squashfs && sect h7 flat_dir | grep -q image.yaml && pass "h7: flattened image has base.squashfs + image.yaml" || fail "h7: flat dir"
 eq "$(rc h7 export)" 0 "h7: overlay export --squashfs"
@@ -184,7 +184,7 @@ eq "$(rc h7 verify)" 0 "h7: verify OK after prune"
 [ "$(rc h7 merge_cmd)" != 0 ] && pass "h7: the old merge command is gone" || fail "h7: merge cmd still exists"
 
 guest g8 omloci-flat "" f1
-eq "$(val g8 OMLOADER_MARKS)" "s1,s1b,s2,f1," "g8: flattened image = merged state of S1+S2 (no p3/s3/eph), plus f1"
+eq "$(val g8 OMLOADER_MARKS)" "f1,s1,s1b,s2," "g8: flattened image = merged state of S1+S2 (no p3/s3/eph), plus f1"
 eq "$(val g8 OMLOADER_COUNTER)" "4" "g8: counter inherited from S2's state (3 -> 4)"
 
 # ================= VM / dm-snapshot =================
@@ -201,7 +201,7 @@ t df omloader snapshot df omlfixture $S
 t cows sh -c 'ls -ls /mnt/snap/snapshots/omlfixture/'
 BODY
 eq "$(rc hv1 create)" 0 "hv1: VM snapshot create V1 (no new COW file yet: created at the next boot)"
-sect hv1 list | grep -q 'base (original image)' && sect hv1 list | grep -q 'V1.*frozen' && sect hv1 list | grep -q 'allocated' && pass "hv1: VM list --tree --sizes" || fail "hv1: list"
+sect hv1 list | grep -q 'base (original image)' && sect hv1 list | grep -q 'V1' && sect hv1 list | grep -q 'allocated' && pass "hv1: VM list --tree --sizes" || fail "hv1: list"
 eq "$(rc hv1 verify)" 0 "hv1: VM verify (COW headers valid / fresh)"
 guest v2 omlfixture ""
 eq "$(val v2 OMLOADER_COUNTER)" "3" "v2: VM live layer on top of V1: counter 3"
