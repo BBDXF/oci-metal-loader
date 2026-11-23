@@ -24,7 +24,7 @@
 ## 2. 下载与校验
 
 从 [Releases 页面](https://github.com/BBDXF/oci-metal-loader/releases)下载：`omloader-<版本>.iso`（加载器）、`omloader-<版本>-linux-amd64.tar.gz`（静态二进制，可在其他 Linux 主机上做脚本/导入）、
-`omloader-<版本>-examples.tar.gz`（示例配置与 JSON schema）和 `SHA256SUMS`。开发版 ISO 可用手动工作流 *ISO (manual)* 按需构建（Actions → Run workflow → *Artifacts*），不会在每次推送时构建。
+`omloader-<版本>-config.zip`（配置包：已注释的 `boot.yaml`、`sources.yaml`、`images/` 占位、`ventoy.json.example`、示例、schema、`README-FIRST.txt`；解压到 Ventoy 数据分区根目录，见第 3 节）和 `SHA256SUMS`。开发版 ISO 可用手动工作流 *ISO (manual)* 按需构建（Actions → Run workflow → *Artifacts*），不会在每次推送时构建。
 
     sha256sum -c --ignore-missing SHA256SUMS         # Linux/macOS
     Get-FileHash .\omloader-0.1.0.iso -Algorithm SHA256   # Windows PowerShell，与 SHA256SUMS 比对
@@ -35,7 +35,7 @@
 
 1. 用 Ventoy2Disk 在盘上安装 Ventoy，它会建立一个大的数据分区（默认 exFAT）和一个很小的 `VTOYEFI` 分区。
 2. 把 `omloader-<版本>.iso` 拷到数据分区，例如 `/omloader.iso`。路径随意，加载器会扫描查找（`/`、`/omloader/`、`/ISO/`，以及两层目录内卷标为 `OMLOADER_LIVE` 的 ISO）。详见 [ventoy.md](ventoy.md)。
-3. 可选：用 `ventoy/ventoy.json` 给菜单项起名（示例见 [ventoy.md](ventoy.md)）。
+3. 把 `omloader-<版本>-config.zip` 解压到同一分区的**根目录**（直接是文件，没有版本号目录）。会生成 `omloader/boot.yaml`（全部已注释）、`omloader/sources.yaml`、`images/README.txt`、`ventoy/ventoy.json.example`、`schema/`、`examples/` 和 `README-FIRST.txt`。包里不含 `ventoy.json`：请手工把 `.example` 合并进你自己的文件（菜单别名/超时，见 [ventoy.md](ventoy.md)）。
 4. 从盘启动电脑（UEFI），选择该 ISO。Ventoy 会提供 *normal* 与 *GRUB2* 两种模式，都可用（不支持 memdisk 模式）。
 
 **镜像、快照和配置放在哪？** 三种方式（加载器会自动识别，见[第 10 节](#10-文件与目录布局)）：
@@ -283,7 +283,7 @@ oci-metal-loader/
 ```
 Ventoy 数据分区（exFAT/NTFS/…；建议卷标 VTOYDATA） ── 在加载器里挂载到 /mnt/images
 ├── omloader-0.1.0.iso            加载器（名称/路径随意，靠扫描找到）
-├── ventoy/ventoy.json            可选的 Ventoy 菜单配置
+├── ventoy/ventoy.json            可选的 Ventoy 菜单配置（可从配置包里的 ventoy.json.example 合并）
 ├── images/                       镜像根目录（images_root）
 │   ├── ubuntu-noble/             每个镜像一个目录
 │   │   ├── image.yaml

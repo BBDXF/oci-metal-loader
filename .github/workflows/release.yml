@@ -37,7 +37,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Host tools
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends squashfs-tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends squashfs-tools zip
       - name: Test
         run: |
           test -z "$(gofmt -l .)"
@@ -53,7 +53,7 @@ jobs:
           mkdir -p dist
           cp out/omloader-${VERSION}.iso dist/
           tar -C bin -czf dist/omloader-${VERSION}-linux-amd64.tar.gz omloader
-          tar -czf dist/omloader-${VERSION}-examples.tar.gz configs examples schema
+          OML_VERSION="$VERSION" build/mk-config-pkg.sh && cp out/omloader-${VERSION}-config.zip dist/
           (cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS)
           # pre-release while the major version is 0
           case "$VERSION" in 0.*) echo "PRERELEASE=true" >> "$GITHUB_ENV";; *) echo "PRERELEASE=false" >> "$GITHUB_ENV";; esac
@@ -68,5 +68,5 @@ jobs:
           files: |
             dist/omloader-${{ env.VERSION }}.iso
             dist/omloader-${{ env.VERSION }}-linux-amd64.tar.gz
-            dist/omloader-${{ env.VERSION }}-examples.tar.gz
+            dist/omloader-${{ env.VERSION }}-config.zip
             dist/SHA256SUMS

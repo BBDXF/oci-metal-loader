@@ -10,7 +10,7 @@
 
 ## 下载
 
-从 [Releases 页面](https://github.com/BBDXF/oci-metal-loader/releases)下载 `omloader-<版本>.iso`（以及 `SHA256SUMS`、静态二进制、示例配置），用 `sha256sum -c --ignore-missing SHA256SUMS` 校验，然后把 ISO 拷到 Ventoy 盘（UEFI，关闭 Secure Boot）。也可自行构建：`make iso`（[build/README.md](build/README.md)）。
+从 [Releases 页面](https://github.com/BBDXF/oci-metal-loader/releases)下载 `omloader-<版本>.iso`（以及 `SHA256SUMS`、静态二进制和 `omloader-<版本>-config.zip`），用 `sha256sum -c --ignore-missing SHA256SUMS` 校验，把 ISO 拷到 Ventoy 盘（UEFI，关闭 Secure Boot），并把配置包解压到其数据分区根目录（已注释的 `boot.yaml`、`sources.yaml`、示例、`README-FIRST.txt`）。也可自行构建：`make iso`（[build/README.md](build/README.md)）。
 
 `omloader.iso` 是一个 UEFI 加载器，可以放在 [Ventoy](https://github.com/ventoy/Ventoy) 盘里（也能单独启动）。把 **LXD VM（整盘）镜像和容器镜像**放进盘里，选一个，
 它就直接在真实硬件上运行：**不用安装，不用虚拟化**，支持类似虚拟机的快照，数据重启后不丢。

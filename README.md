@@ -10,7 +10,7 @@ English | [简体中文](README.zh-CN.md)
 
 ## Download
 
-Get `omloader-<version>.iso` (+ `SHA256SUMS`, static binary, example configs) from the [Releases page](https://github.com/BBDXF/oci-metal-loader/releases), verify with `sha256sum -c --ignore-missing SHA256SUMS`, and copy the ISO to a Ventoy stick (UEFI, Secure Boot off). Or build it: `make iso` ([build/README.md](build/README.md)).
+Get `omloader-<version>.iso` (+ `SHA256SUMS`, the static binary and `omloader-<version>-config.zip`) from the [Releases page](https://github.com/BBDXF/oci-metal-loader/releases), verify with `sha256sum -c --ignore-missing SHA256SUMS`, copy the ISO to a Ventoy stick (UEFI, Secure Boot off) and unzip the config zip into the root of its data partition (commented `boot.yaml`, `sources.yaml`, examples, `README-FIRST.txt`). Or build it: `make iso` ([build/README.md](build/README.md)).
 
 `omloader.iso` is a UEFI loader that sits on a [Ventoy](https://github.com/ventoy/Ventoy) drive (or boots on its own). Put **LXD VM (whole-disk) and container images** on the drive,
 pick one, and it runs directly on the real hardware: **no installation, no hypervisor**, with VM-style snapshots and data that survives reboots.

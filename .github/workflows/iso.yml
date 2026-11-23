@@ -28,18 +28,21 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Host tools
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends squashfs-tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends squashfs-tools zip
       - name: Build (docker; see build/README.md)
         env:
           CONTAINER_ENGINE: docker
           DEBIAN_MIRROR: http://deb.debian.org/debian
         run: make iso
+      - name: Config package
+        run: build/mk-config-pkg.sh
       - run: ls -l out/ && cat out/SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: omloader-iso
           path: |
             out/omloader-*.iso
+            out/omloader-*-config.zip
             out/SHA256SUMS
           if-no-files-found: error
           retention-days: 14

@@ -1,0 +1,32 @@
+# OCI Metal Loader: global config, read at boot from <this partition>/omloader/boot.yaml
+# (also read: <partition>/omloader.yaml, and the same names on an OMLOADER partition). Every key is optional;
+# uncomment and edit what you need. Full key reference: docs/INSTALL.md (section 9), schema: schema/omloader.schema.json
+# Check after editing:  omloader config validate -c boot.yaml
+
+# --- auto-boot an image after a countdown (Ventoy cannot pass kernel parameters) ---
+# boot:
+#   default_image: ubuntu-noble   # folder name under images/; empty = show the TUI
+#   default_snapshot: current     # current | base | a snapshot label (label/base = throwaway boot)
+#   timeout: 5                    # seconds; press Enter to cancel
+#   ui: tui                       # tui | shell (what the console shows when nothing boots)
+
+# --- the default login is PUBLIC (oci / Oci123, root with the same password): change it! ---
+# guest_defaults:
+#   autologin: false
+#   root_password_hash: "!"       # lock root (or a $6$... hash from `openssl passwd -6`)
+#   users:
+#     - {name: alice, password_hash: "$6$...", sudo: true, ssh_authorized_keys: ["ssh-ed25519 AAAA... alice@pc"]}
+
+# --- network / mirrors (China: region_preset cn tries the cn mirrors as fallbacks) ---
+# mirror_policy:
+#   region_preset: cn
+# network:
+#   proxy: "http://proxy.lan:3128"
+#   no_proxy: ".lan"
+
+# --- store file: keep snapshots/data in an ext4 image file on this partition (create it with
+#     `omloader store create --path /mnt/images/omloader/store.img --size 20G`) ---
+# storage:
+#   snapshots:
+#     store_file:
+#       size: 20G

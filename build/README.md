@@ -8,6 +8,7 @@ Needs `podman` or `docker` (`CONTAINER_ENGINE=docker make iso`), `mksquashfs` (s
 No root/`--privileged` is needed: rootless podman works; the builder container only runs `grub-mkstandalone`, `mtools` and `xorriso` on plain files (docker: output ownership is fixed with a final `chown`).
 `SOURCE_DATE_EPOCH` (default: last commit time) is passed to mksquashfs/xorriso to keep timestamps stable (the Debian package set itself is whatever the mirror serves, so the ISO is not bit-for-bit reproducible).
 The version comes from `build/version.sh`: `$OML_VERSION`, a CI tag, `git describe --tags --dirty`, else `VERSION` + `-dev`; it is embedded with `-ldflags -X main.version=...` (`omloader version`, TUI header, ISO file name).
+`make config-pkg` (`build/mk-config-pkg.sh`) builds `out/omloader-<version>-config.zip` from `build/config-pkg/` + `configs/sources.yaml` + `schema/` + `examples/` (deterministic via `SOURCE_DATE_EPOCH`; `zip` or python3 fallback); the release ships it instead of an examples tarball.
 `make e2e-live-local` (`test/smoke-local.sh`) boots `out/omloader.iso` under QEMU+OVMF (KVM if available) and waits for `OMLOADER_SHELL_READY`. GitHub Actions: `ci.yml` (fast checks on push), `iso.yml` (manual ISO build), `release.yml` (tag -> release); see docs/DEVELOPMENT.md.
 
 ## Optional remote KVM harness

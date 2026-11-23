@@ -25,7 +25,7 @@ Contents: [1 Requirements](#1-requirements) · [2 Download and verify](#2-downlo
 ## 2. Download and verify
 
 Download from the [Releases page](https://github.com/BBDXF/oci-metal-loader/releases): `omloader-<version>.iso` (the loader), `omloader-<version>-linux-amd64.tar.gz` (the static binary, for scripting on other Linux hosts),
-`omloader-<version>-examples.tar.gz` (example configs and JSON schemas) and `SHA256SUMS`. A development ISO can be built on demand with the manual *ISO (manual)* workflow (Actions → Run workflow → *Artifacts*); it is not built on every push.
+`omloader-<version>-config.zip` (the config package: commented `boot.yaml`, `sources.yaml`, `images/` placeholder, `ventoy.json.example`, examples, schemas, `README-FIRST.txt`; unzip it into the root of the Ventoy data partition, see section 3) and `SHA256SUMS`. A development ISO can be built on demand with the manual *ISO (manual)* workflow (Actions → Run workflow → *Artifacts*); it is not built on every push.
 
     sha256sum -c --ignore-missing SHA256SUMS         # Linux/macOS (coreutils)
     Get-FileHash .\omloader-0.1.0.iso -Algorithm SHA256   # Windows PowerShell: compare with SHA256SUMS
@@ -37,7 +37,7 @@ Build it yourself instead: `make iso` (podman or docker; [build/README.md](../bu
 1. Install Ventoy on the stick (Ventoy2Disk). It creates a large data partition (exFAT by default) and a small `VTOYEFI` partition.
 2. Copy `omloader-<version>.iso` to the data partition, e.g. as `/omloader.iso`. Any path works; the loader finds the ISO file by scanning
    (`/`, `/omloader/`, `/ISO/`, then up to two directory levels for an ISO with volume label `OMLOADER_LIVE`). Details: [ventoy.md](ventoy.md).
-3. Optional: name it in the Ventoy menu with `ventoy/ventoy.json` (example in [ventoy.md](ventoy.md)).
+3. Unzip `omloader-<version>-config.zip` into the **root** of the same partition (files, no version folder). It creates `omloader/boot.yaml` (everything commented out), `omloader/sources.yaml`, `images/README.txt`, `ventoy/ventoy.json.example`, `schema/`, `examples/` and `README-FIRST.txt`. It never contains a `ventoy.json`: merge the `.example` into your own by hand (menu alias/timeout, see [ventoy.md](ventoy.md)).
 4. Boot the PC from the stick (UEFI), pick the ISO. Ventoy offers *normal* and *GRUB2* mode; both work (memdisk mode does not).
 
 **Where do images, snapshots and config live?** Three options (the loader picks them automatically, see [section 10](#10-file-and-folder-layout)):
@@ -287,7 +287,7 @@ oci-metal-loader/
 ```
 Ventoy data partition (exFAT/NTFS/…; label VTOYDATA recommended)  ── mounted at /mnt/images in the loader
 ├── omloader-0.1.0.iso            the loader (any name/path; found by scanning)
-├── ventoy/ventoy.json            optional Ventoy menu config
+├── ventoy/ventoy.json            optional Ventoy menu config (merge from ventoy.json.example in the config zip)
 ├── images/                       IMAGES ROOT (images_root)
 │   ├── ubuntu-noble/             one folder per image
 │   │   ├── image.yaml

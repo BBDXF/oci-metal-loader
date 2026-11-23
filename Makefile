@@ -11,7 +11,7 @@ RSH  = $(if $(OML_REMOTE_PASS),sshpass -e )ssh -o StrictHostKeyChecking=no
 CONTAINER_ENGINE ?= $(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
 export CONTAINER_ENGINE
 
-.PHONY: bin test vet fmt version iso iso-local e2e-live-local sync iso-remote fixture disk e2e e2e-oci e2e-snap e2e-live e2e-ui e2e-pull e2e-ventoy e2e-store e2e-tui e2e-real licenses clean clean-remote check-remote
+.PHONY: bin config-pkg test vet fmt version iso iso-local e2e-live-local sync iso-remote fixture disk e2e e2e-oci e2e-snap e2e-live e2e-ui e2e-pull e2e-ventoy e2e-store e2e-tui e2e-real licenses clean clean-remote check-remote
 
 version:
 	@echo $(VERSION)
@@ -32,6 +32,10 @@ test: fmt vet
 iso: iso-local
 iso-local: bin
 	build/build-iso.sh
+
+# small user-facing zip (boot.yaml, sources.yaml, examples, schema, ventoy.json.example) to unzip into the Ventoy data partition
+config-pkg:
+	build/mk-config-pkg.sh
 
 # boots out/omloader.iso under QEMU/KVM (needs qemu-system-x86, ovmf, /dev/kvm) and waits for the shell-ready marker
 e2e-live-local:

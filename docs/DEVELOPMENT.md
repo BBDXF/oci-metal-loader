@@ -73,6 +73,7 @@ If someone wants to pick it up later: the only realistic route to snapshots for 
     test/                QEMU/KVM end-to-end suites (e2e-*.sh), fixtures, smoke-local.sh (local/CI boot check), validate-schemas.py
     docs/                this file, INSTALL(.zh-CN).md, ventoy.md, store-file.md, sources.md, tui.md
     .github/workflows/   ci.yml (fast checks), iso.yml (manual ISO build), release.yml (tag -> GitHub Release)
+    build/config-pkg/    skeleton of the config zip (commented boot.yaml, images/ placeholder, ventoy.json.example, README-FIRST.txt); sources.yaml, schema/, examples/ are copied in at build time
     VERSION              fallback version when git has no tag (the real version comes from the git tag, see build/version.sh)
     bin/ out/ work/ cache/   build outputs and scratch space (git-ignored)
 
@@ -81,13 +82,14 @@ If someone wants to pick it up later: the only realistic route to snapshots for 
     make test            # gofmt check + go vet + go test ./...
     make bin             # static linux/amd64 binary -> bin/omloader (version embedded)
     make iso             # out/omloader-<version>.iso + out/SHA256SUMS (podman or docker; see build/README.md)
+    make config-pkg      # out/omloader-<version>-config.zip: user-facing package to unzip into the Ventoy data partition root (build/mk-config-pkg.sh; sources in build/config-pkg/)
     make e2e-live-local  # boot the ISO under QEMU+OVMF and wait for OMLOADER_SHELL_READY (test/smoke-local.sh)
 
 CI (`.github/workflows/ci.yml`, on push and pull requests) is deliberately minimal (< 3 min): gofmt, `go vet`, `go test ./...` and a static `CGO_ENABLED=0` build, with the Go module cache.
 The ISO is **not** built on pushes. Build it on demand with the manual workflow `.github/workflows/iso.yml` (Actions → *ISO (manual)* → *Run workflow*; optional QEMU smoke test; the ISO + `SHA256SUMS` are uploaded as artifacts),
 or locally with `make iso`. Script syntax and schema checks are run locally: `bash -n test/*.sh build/*.sh`, `python3 test/validate-schemas.py` (needs `jsonschema`, `pyyaml`).
 Release (`.github/workflows/release.yml`): pushing a tag `0.1.0` or `v0.1.0` builds the binary and the ISO and publishes a GitHub Release (pre-release while the major version is 0)
-with `omloader-<version>.iso`, `omloader-<version>-linux-amd64.tar.gz`, `omloader-<version>-examples.tar.gz` and `SHA256SUMS`. The workflow can be re-run from the *Actions* tab
+with `omloader-<version>.iso`, `omloader-<version>-linux-amd64.tar.gz`, `omloader-<version>-config.zip` and `SHA256SUMS` (which covers all three). The workflow can be re-run from the *Actions* tab
 (*Re-run jobs*, or *Run workflow* with a tag name for an existing tag). The ISO build and the smoke test have **not run on GitHub runners yet** — treat the first manual/tag run as the test.
 
 ## Contributing
