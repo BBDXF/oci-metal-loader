@@ -1,44 +1,66 @@
 #!/bin/bash
-# Run ON THE REMOTE. A persistent QEMU/OVMF VM for trying omloader by hand.
-#   test/manual-run.sh start [image] [snapshot]   boot the loader ISO (no args: loader menu/TUI; image => boots it directly)
-#   test/manual-run.sh console                    attach to the serial console (Ctrl-] detaches, the VM keeps running)
-#   test/manual-run.sh monitor                    QEMU monitor (e.g. system_powerdown)
-#   test/manual-run.sh status | stop              stop = ACPI powerdown, then kill after 30 s
-#   test/manual-run.sh reset                      drop the store and recreate it from out/real-usb.raw (the e2e-real store)
-# Persistent: out/manual-usb.raw (VTOYDATA = images, OMLOADER = snapshots/cache) and work/manual/vars.fd survive stop/start.
-# Network: QEMU user-net; guest ssh is forwarded to 127.0.0.1:${SSH_PORT:-2222}. VNC (VGA, 127.0.0.1 only): display :${VNC_DISPLAY:-1} = port 590x.
-# Env: OML_ARGS (extra kernel args, e.g. omloader.ui=shell), ISO, MEM (default 4G), SMP (default 2), BUS (nvme|virtio|usb)
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"; O=$ROOT/out; M=$ROOT/work/manual; mkdir -p $M
-ISO=${ISO:-$O/omloader.iso}; DISK=$O/manual-usb.raw; BUS=${BUS:-nvme}
-VNCD=${VNC_DISPLAY:-1}; SSHP=${SSH_PORT:-2222}
-alive() { [ -f $M/pid ] && kill -0 "$(cat $M/pid)" 2>/dev/null; }
+# Run ON THE REMOTE. A persistent, libvirt-managed VM (qemu:///system, domain "omloader-manual") for trying omloader by hand.
+# It shows up in Cockpit -> Virtual machines (system connection) and can be driven with virsh.
+#   test/manual-run.sh start [image] [snapshot]   (re)define the domain and start it (no args: loader TUI; image => boots it directly)
+#   test/manual-run.sh console                    serial console (virsh console; Ctrl-] detaches, the VM keeps running)
+#   test/manual-run.sh status | stop              stop = ACPI shutdown, then destroy after 30 s
+#   test/manual-run.sh reset                      drop the domain, its NVRAM and the store; the next start re-copies out/real-usb.raw
+# Persistent: out/manual-usb.raw (VTOYDATA = images, OMLOADER = snapshots/cache; libvirt chowns it to libvirt-qemu while the domain runs)
+# and the domain's NVRAM (/var/lib/libvirt/qemu/nvram/omloader-manual_VARS.fd).
+# Env: OML_ARGS (extra kernel args, e.g. omloader.ui=shell), ISO, MEM_MIB (default 4096), VCPUS (default 2), DOM (domain name), VNC_PORT
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"; O=$ROOT/out; M=$ROOT/work/manual; mkdir -p $M; chmod o+rx $ROOT $O $ROOT/work $M 2>/dev/null
+ISO=${ISO:-$O/omloader.iso}; DISK=$O/manual-usb.raw; DOM=${DOM:-omloader-manual}
+V="virsh -c qemu:///system"
+state() { $V domstate $DOM 2>/dev/null | head -1; }
 case "${1:-}" in
 start)
-  alive && { echo "already running (pid $(cat $M/pid))"; exit 0; }
+  [ "$(state)" = running ] && { echo "already running"; exit 0; }
   [ -f $DISK ] || { [ -f $O/real-usb.raw ] || { echo "no $O/real-usb.raw: run test/e2e-real.sh with REAL_KEEP=1 first"; exit 1; }
     cp --sparse=always $O/real-usb.raw $DISK; }
-  [ -f $M/vars.fd ] || cp /usr/share/OVMF/OVMF_VARS_4M.fd $M/vars.fd
   ARGS="${OML_ARGS:-}"; [ -n "${2:-}" ] && ARGS="$ARGS omloader.image=$2"; [ -n "${3:-}" ] && ARGS="$ARGS omloader.snapshot=$3"
   cp $ISO $M/boot.iso; echo "set omloader_args=\"$ARGS\"" > $M/extra.cfg
   xorriso -dev $M/boot.iso -boot_image any keep -map $M/extra.cfg /boot/grub/extra.cfg -commit -end >/dev/null 2>&1 || { echo "xorriso failed"; exit 3; }
-  case $BUS in nvme) DEV="-device nvme,drive=usb,serial=omloader0";; virtio) DEV="-device virtio-blk-pci,drive=usb";; usb) DEV="-device qemu-xhci -device usb-storage,drive=usb";; esac
-  rm -f $M/serial.sock $M/mon.sock
-  qemu-system-x86_64 -enable-kvm -machine q35 -cpu host -m ${MEM:-4G} -smp ${SMP:-2} -name omloader-manual \
-    -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd -drive if=pflash,format=raw,file=$M/vars.fd \
-    -drive if=none,id=cd,file=$M/boot.iso,media=cdrom,readonly=on -device ide-cd,drive=cd,bootindex=1 \
-    -drive if=none,id=usb,file=$DISK,format=raw $DEV \
-    -netdev user,id=n0,hostfwd=tcp:127.0.0.1:$SSHP-:22 -device virtio-net-pci,netdev=n0 \
-    -vnc 127.0.0.1:$VNCD -device VGA \
-    -serial unix:$M/serial.sock,server,nowait -monitor unix:$M/mon.sock,server,nowait \
-    -pidfile $M/pid -daemonize && echo "started (pid $(cat $M/pid)); serial: $0 console; VNC 127.0.0.1:$((5900+VNCD)); guest ssh 127.0.0.1:$SSHP";;
-console) [ -S $M/serial.sock ] || { echo "not running"; exit 1; }; echo "(Ctrl-] detaches)"; exec socat -,raw,echo=0,escape=0x1d UNIX-CONNECT:$M/serial.sock;;
-monitor) exec socat -,raw,echo=0,escape=0x1d UNIX-CONNECT:$M/mon.sock;;
-status) alive && echo "running pid $(cat $M/pid)" || echo "stopped";;
+  chmod a+r $M/boot.iso
+  cat > $M/domain.xml <<XML
+<domain type='kvm'>
+  <name>$DOM</name>
+  <description>omloader manual test VM (test/manual-run.sh)</description>
+  <memory unit='MiB'>${MEM_MIB:-4096}</memory>
+  <vcpu>${VCPUS:-2}</vcpu>
+  <os firmware='efi'>
+    <type arch='x86_64' machine='q35'>hvm</type>
+    <firmware><feature enabled='no' name='secure-boot'/><feature enabled='no' name='enrolled-keys'/></firmware>
+  </os>
+  <features><acpi/><apic/></features>
+  <cpu mode='host-passthrough'/>
+  <on_poweroff>destroy</on_poweroff><on_reboot>restart</on_reboot><on_crash>destroy</on_crash>
+  <devices>
+    <disk type='file' device='cdrom'>
+      <driver name='qemu' type='raw'/><source file='$M/boot.iso'/><target dev='sda' bus='sata'/><readonly/><boot order='1'/>
+    </disk>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='raw'/><source file='$DISK'/><target dev='vda' bus='virtio'/><serial>omloader0</serial>
+    </disk>
+    <interface type='network'><source network='default'/><model type='virtio'/></interface>
+    <serial type='pty'><target type='isa-serial' port='0'><model name='isa-serial'/></target></serial>
+    <console type='pty'><target type='serial' port='0'/></console>
+    <graphics type='vnc' port='${VNC_PORT:--1}' autoport='$([ -n "${VNC_PORT:-}" ] && echo no || echo yes)' listen='127.0.0.1'><listen type='address' address='127.0.0.1'/></graphics>
+    <video><model type='vga'/></video>
+    <input type='tablet' bus='usb'/>
+    <rng model='virtio'><backend model='random'>/dev/urandom</backend></rng>
+  </devices>
+</domain>
+XML
+  $V define $M/domain.xml >/dev/null || exit 1
+  $V start $DOM && echo "started: Cockpit https://192.168.8.26:9090 -> Virtual machines -> $DOM; or: virsh -c qemu:///system console $DOM";;
+console) echo "(Ctrl-] detaches)"; exec $V console $DOM;;
+status) echo "state: $(state)"; $V dominfo $DOM 2>&1 | grep -E "State|CPU\(s\)|Max memory"; $V domdisplay $DOM 2>/dev/null; $V domifaddr $DOM 2>/dev/null | tail -n +3;;
 stop)
-  alive || { echo "not running"; exit 0; }
-  P=$(cat $M/pid); echo system_powerdown | socat - UNIX-CONNECT:$M/mon.sock >/dev/null 2>&1
-  for i in $(seq 1 30); do kill -0 $P 2>/dev/null || break; sleep 1; done
-  kill -0 $P 2>/dev/null && { echo "forcing"; kill $P; }; echo stopped;;
-reset) alive && { echo "stop first"; exit 1; }; rm -f $DISK $M/vars.fd; echo "store removed; next start re-copies out/real-usb.raw";;
-*) sed -n 2,12p $0; exit 1;;
+  [ "$(state)" = running ] || { echo "not running ($(state))"; exit 0; }
+  $V shutdown $DOM >/dev/null; for i in $(seq 1 30); do [ "$(state)" = running ] || break; sleep 1; done
+  [ "$(state)" = running ] && { echo "forcing"; $V destroy $DOM >/dev/null; }; echo stopped;;
+reset)
+  [ "$(state)" = running ] && { echo "stop first"; exit 1; }
+  $V undefine $DOM --nvram >/dev/null 2>&1; rm -f $DISK; echo "domain, NVRAM and store removed; next start re-copies out/real-usb.raw";;
+*) sed -n 2,11p $0; exit 1;;
 esac

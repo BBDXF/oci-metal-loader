@@ -340,7 +340,7 @@ then server stopped and `--offline` / `cache.offline: on` pulls from the cache t
 until a login/multi-user marker appears on the serial console, powers off via the QEMU monitor, and does snapshot create/boot/revert on one container and one VM.
 Default list: containers ubuntu/noble, debian/bookworm, alpine/3.21; VMs ubuntu/noble, debian/bookworm (`REAL_IMAGES`). Skipped (exit 0) without network.
 `REAL_OCI=<registry path>` adds an experimental OCI image (fetched with skopeo on the host, since omloader has no registry pull). `REAL_KEEP=1` keeps `out/real-usb.raw`;
-`test/manual-run.sh` starts a persistent QEMU/OVMF VM on a copy of that store for manual tries.
+`test/manual-run.sh start|stop|console|status|reset` runs a persistent **libvirt** domain `omloader-manual` (qemu:///system, UEFI/OVMF with persistent NVRAM, serial pty + VNC, default NAT network, 4 GiB) on a copy of that store (`out/manual-usb.raw`). It is visible in Cockpit (`https://<host>:9090` → Virtual machines; the host's libvirt group lets the test user manage it) and via `virsh -c qemu:///system console omloader-manual` (Ctrl-] detaches). The automated suites keep using raw `qemu` through `test/run-kvm.sh` (serial log files and hard timeouts); only manual VMs are libvirt-managed.
 Real-image findings: **LXD VM images mount `LABEL=UEFI` at `/boot/efi`, but the guest's udev does not create `/dev/disk/by-label/*` for the kpartx (dm) partitions
 (udev ignores dm devices that lack libdm's cookie flags once the initramfs udev database is cleaned), so systemd waits 90 s and drops to emergency mode.**
 `e2e-real` works around it with `kernel.cmdline: ... systemd.mask=boot-efi.mount` (`REAL_VM_CMDLINE`); a real fix is an open design question. Alpine containers
