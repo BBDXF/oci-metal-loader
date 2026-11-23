@@ -1,4 +1,6 @@
-# OCI Metal Loader (`omloader`)
+# OCI Metal Loader — development notes
+
+Architecture, status, roadmap, limitations and test suites. For an overview see the [README](../README.md) ([简体中文](../README.zh-CN.md)).
 
 A Ventoy-style UEFI x86_64 bare-metal (“metal”) loader for **LXD images**: put LXD images on a USB stick/disk, boot the loader ISO and run them
 directly on the hardware, without installing anything.
@@ -6,6 +8,11 @@ directly on the hardware, without installing anything.
 - **LXD VM images** (disk images): `dm-snapshot` stack over the read-only base + `kexec` into the guest's own kernel.
 - **LXD container images** (`rootfs.squashfs`): squashfs + overlayfs on the loader's kernel, then `switch-root` into the container's init.
 - Snapshots (tree, rollback, prune, flatten, export), persistent data volumes, and online pull (M4) with mirrors/proxy, a content-addressed cache and an offline mode.
+
+> **Terminology: "VM" means the image format, not virtualisation.** `type: vm` (and `pull --vm`, `images list --type vm`) follows LXD's name for *virtual-machine images*:
+> a whole-disk image (EFI partition + kernel + root filesystem) as published for LXD VMs. omloader does **not** run a virtual machine: it assembles the image with its snapshot layers
+> and hands the real hardware over to the image's own kernel with `kexec`. `type: lxd-container` images contain only a root filesystem and boot on the loader's kernel.
+> QEMU appears only in the tests (to emulate a PC) and `qemu-img` only converts disk formats.
 
 **Docker/OCI images are experimental only**: the code exists (import of oci-dir/oci-archive/docker-archive, boot as a container) but it is
 **disabled by default**, not part of the project focus and not planned to be extended (there will be no registry client). Reason: Docker/OCI images are
@@ -27,23 +34,30 @@ To opt in: `experimental.oci_images: true` in `omloader.yaml`, `--experimental-o
 | Live loader | Debian bookworm live system (systemd, networkd, resolved, tools, firmware), 254 MiB ISO | ✅ done |
 | M4 | online pull for LXD: simplestreams client, mirrors/proxy, cache/offline mode, LXD VM import (qcow2 → raw) | ✅ done (QEMU-tested: `make e2e-pull`) |
 | Usability | container console login (tty1 + ttyS0 autologin, users/passwords/sudo/ssh keys, busybox debug-shell fallback) and clean shutdown of the OMLOADER/VTOYDATA partitions | ✅ done for containers (VM: see limitations) |
-| Ventoy | `omloader.iso` boots through Ventoy 1.1.17 (normal + GRUB2 mode, UEFI): stage-1 iso-scan, `boot.yaml` default image with countdown, see [docs/ventoy.md](docs/ventoy.md) | ✅ done (QEMU-tested: `make e2e-ventoy`) |
-| Store file | the OMLOADER store as an ext4 image file (Ventoy `.dat` convention) on exFAT/NTFS/…, containers and VMs, `omloader store create|info|check|grow`, see [docs/store-file.md](docs/store-file.md) | ✅ done (QEMU-tested: `make e2e-store`) |
+| Ventoy | `omloader.iso` boots through Ventoy 1.1.17 (normal + GRUB2 mode, UEFI): stage-1 iso-scan, `boot.yaml` default image with countdown, see [docs/ventoy.md](ventoy.md) | ✅ done (QEMU-tested: `make e2e-ventoy`) |
+| Store file | the OMLOADER store as an ext4 image file (Ventoy `.dat` convention) on exFAT/NTFS/…, containers and VMs, `omloader store create|info|check|grow`, see [docs/store-file.md](store-file.md) | ✅ done (QEMU-tested: `make e2e-store`) |
 | M5 | device isolation, real-hardware testing, Secure Boot, LUKS | ⬜ |
-| TUI | interactive menu | ⬜ |
-| Windows | VHDX differencing disks | ⬜ last |
+| TUI | keyboard-only terminal UI (`omloader tui`, boots by default; see [tui.md](tui.md)) | ✅ done (QEMU-tested: `make e2e-tui`) |
+| Windows | **not a goal**: use Ventoy's native Windows ISO/WIM/VHD(x) boot on the same drive (see "Windows" below) | — |
 
-Rough overall estimate: M0–M4, the Debian live loader, container usability, Ventoy compatibility and the store-file mode are done; about **80 %** of the planned
+Rough overall estimate: M0–M4, the Debian live loader, container usability, Ventoy compatibility and the store-file mode are done; about **85 %** of the planned
 scope. What is left is real-hardware work (M5), the installer, polish and optimisations.
 
 ### Next steps (queued, not started)
 
 1. **Installer** (`omloader install`, UEFI/GPT, free space only) to run from the loader on an internal disk; Ventoy2Disk can already install Ventoy itself to a local disk.
 2. **Optimisations** (deliberately postponed until the core is finished): COW size margin (dm-snapshot needs ~0.4 % more than the base size in the worst case; currently the COW is sized exactly to the base) and usage warnings; storing `base.raw` inside squashfs to save space on exFAT (no sparse files); VM data volumes; hot snapshots from a running guest; more LXD images in a compatibility matrix (currently one container and one VM fixture only); LXD template rendering / cloud-init.
-3. M5 (device isolation, real hardware, Secure Boot, LUKS), TUI, Windows VHDX differencing disks.
+3. M5 (device isolation, real hardware, Secure Boot, LUKS).
 
 Known limits of the Ventoy/store-file work: the loader kernel has no `ntfs3` driver (NTFS is mounted with ntfs-3g/FUSE after stage 1, so an ISO on an NTFS Ventoy partition is not found — use exFAT/ext4/xfs/FAT32);
 Ventoy under UEFI Secure Boot needs its key enrolled; the NTFS dirty-volume fallback and VM + NTFS store are not verified end to end.
+
+### Windows
+
+Windows is intentionally out of scope. Ventoy already boots Windows ISO/WIM/VHD(x) natively, and `omloader.iso` lives on the same Ventoy drive, so both coexist.
+There are no ready-to-boot Windows images for LXD or OCI: LXD ships no Windows images (licensing; you repack your own ISO with `distrobuilder repack-windows` and get a virtio-based VM disk
+meant for virtualisation), and Windows container images share the Windows host kernel, so they cannot boot on Linux. Our VM path (dm-snapshot + kexec) cannot start a Windows kernel.
+If someone wants to pick it up later: the only realistic route to snapshots for Windows is native differencing-VHDX boot (BCD `vhd=` entry on NTFS); it is unverified here and would need a Windows image and a differencing-disk writer.
 
 ## Known limitations
 
@@ -56,7 +70,7 @@ Ventoy under UEFI Secure Boot needs its key enrolled; the NTFS dirty-volume fall
   (sysvinit `K99omloader-sync`, busybox-init `::shutdown:`; OpenRC: none). The tty1 console is only useful with a display; with `console=tty0 console=ttyS0,115200` (the loader's grub.cfg) the guest's `/dev/console` is ttyS0.
   Removing a user from `runtime.users` does not delete the account (accounts are only created/updated); passwords in the image config are only hashed on the loader (prefer `password_hash`).
 - **VM path has no independent data volumes**: all guest data lives in the COW layer of the snapshot node (data volumes exist for containers only).
-- **VM path is verified only on the Debian/initramfs-tools fixture.** The `rdinit` guest reassembly is generic in principle but untested elsewhere; no Windows guests, no LVM or encrypted (LUKS) root.
+- **VM path is verified only on the Debian/initramfs-tools fixture.** The `rdinit` guest reassembly is generic in principle but untested elsewhere; no Windows guests (see "Windows" above), no LVM or encrypted (LUKS) root.
 - **Secure Boot is not supported** (unsigned GRUB/kernel chain); kexec has restrictions under Secure Boot / kernel lockdown.
 - **Only QEMU/OVMF has been tested, no real hardware yet** (NIC/disk/USB enumeration timing, firmware quirks and kexec on real drivers are unknown).
 - **The live system's upper layer is tmpfs (RAM)**: `/tmp`, flatten staging and the like use memory, so flattening big images needs enough RAM.
@@ -79,8 +93,8 @@ The loader is a real minimal Debian 12 system (systemd, udev, kmod, e2fsprogs, e
 kexec-tools, qemu-utils, iproute2, curl + ca-certificates, iwd + wireless-regdb, kernel + firmware), so networking/TLS/mirrors (M4), Wi-Fi, a TUI and
 diagnostics have a proper userspace. Kernel command line flags (all optional): `omloader.image=NAME`, `omloader.snapshot=S`, `omloader.poweroff_on_fail=1`,
 `omloader.selftest=1`, `omloader.hook=1` (test helper: runs `hook.sh` from an `OMLSTAGE` ext4 disk, then powers off), `omloader.live=/dev/X` (stage 1 medium override).
-Without `omloader.image=` you get the autologin root shell with a banner. Details: [build/README.md](build/README.md); the Debian package set and
-licensing: [build/THIRD-PARTY.md](build/THIRD-PARTY.md) (`make licenses`).
+Without `omloader.image=` you get the autologin root shell with a banner. Details: [build/README.md](../build/README.md); the Debian package set and
+licensing: [build/THIRD-PARTY.md](../build/THIRD-PARTY.md) (`make licenses`).
 
 ## Related projects
 
@@ -91,7 +105,7 @@ Closest ones: [Ventoy](https://github.com/ventoy/Ventoy) and [vtoyboot](https://
 
 ## License
 
-GPL-3.0-or-later, the same license family as Ventoy. See [LICENSE](LICENSE). Copyright (C) 2026 the oci-metal-loader authors.
+GPL-3.0-or-later, the same license family as Ventoy. See [LICENSE](../LICENSE). Copyright (C) 2026 the oci-metal-loader authors.
 
 ## Config layers
 `built-in defaults (configs/defaults.yaml, embedded)` < `omloader.yaml` < `image.yaml`,
