@@ -21,4 +21,4 @@ deb             lxd-vm        2.0 GiB   -        0     base         -
 
 
                                                                            1/2
- Enter:open  r:refresh  1-5:tabs  s:shell  P:power  ?:help  q:quit
+ Enter:boot  o:snapshots  Space/m:menu  e:ephemeral  r:refresh  S:shell  ?:help

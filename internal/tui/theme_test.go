@@ -128,7 +128,7 @@ func TestWideLayoutFrames(t *testing.T) {
 	m.Init()
 	m.Resize(120, 36)
 	goldenFrame(t, "wide_images", m)
-	m.Update(N("enter"))
+	m.Update(R('o'))
 	m.Update(R('j'))
 	goldenFrame(t, "wide_detail", m)
 	if !strings.Contains(screen(m), "Selected") || !strings.Contains(screen(m), "parent:") {

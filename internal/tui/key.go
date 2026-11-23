@@ -58,7 +58,9 @@ func ParseKeys(b []byte) (keys []Key, rest []byte) {
 					return keys, b
 				}
 				params, fin := string(b[2:i]), b[i]
-				if fin == '~' {
+				if p := strings.Split(params, ";"); (fin == 'u' && len(p) == 2 && p[0] == "13" && p[1] != "1") || (fin == '~' && len(p) == 3 && p[0] == "27" && p[1] != "1" && p[2] == "13") {
+					keys = append(keys, N("menu")) // Ctrl/Shift+Enter: CSI 13;5u (kitty/foot/wezterm), CSI 27;5;13~ (xterm modifyOtherKeys)
+				} else if fin == '~' {
 					if n, ok := csiTilde[strings.Split(params, ";")[0]]; ok {
 						keys = append(keys, N(n))
 					}
@@ -76,6 +78,9 @@ func ParseKeys(b []byte) (keys []Key, rest []byte) {
 					keys = append(keys, N("f1"))
 				}
 				b = b[3:]
+			case '\r', '\n': // Alt+Enter (ESC CR): open the action menu
+				keys = append(keys, N("menu"))
+				b = b[2:]
 			default: // ESC + char (alt): treat as Esc then the char
 				keys = append(keys, N("esc"))
 				b = b[1:]

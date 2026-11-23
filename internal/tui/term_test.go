@@ -142,7 +142,7 @@ func TestTerminalPTYLinuxConsole(t *testing.T) {
 	}
 	waitFor("lxd-container")
 	waitFor("1:Images")
-	master.Write([]byte("\r"))
+	master.Write([]byte("o"))
 	waitFor("snapshots=3")
 	waitFor("|-- ")
 	master.Write([]byte("\x1b[B")) // Down arrow

@@ -69,8 +69,12 @@ Ventoy / UEFI → GRUB → 加载器（Debian live：systemd、networkd、工具
    ```yaml
    boot:
      default_image: ubuntu-noble
-     timeout: 5
+     timeout: 5      # 按任意键取消倒计时；`default_image: last` = TUI 上次启动的镜像
    ```
+
+TUI 里 **按 Enter 立即启动**（镜像或 `current`）；在旧快照或 `base` 上按 Enter 会还原并启动，若当前状态有改动会先弹一次“当前状态将丢失”的确认（`K` 先存为快照）。
+
+完全无人值守（Ventoy 默认项 + 此倒计时）：[docs/INSTALL.zh-CN.md](docs/INSTALL.zh-CN.md#无人值守启动不按任何键直接启动指定镜像)。
 
 更喜欢菜单？运行 `omloader tui`（[docs/tui.md](docs/tui.md)）。
 

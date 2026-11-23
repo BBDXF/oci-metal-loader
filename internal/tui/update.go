@@ -47,7 +47,7 @@ func (m *Model) Update(k Key) {
 		case 'P':
 			m.powerMenu()
 			return
-		case 's':
+		case 'S':
 			m.shellConfirm()
 			return
 		}
@@ -210,11 +210,21 @@ func (m *Model) imagesKey(k Key, act string) {
 	m.isel = moveSel(act, m.isel, len(m.images), m.bodyRows())
 	m.itop = keepVisible(m.isel, m.itop, m.bodyRows()-1)
 	switch {
-	case act == "select" || k.Rune == 'o':
+	case act == "select":
+		if len(m.images) > 0 {
+			m.bootNow(m.images[m.isel].Name, "current", false)
+		}
+	case k.Rune == 'o' && k.Name == "" || k.Name == "right":
 		if len(m.images) > 0 {
 			m.OpenImage(m.images[m.isel].Name)
 		}
-	case k.Rune == 'r':
+	case k.Rune == 'e' && k.Name == "":
+		if len(m.images) > 0 {
+			m.bootNow(m.images[m.isel].Name, "current", true)
+		}
+	case k.Rune == ' ' && k.Name == "" || k.Rune == 'm' && k.Name == "" || k.Name == "menu":
+		m.imageMenu()
+	case k.Rune == 'r' && k.Name == "":
 		m.RefreshImages()
 		m.say(L.Refreshed)
 	case act == "back" || k.Rune == 'q':
@@ -231,6 +241,33 @@ func (m *Model) OpenImage(name string) {
 	}
 	m.image, m.Screen = name, ScrDetail
 	m.setTree(t)
+	m.dsel = m.defaultRow(name)
+	m.dtop = keepVisible(m.dsel, 0, m.detailVis(m.bodyRows()))
+}
+
+// defaultRow is the row Enter should land on: the last booted snapshot of this image, else the live state ("current"),
+// else the snapshot it sits on, else base. (Enter on base would revert, so base is never the default when anything else exists.)
+func (m *Model) defaultRow(image string) int {
+	if lb, ok := m.Svc.(LastBooter); ok {
+		if li, ls := lb.LastBoot(); li == image && ls != "" && ls != "current" {
+			for i, r := range m.rows {
+				if !r.IsBase && r.Node.Label == ls {
+					return i
+				}
+			}
+		}
+	}
+	for i, r := range m.rows {
+		if !r.IsBase && r.Node.Live {
+			return i
+		}
+	}
+	for i, r := range m.rows {
+		if !r.IsBase && r.Node.Name == m.tree.Head {
+			return i
+		}
+	}
+	return 0
 }
 
 func (m *Model) setTree(t *TreeInfo) {
@@ -333,80 +370,42 @@ func (m *Model) detailKey(k Key, act string) {
 	m.dsel = moveSel(act, m.dsel, len(m.rows), m.bodyRows())
 	m.dtop = keepVisible(m.dsel, m.dtop, m.detailVis(m.bodyRows()))
 	row := m.selRow()
+	r := k.Rune
+	if k.Name != "" {
+		r = 0
+	}
 	switch {
-	case act == "back" || k.Rune == 'q':
+	case act == "back" || r == 'q':
 		m.Screen = ScrImages
 		m.RefreshImages()
-	case act == "select" || k.Rune == 'b':
-		m.bootMenu()
-	case k.Rune == 'r':
-		m.revertMenu(row)
-	case k.Rune == 'c':
-		m.createForm()
-	case k.Rune == 'd':
+	case act == "select":
+		m.enterRow(row)
+	case r == ' ' || r == 'm' || k.Name == "menu":
+		m.rowMenu(row)
+	case r == 'e':
+		m.ephemeralKey(row)
+	case r == 's' || r == 'c':
+		m.snapshotKey()
+	case r == 'r':
+		m.revertKey(row)
+	case r == 'd':
 		m.deleteFlow(row)
-	case k.Rune == 't':
+	case r == 't':
 		m.tagForm(row)
-	case k.Rune == 'n':
+	case r == 'n':
 		m.noteForm(row)
-	case k.Rune == 'p':
+	case r == 'p':
 		m.pruneMenu()
-	case k.Rune == 'f':
+	case r == 'f':
 		m.flattenForm(row)
-	case k.Rune == 'e':
+	case r == 'x':
 		m.exportForm(row)
-	case k.Rune == 'v':
+	case r == 'v':
 		m.verifyMenu()
-	case k.Rune == 'R':
+	case r == 'R':
 		m.reloadTree()
 		m.say(L.Refreshed)
 	}
-}
-
-// ---- boot ----
-
-func (m *Model) bootMenu() {
-	type tgt struct {
-		snap string
-		eph  bool
-	}
-	items := []string{L.BootCurrent}
-	targets := []tgt{{"current", false}}
-	if l := snapLabel(m.selRow()); l != "" {
-		items = append(items, L.BootSelected+" ("+l+")")
-		targets = append(targets, tgt{l, true})
-	}
-	items = append(items, L.BootThrowaway, L.BootBase)
-	targets = append(targets, tgt{"current", true}, tgt{"base", true})
-	m.menu(L.BootTitle+" "+m.image, items, func(i int) { m.bootConfirm(targets[i].snap, targets[i].eph) })
-}
-
-func (m *Model) bootConfirm(target string, eph bool) {
-	args := m.Svc.BootArgs(m.image, target, eph)
-	lines := []string{strings.Join(args, " ")}
-	switch {
-	case target == "current" && !eph:
-		lines = append(lines, L.BootContinues)
-	default:
-		lines = append(lines, L.BootEphemeralNote)
-	}
-	if m.tree.Type == "lxd-vm" {
-		lines = append(lines, "VM image: the dm-snapshot stack is assembled and the kernel is started with kexec (no return).")
-	} else {
-		lines = append(lines, "Container image: root is mounted (squashfs + overlayfs), then the loader runs systemctl switch-root.")
-	}
-	lines = append(lines, "", L.BootPreview)
-	image := m.image
-	d := m.confirm(L.BootConfirm, false, lines, func() {
-		m.res, m.done = Result{Kind: ResBoot, Boot: BootRequest{Image: image, Snapshot: target, Ephemeral: eph}}, true
-	})
-	d.Extra = map[rune]func(){'d': func() {
-		m.opResume = d
-		m.dlg = nil
-		m.startOp("boot preview (dry-run): "+image, func(ctx context.Context, w io.Writer) error {
-			return m.Svc.BootPreview(ctx, image, target, eph, w)
-		}, nil)
-	}}
 }
 
 // ---- snapshot actions ----
@@ -420,69 +419,6 @@ func (m *Model) after(what string) func(error) {
 			m.sayf("%s: ok", what)
 		}
 	}
-}
-
-func (m *Model) createForm() {
-	m.form(L.CreateTitle, []string{L.CreateHelp}, []string{L.FieldName, L.FieldNote, L.FieldTag}, []string{"", "", ""}, func(v []string) {
-		name := strings.TrimSpace(v[0])
-		if name == "" {
-			m.message(L.Error, true, "name required")
-			return
-		}
-		var tags []string
-		if t := strings.TrimSpace(v[2]); t != "" {
-			tags = strings.Fields(t)
-		}
-		if err := m.Svc.Create(m.image, name, v[1], tags); err != nil {
-			m.reloadTree()
-			m.fail(err)
-			return
-		}
-		m.reloadTree()
-		m.sayf("created snapshot %s", name)
-	})
-}
-
-func (m *Model) revertMenu(row TreeRow) {
-	target := "base"
-	if !row.IsBase {
-		if target = snapLabel(row); target == "" {
-			m.message(L.Info, false, L.RevertSelect)
-			return
-		}
-	}
-	items := []string{L.RevertDiscard, L.RevertKeep, L.Cancel}
-	m.menu(L.RevertTitle+" -> "+target, items, func(i int) {
-		do := func(keep string) {
-			if err := m.Svc.Revert(m.image, target, keep); err != nil {
-				m.reloadTree()
-				m.fail(err)
-				return
-			}
-			m.reloadTree()
-			m.sayf("revert to %s: ok", target)
-		}
-		switch i {
-		case 0:
-			where := m.tree.Head
-			if where == "" {
-				where = L.BaseNode
-			} else {
-				for _, n := range m.tree.Nodes {
-					if n.Name == where && n.Label != "" {
-						where = n.Label
-					}
-				}
-			}
-			m.confirm(L.RevertTitle, true, []string{"Revert to " + target + "?", fmt.Sprintf(L.RevertWhat, where), fmt.Sprintf(L.RevertTarget, target, target), L.RevertSure}, func() { do("") })
-		case 1:
-			m.form(L.RevertKeep, []string{L.RevertKeepHelp}, []string{L.FieldName}, []string{""}, func(v []string) {
-				if k := strings.TrimSpace(v[0]); k != "" {
-					do(k)
-				}
-			})
-		}
-	})
 }
 
 func (m *Model) subtreeHasLive(id string) bool {
@@ -756,6 +692,9 @@ func (m *Model) dialogKey(k Key) {
 				d.Values[d.Fi] = string(r[:len(r)-1])
 			}
 		case k.Name == "" && k.Rune >= 0x20:
+			if d.Replace && d.Fi == 0 {
+				d.Values[0], d.Replace = "", false
+			}
 			d.Values[d.Fi] += string(k.Rune)
 		}
 	}

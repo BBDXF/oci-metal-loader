@@ -1,0 +1,24 @@
+ OCI Metal Loader  [1:Images] 2:Pull  3:Storage  4:Network  5:Settings    ASCII
+ omloader v9.9  |  store 3.0 GiB free / 8.0 GiB (store-file)  |  net 10.0.0.5
+ alpine  type=lxd-container  mode=overlayfs  live on=b  snapshots=3        2/5
+   base (original image)
+ `--   a  [frozen] #golden  4.0 KiB
+     |-- * b  [frozen]  8.0 KiB
+     |   `-- * current (you are here)  1.0 KiB
+     +- WARNING: Revert -> a ---------------------------------------------+
+     | Booting a reverts the live state to it: the current state (1.0 KiB |
+     | written since b) will be LOST.                                     |
+     |                                                                    |
+     | Tip: press K to save the current state as a snapshot first, then   |
+     | revert.                                                            |
+     |                                                                    |
+     | [Enter/y] Revert  [K] Snapshot first  [Esc/n] Cancel               |
+     +--------------------------------------------------------------------+
+
+
+
+--------------------------------------------------------------------------------
+ a  parent=base  created=2026-01-01T10:00:00Z  size=4.0 KiB
+ tags: golden
+ note: first
+ Enter:ok  Esc:cancel

@@ -60,12 +60,38 @@ unless you configure it:
 - **Auto-boot with a countdown** (Ventoy cannot pass kernel parameters): create `omloader/boot.yaml` on the `VTOYDATA` partition:
   ```yaml
   boot:
-    default_image: ubuntu-noble   # empty/absent = show the TUI
+    default_image: ubuntu-noble   # empty/absent = show the TUI; `last` = the image the TUI booted last
     default_snapshot: current     # current | base | a snapshot label (label/base = throwaway boot)
-    timeout: 5                    # seconds; press Enter to cancel and get a shell
+    timeout: 5                    # seconds; any key cancels the countdown and opens the TUI
   ```
-- `s` in the TUI (or leaving it with `q`) gives a root shell (autologin). `poweroff` / `reboot` work as usual; the loader unmounts its partitions cleanly.
+  The console prints `Booting 'ubuntu-noble' (current) in N s -- press any key for the menu` every second (tty1 and serial). A key press opens the TUI (or the shell with `boot.ui: shell`); otherwise the pre-selected image+snapshot boots exactly as `omloader boot` would.
+- `S` in the TUI (or leaving it with `q`) gives a root shell (autologin). `poweroff` / `reboot` work as usual; the loader unmounts its partitions cleanly.
 - The status lines `OMLOADER_LOADER: snap=... images=...` (serial console / `journalctl -u omloader-mounts`) say which store and images partition were found.
+
+### Unattended boot (boot a chosen image with no key presses)
+
+Two independent countdowns chain together: **Ventoy** picks the ISO, then **omloader** picks the image.
+
+1. **Ventoy side** — `ventoy/ventoy.json` on the data partition (Ventoy's own file, not omloader's; the config zip only ships `ventoy/ventoy.json.example`, so merge it by hand and never overwrite an existing `ventoy.json`):
+   ```json
+   {
+     "control": [ { "VTOY_DEFAULT_IMAGE": "/omloader-0.1.0.iso" }, { "VTOY_MENU_TIMEOUT": "5" } ],
+     "menu_alias": [ { "image": "/omloader-0.1.0.iso", "alias": "OCI Metal Loader" } ]
+   }
+   ```
+   The path must match the **real ISO file name and location** on the partition (case-sensitive, starting with `/`). Ventoy then boots it after 5 s without a key press.
+2. **omloader side** — `omloader/boot.yaml` on the same partition:
+   ```yaml
+   boot:
+     default_image: ubuntu-noble   # or `last` = the image the TUI booted last (needs remember_last, default true)
+     default_snapshot: current     # current | base | a snapshot label (label/base = throwaway boot)
+     timeout: 5                    # seconds
+   ```
+   After the loader is up it prints `Booting 'ubuntu-noble' (current) in N s -- press any key for the menu` and then boots the image.
+
+**Cancel:** in Ventoy's menu press any key (e.g. arrow keys) within the timeout to stop its countdown and choose entries by hand; during the omloader countdown press **any key** (keyboard or serial console) and the TUI opens instead.
+**Without Ventoy** (or when editing the GRUB entry with `e`) the kernel line can do it: `omloader.image=ubuntu-noble omloader.snapshot=current` boots immediately with no countdown (it wins over `boot.yaml`); `boot.extra_cmdline_flags` lists more flags ([section 11](#11-kernel-command-line-omloader)).
+**Troubleshooting:** *Ventoy shows its menu and waits* → `VTOY_DEFAULT_IMAGE` does not match the ISO path/name (or `ventoy.json` is not in `ventoy/` on the first partition). *Ventoy asks for a boot mode* → choose *normal* (or *GRUB2*) once; memdisk mode does not work for this ISO, see [ventoy.md](ventoy.md). *The TUI opens instead of the image* → `boot.yaml` is not found/invalid (`omloader config validate -c boot.yaml`), `default_image` is empty, `last` has nothing recorded yet, or a key was pressed. Needs a store (section 3) for snapshots to persist. *(Verified in QEMU only; real hardware untested.)*
 
 ## 5. Get images
 
@@ -107,7 +133,19 @@ The loader only writes into the image's own COW layer, never into the base image
 
 ## 7. The terminal UI
 
-`omloader tui` starts by default. Keys: `1`–`5` tabs (Images, Pull, Storage, Network, Settings), arrows/`j`/`k`, Enter, Esc, `?` or `F1` help for the current screen, `s` shell, `P` reboot/power off, `q`/Esc leave to the shell, `Ctrl+C` cancels the running operation (never quits the TUI).
+`omloader tui` starts by default. Keys: `1`–`5` tabs (Images, Pull, Storage, Network, Settings), arrows/`j`/`k`, Enter, Esc, `?` or `F1` help for the current screen, `S` shell, `P` reboot/power off, `q`/Esc leave to the shell, `Ctrl+C` cancels the running operation (never quits the TUI).
+
+**One-key boot** (no submenus, no confirmation unless data would be lost):
+
+| Where | Key | Does |
+|---|---|---|
+| Images | `Enter` | boot the image now (continues `current`); the image booted last is preselected |
+| Images | `o` / `→`, `e`, `Space`/`m` | open the snapshot tree, ephemeral (throwaway) boot, action menu |
+| Snapshot tree | `Enter` on `current` | boot it now (also on the snapshot the live state sits on) |
+| Snapshot tree | `Enter` on a frozen snapshot or `base` | revert the live state to it and boot. **If the live state has changes, one dialog says they will be LOST** (`Enter`/`y` = revert + boot, **`K` = save them as a snapshot first** — label prompt, default `snap-YYYYMMDD-HHMM`, `Enter` accepts — `Esc`/`n` = cancel). No live changes (never booted / created lazily) = no dialog |
+| Snapshot tree | `e`, `s`, `r`, `d`, `Space`/`m` | ephemeral boot of the selected state, create snapshot, revert without booting (same dialog), delete (asks), action menu (also `Alt+Enter`/`Ctrl+Enter` where the terminal sends them) |
+
+Delete, prune/GC and store operations keep their confirmations; booting and reverting have the single dialog above.
 Full key and screen reference, colour/ASCII fallbacks and console-font rules: [tui.md](tui.md). The UI is English only. `boot.ui: shell` or the kernel flag `omloader.ui=shell` boots to a shell instead.
 
 ## 8. Snapshots workflow
@@ -175,8 +213,9 @@ Keys marked **reserved** are accepted and validated but nothing in the current c
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `boot.default_image` | string | `""` | Image to boot automatically after `timeout` seconds when the kernel line has no `omloader.image=`. Empty = TUI/shell. |
-| `boot.timeout` | int ≥ 0 | `5` | Countdown seconds (Enter cancels). |
+| `boot.default_image` | string | `""` | Image to boot automatically after `timeout` seconds when the kernel line has no `omloader.image=`. Empty = TUI/shell. `last` = the image the TUI booted last (needs `remember_last`; nothing recorded yet = TUI). |
+| `boot.timeout` | int ≥ 0 | `5` | Countdown seconds (any key cancels and opens the TUI). |
+| `boot.remember_last` | bool | `true` | The TUI records the last booted image/snapshot in `<data partition>/omloader/last-boot` (3 lines: image, snapshot, `ephemeral`); it preselects them next time and `default_image: last` boots it. Not writable = silently skipped. |
 | `boot.default_snapshot` | string | `current` | `current`, `base` or a snapshot label (labels/base boot a throwaway layer). Also the default of `omloader boot --snapshot`. |
 | `boot.kernel_cmdline_extra` | string | `""` | Appended to a **VM** guest's kernel command line (after `image.yaml kernel.cmdline`). |
 | `boot.extra_cmdline_flags` | list | `[]` | `omloader.*` flags without prefix applied as if on the kernel line, e.g. `[poweroff_on_fail=1, experimental=oci]`. |

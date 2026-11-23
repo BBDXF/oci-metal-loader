@@ -11,13 +11,18 @@ import (
 )
 
 type fakeSvc struct {
-	mu        sync.Mutex
-	trees     map[string]*TreeInfo
-	calls     []string
-	offline   bool
-	pullHold  chan struct{}
-	verifyErr error
-	cjk       bool
+	mu          sync.Mutex
+	trees       map[string]*TreeInfo
+	calls       []string
+	offline     bool
+	pullHold    chan struct{}
+	verifyErr   error
+	prefs       *Prefs
+	last        [2]string
+	remembered  []string
+	autoPruned  []string
+	treeCurrent string
+	cjk         bool
 }
 
 func (f *fakeSvc) Header() HeaderInfo {
@@ -172,4 +177,17 @@ func (f *fakeSvc) NetStatus(ctx context.Context, probe bool, w io.Writer) error 
 }
 func (f *fakeSvc) Settings() ([]string, error) {
 	return []string{"boot.ui = tui    [defaults]", "boot.timeout = 5    [defaults]"}, nil
+}
+
+func (f *fakeSvc) Prefs() Prefs {
+	if f.prefs != nil {
+		return *f.prefs
+	}
+	return Prefs{RememberLast: true}
+}
+func (f *fakeSvc) LastBoot() (string, string) { return f.last[0], f.last[1] }
+func (f *fakeSvc) RememberBoot(i, s string, eph bool) {
+	f.mu.Lock()
+	f.remembered = append(f.remembered, fmt.Sprintf("%s/%s/%v", i, s, eph))
+	f.mu.Unlock()
 }

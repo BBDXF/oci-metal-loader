@@ -56,12 +56,38 @@ NTFS 注意：存放 **ISO 本身**的 Ventoy 分区不能是 NTFS（加载器�
 - **带倒计时的自动启动**（Ventoy 不能传内核参数）：在 `VTOYDATA` 分区创建 `omloader/boot.yaml`：
   ```yaml
   boot:
-    default_image: ubuntu-noble   # 留空/不写 = 显示 TUI
+    default_image: ubuntu-noble   # 留空/不写 = 显示 TUI；`last` = TUI 上次启动的镜像
     default_snapshot: current     # current | base | 快照标签（标签/base = 一次性启动）
-    timeout: 5                    # 秒；按回车取消并进入 shell
+    timeout: 5                    # 秒；按任意键取消倒计时并打开 TUI
   ```
-- 在 TUI 里按 `s`（或 `q` 退出）进入 root shell（自动登录）。`poweroff` / `reboot` 照常使用，加载器会干净地卸载分区。
+  控制台（tty1 和串口）每秒显示 `Booting 'ubuntu-noble' (current) in N s -- press any key for the menu`。按键会打开 TUI（`boot.ui: shell` 时为 shell）；否则按预选的镜像+快照启动，效果与 `omloader boot` 相同。
+- 在 TUI 里按 `S`（或 `q` 退出）进入 root shell（自动登录）。`poweroff` / `reboot` 照常使用，加载器会干净地卸载分区。
 - 状态行 `OMLOADER_LOADER: snap=... images=...`（串口控制台 / `journalctl -u omloader-mounts`）说明找到了哪个存储与镜像分区。
+
+### 无人值守启动（不按任何键直接启动指定镜像）
+
+两个倒计时串联：**Ventoy** 选 ISO，**omloader** 选镜像。
+
+1. **Ventoy 一侧** —— 数据分区上的 `ventoy/ventoy.json`（这是 Ventoy 自己的配置，不是 omloader 的；配置包只附带 `ventoy/ventoy.json.example`，请手工合并，不要覆盖已有的 `ventoy.json`）：
+   ```json
+   {
+     "control": [ { "VTOY_DEFAULT_IMAGE": "/omloader-0.1.0.iso" }, { "VTOY_MENU_TIMEOUT": "5" } ],
+     "menu_alias": [ { "image": "/omloader-0.1.0.iso", "alias": "OCI Metal Loader" } ]
+   }
+   ```
+   路径必须与分区上**真实的 ISO 文件名和位置**一致（区分大小写，以 `/` 开头）。之后 Ventoy 在 5 秒内无按键就自动启动它。
+2. **omloader 一侧** —— 同一分区上的 `omloader/boot.yaml`：
+   ```yaml
+   boot:
+     default_image: ubuntu-noble   # 或 `last` = TUI 上次启动的镜像（需要 remember_last，默认开启）
+     default_snapshot: current     # current | base | 快照标签（标签/base = 一次性启动）
+     timeout: 5                    # 秒
+   ```
+   加载器起来后会打印 `Booting 'ubuntu-noble' (current) in N s -- press any key for the menu`，然后启动该镜像。
+
+**取消：** 在 Ventoy 菜单倒计时内按任意键（如方向键）即可停止并手动选择；在 omloader 倒计时内按**任意键**（键盘或串口控制台）则改为打开 TUI。
+**不经 Ventoy** 时（或在 GRUB 条目上按 `e` 编辑），可用内核参数：`omloader.image=ubuntu-noble omloader.snapshot=current` 立即启动、没有倒计时（优先于 `boot.yaml`）；更多参数见 `boot.extra_cmdline_flags`（[第 11 节](#11-内核命令行参数omloader)）。
+**故障排查：** *Ventoy 显示菜单并一直等待* → `VTOY_DEFAULT_IMAGE` 与 ISO 路径/文件名不符（或 `ventoy.json` 不在第一分区的 `ventoy/` 下）。*Ventoy 询问启动模式* → 选 *normal*（或 *GRUB2*）一次；memdisk 模式对该 ISO 无效，见 [ventoy.md](ventoy.md)。*进入了 TUI 而不是镜像* → 找不到/无效的 `boot.yaml`（`omloader config validate -c boot.yaml`）、`default_image` 为空、`last` 尚无记录，或按过键。快照要持久保存需要存储（第 3 节）。*（仅在 QEMU 中验证，真机未测试。）*
 
 ## 5. 获取镜像
 
@@ -103,7 +129,19 @@ guest_defaults:
 
 ## 7. 终端界面 TUI
 
-默认启动 `omloader tui`。按键：`1`–`5` 切换标签页（Images、Pull、Storage、Network、Settings），方向键/`j`/`k`，Enter，Esc，`?` 或 `F1` 查看当前页帮助，`s` 进 shell，`P` 重启/关机，`q`/Esc 退出到 shell，`Ctrl+C` 取消正在运行的操作（不会退出 TUI）。
+默认启动 `omloader tui`。按键：`1`–`5` 切换标签页（Images、Pull、Storage、Network、Settings），方向键/`j`/`k`，Enter，Esc，`?` 或 `F1` 查看当前页帮助，`S` 进 shell，`P` 重启/关机，`q`/Esc 退出到 shell，`Ctrl+C` 取消正在运行的操作（不会退出 TUI）。
+**一键启动**（没有子菜单；只有会丢数据时才确认一次）：
+
+| 位置 | 按键 | 作用 |
+|---|---|---|
+| Images | `Enter` | 立即启动该镜像（继续 `current`）；上次启动的镜像会被预选 |
+| Images | `o`/`→`、`e`、`Space`/`m` | 打开快照树、一次性（ephemeral）启动、操作菜单 |
+| 快照树 | 在 `current` 上 `Enter` | 立即启动（在 live 状态所在的快照上也一样） |
+| 快照树 | 在冻结快照或 `base` 上 `Enter` | 把 live 状态还原到它并启动。**若 live 状态有改动，弹出一个对话框提示改动将丢失**（`Enter`/`y` = 还原并启动，**`K` = 先把当前状态存为快照**——标签默认 `snap-YYYYMMDD-HHMM`，回车接受——`Esc`/`n` = 取消）。没有改动（从未启动/懒创建）则不弹窗 |
+| 快照树 | `e`、`s`、`r`、`d`、`Space`/`m` | 选中状态的一次性启动、创建快照、只还原不启动（同一对话框）、删除（会确认）、操作菜单（终端支持时也可用 `Alt+Enter`/`Ctrl+Enter`） |
+
+删除、prune/GC 和存储操作仍保留确认；启动与还原只有上面这一个对话框。
+
 完整按键与界面说明、颜色/ASCII 降级、控制台字体规则见 [tui.md](tui.md)。界面目前只有英文。`boot.ui: shell` 或内核参数 `omloader.ui=shell` 可改为启动到 shell。
 
 ## 8. 快照流程
@@ -171,8 +209,9 @@ VM 客户系统通过 `kexec` 启动，关机时无法卸载存储，所以下�
 
 | 键 | 类型 | 默认值 | 含义 |
 |---|---|---|---|
-| `boot.default_image` | 字符串 | `""` | 内核命令行没有 `omloader.image=` 时，倒计时 `timeout` 秒后自动启动的镜像。空 = TUI/shell。 |
-| `boot.timeout` | 整数 ≥ 0 | `5` | 倒计时秒数（回车取消）。 |
+| `boot.default_image` | 字符串 | `""` | 内核命令行没有 `omloader.image=` 时，倒计时 `timeout` 秒后自动启动的镜像。空 = TUI/shell；`last` = TUI 上次启动的镜像。 |
+| `boot.timeout` | 整数 ≥ 0 | `5` | 倒计时秒数（按任意键取消并打开 TUI）。 |
+| `boot.remember_last` | 布尔 | `true` | TUI 把上次启动的镜像/快照记录到 `<数据分区>/omloader/last-boot`（3 行：镜像、快照、`ephemeral`），下次预选；`default_image: last` 会自动启动它。不可写则静默跳过。 |
 | `boot.default_snapshot` | 字符串 | `current` | `current`、`base` 或快照标签（标签/base 为一次性层）。同时是 `omloader boot --snapshot` 的默认值。 |
 | `boot.kernel_cmdline_extra` | 字符串 | `""` | 追加到 **VM** 客户系统内核命令行（在 `image.yaml kernel.cmdline` 之后）。 |
 | `boot.extra_cmdline_flags` | 列表 | `[]` | 不带前缀的 `omloader.*` 参数，效果等同写在内核行，如 `[poweroff_on_fail=1, experimental=oci]`。 |

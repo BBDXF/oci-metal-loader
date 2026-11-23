@@ -66,7 +66,7 @@ func TestImagesList(t *testing.T) {
 
 func TestTreeRender(t *testing.T) {
 	m, _ := newModel(t, true)
-	m.Update(N("enter"))
+	m.Update(R('o'))
 	if m.Screen != ScrDetail {
 		t.Fatal("enter opens detail")
 	}
@@ -86,7 +86,7 @@ func TestTreeRender(t *testing.T) {
 	}
 	// unicode tree
 	m2, _ := newModel(t, false)
-	m2.Update(N("enter"))
+	m2.Update(R('o'))
 	if s := screen(m2); !strings.Contains(s, "├── ") || !strings.Contains(s, "└── ") || !strings.Contains(s, "●") {
 		t.Fatalf("unicode glyphs missing:\n%s", s)
 	}
@@ -111,7 +111,7 @@ func TestASCIIFallback(t *testing.T) {
 		}
 	}
 	m, _ := newModel(t, true)
-	m.Update(N("enter"))
+	m.Update(R('o'))
 	for _, l := range m.View().Lines() {
 		for _, r := range l {
 			if r > 0x7e {
@@ -138,7 +138,7 @@ func TestLayout80x24(t *testing.T) {
 		}
 	}
 	check("images")
-	m.Update(N("enter"))
+	m.Update(R('o'))
 	check("detail")
 	want := []string{
 		"OCI Metal Loader  [1:Images] ",
@@ -150,7 +150,7 @@ func TestLayout80x24(t *testing.T) {
 		}
 	}
 	last := m.View().Lines()[23]
-	if !strings.Contains(last, "b:boot") || len(last) > 80 {
+	if !strings.Contains(last, "Enter:boot") || len(last) > 80 {
 		t.Fatalf("status bar: %q", last)
 	}
 	m.Update(N("esc"))
@@ -170,57 +170,10 @@ func TestLayout80x24(t *testing.T) {
 	}
 }
 
-func TestCreateSnapshotFlow(t *testing.T) {
-	m, f := newModel(t, true)
-	m.Update(N("enter"))
-	m.Update(R('c'))
-	mustHave(t, m, "Create snapshot", "Freezes the live state")
-	keys(m, "snap1\nmy note\nt1 t2\n")
-	if !f.called(`create alpine snap1 note="my note" tags=[t1 t2]`) {
-		t.Fatalf("calls %v", f.calls)
-	}
-	mustHave(t, m, "created snapshot snap1")
-}
-
-func TestRevertConfirmAndKeep(t *testing.T) {
-	m, f := newModel(t, true)
-	m.Update(N("enter"))
-	m.Update(R('j')) // a
-	m.Update(R('r'))
-	m.Update(R('1'))
-	mustHave(t, m, "WARNING", "discarded permanently")
-	m.Update(N("esc"))
-	if f.called("revert") {
-		t.Fatal("cancelled")
-	}
-	m.Update(R('r'))
-	m.Update(R('1'))
-	m.Update(N("enter"))
-	if !f.called(`revert alpine a keep=""`) {
-		t.Fatalf("%v", f.calls)
-	}
-	mustHave(t, m, "revert to a: ok")
-	m.Update(R('r'))
-	m.Update(R('2'))
-	keys(m, "saved\n")
-	if !f.called(`revert alpine a keep="saved"`) {
-		t.Fatalf("%v", f.calls)
-	}
-	// base row reverts to base; the live row is not a revert target
-	m.Update(N("home"))
-	m.Update(R('r'))
-	mustHave(t, m, "Revert -> base")
-	m.Update(N("esc"))
-	for i := 0; i < 3; i++ {
-		m.Update(R('j'))
-	}
-	m.Update(R('r'))
-	mustHave(t, m, "Select a snapshot or the base image")
-}
-
 func TestDeleteBranchAndMerge(t *testing.T) {
 	m, f := newModel(t, true)
-	m.Update(N("enter"))
+	m.Update(R('o'))
+	m.Update(N("home"))
 	m.Update(R('j')) // a: two children -> recursive, live state inside -> extra confirmation
 	m.Update(R('d'))
 	mustHave(t, m, "everything below it", "--force")
@@ -244,7 +197,8 @@ func TestDeleteBranchAndMerge(t *testing.T) {
 
 func TestTagNotePrune(t *testing.T) {
 	m, f := newModel(t, true)
-	m.Update(N("enter"))
+	m.Update(R('o'))
+	m.Update(N("home"))
 	m.Update(R('j'))
 	keys(m, "tgold2\n")
 	if !f.called("tag alpine a gold2 rm=false") {
@@ -271,59 +225,10 @@ func TestTagNotePrune(t *testing.T) {
 	}
 }
 
-func TestBootCurrentAndEphemeral(t *testing.T) {
-	m, _ := newModel(t, true)
-	m.Update(N("enter"))
-	m.Update(R('b'))
-	mustHave(t, m, "Continue current", "throwaway", "base (original image), ephemeral")
-	m.Update(N("enter"))
-	mustHave(t, m, "omloader boot --image alpine --snapshot current", "kept in the live layer", "switch-root", "d: preview")
-	m.Update(N("enter"))
-	if !m.Done() || m.Result().Kind != ResBoot || m.Result().Boot != (BootRequest{"alpine", "current", false}) {
-		t.Fatalf("result %+v", m.Result())
-	}
-	// selected snapshot boots read-only (ephemeral)
-	m, _ = newModel(t, true)
-	m.Update(N("enter"))
-	m.Update(R('j')) // a
-	m.Update(R('b'))
-	m.Update(R('2'))
-	mustHave(t, m, "--snapshot a --ephemeral", "Ephemeral boot")
-	m.Update(N("enter"))
-	if got := m.Result(); got.Kind != ResBoot || !got.Boot.Ephemeral || got.Boot.Snapshot != "a" {
-		t.Fatalf("result %+v", got)
-	}
-	// throwaway current / base
-	for i, want := range []BootRequest{{"alpine", "current", true}, {"alpine", "base", true}} {
-		m, _ = newModel(t, true)
-		m.Update(N("enter"))
-		m.Update(R('b'))
-		m.Update(R(rune('2' + i)))
-		m.Update(N("enter"))
-		if m.Result().Boot != want {
-			t.Fatalf("%d: %+v", i, m.Result())
-		}
-	}
-}
-
-func TestBootPreviewOp(t *testing.T) {
-	m, f := newModel(t, true)
-	m.Update(N("enter"))
-	m.Update(R('b'))
-	m.Update(N("enter"))
-	m.Update(R('d'))
-	waitOp(t, m)
-	mustHave(t, m, "boot preview", "+ losetup")
-	if !f.called("preview alpine current") {
-		t.Fatal("preview not called")
-	}
-	m.Update(N("enter")) // close -> confirm dialog is back
-	mustHave(t, m, "Boot now?")
-}
-
 func TestVerifyAndFlattenOps(t *testing.T) {
 	m, f := newModel(t, true)
-	m.Update(N("enter"))
+	m.Update(R('o'))
+	m.Update(N("home"))
 	m.Update(R('v'))
 	m.Update(N("enter"))
 	waitOp(t, m)
@@ -445,7 +350,7 @@ func TestHeaderAndBars(t *testing.T) {
 	if !strings.Contains(l[1], "omloader v9.9") || !strings.Contains(l[1], "10.0.0.5") || !strings.Contains(l[1], "free") {
 		t.Fatalf("header row: %q", l[1])
 	}
-	if !strings.HasPrefix(l[23], " Enter:open") {
+	if !strings.HasPrefix(l[23], " Enter:boot") {
 		t.Fatalf("images bar: %q", l[23])
 	}
 	m.Update(R('2'))
@@ -514,7 +419,7 @@ func TestResultPanelAndLogToggle(t *testing.T) {
 	// failure panel
 	f.verifyErr = fmt.Errorf("boom layer")
 	m.Update(R('1'))
-	m.Update(N("enter"))
+	m.Update(R('o'))
 	m.Update(R('v'))
 	m.Update(R('1'))
 	waitOp(t, m)
@@ -542,12 +447,12 @@ func TestProgressBarETA(t *testing.T) {
 
 func TestConfirmTexts(t *testing.T) {
 	m, f := newModel(t, true)
-	m.Update(N("enter"))
+	m.Update(R('o'))
+	m.Update(N("home"))
 	m.Update(R('j'))
 	m.Update(R('j'))
 	m.Update(R('r'))
-	m.Update(R('1'))
-	mustHave(t, m, "WARNING", "will be DISCARDED", "cannot be recovered", "continues from")
+	mustHave(t, m, "WARNING", "will be LOST", "Tip: press K", "[K] Snapshot first")
 	m.Update(N("esc"))
 	m.Update(R('d'))
 	mustHave(t, m, "permanently", "merge")
@@ -619,7 +524,7 @@ func TestWideCharsAlignment(t *testing.T) {
 func TestColourDegrades(t *testing.T) {
 	m := New(newFake(), Theme{ASCII: false, Color: true})
 	m.Init()
-	m.Update(N("enter"))
+	m.Update(R('o'))
 	c := m.View()
 	var all string
 	for y := 0; y < c.H; y++ {
@@ -680,7 +585,7 @@ func TestShellRebootPower(t *testing.T) {
 	if m.Done() {
 		t.Fatal("cancelled")
 	}
-	m.Update(R('s'))
+	m.Update(R('S'))
 	m.Update(N("enter"))
 	if m.Result().Kind != ResShell {
 		t.Fatal("shell")
@@ -784,9 +689,14 @@ func goldenFrame(t *testing.T, name string, m *Model) {
 func TestFrames80x24(t *testing.T) {
 	m, f := newModel(t, true)
 	goldenFrame(t, "images", m)
-	m.Update(N("enter"))
+	m.Update(R('o'))
 	m.Update(R('j'))
 	goldenFrame(t, "detail", m)
+	m.Update(N("home"))
+	m.Update(R('j'))
+	m.Update(N("enter")) // Enter on a frozen snapshot with a live state: the one revert dialog
+	goldenFrame(t, "revert_dialog", m)
+	m.Update(N("esc"))
 	m.Update(R('1'))
 	m.Update(R('2'))
 	m.Update(N("enter"))
@@ -812,4 +722,337 @@ func (m *Model) afterKeys(ks ...Key) *Model {
 		m.Update(k)
 	}
 	return m
+}
+
+// ---- one-key flows ----
+
+func TestImagesEnterBootsCurrentImmediately(t *testing.T) {
+	m, f := newModel(t, true)
+	m.Update(N("enter"))
+	if !m.Done() || m.Result().Kind != ResBoot || m.Result().Boot != (BootRequest{Image: "alpine", Snapshot: "current"}) {
+		t.Fatalf("Enter must boot at once: done=%v %+v", m.Done(), m.Result())
+	}
+	if m.dlg != nil {
+		t.Fatal("no confirmation dialog")
+	}
+	if len(f.remembered) != 1 || f.remembered[0] != "alpine/current/false" {
+		t.Fatalf("remembered %v", f.remembered)
+	}
+	m, _ = newModel(t, true)
+	m.Update(R('j'))
+	m.Update(R('e'))
+	if m.Result().Boot != (BootRequest{Image: "deb", Snapshot: "current", Ephemeral: true}) {
+		t.Fatalf("e = ephemeral: %+v", m.Result())
+	}
+	m, _ = newModel(t, true)
+	m.Update(R('o'))
+	if m.Screen != ScrDetail || m.Done() {
+		t.Fatal("o opens the snapshot tree")
+	}
+}
+
+func TestImagesMenu(t *testing.T) {
+	m, f := newModel(t, true)
+	m.Update(R(' '))
+	mustHave(t, m, "Boot current", "throwaway", "Open the snapshot tree", "Preview")
+	m.Update(R('4'))
+	waitOp(t, m)
+	if !f.called("preview alpine current") || m.Done() {
+		t.Fatalf("%v", f.calls)
+	}
+	m.Update(N("enter"))
+	m.Update(R('m'))
+	m.Update(R('2'))
+	if m.Result().Boot != (BootRequest{Image: "alpine", Snapshot: "current", Ephemeral: true}) {
+		t.Fatalf("%+v", m.Result())
+	}
+}
+
+func TestRememberedSelection(t *testing.T) {
+	f := newFake()
+	f.last = [2]string{"deb", "current"}
+	m := New(f, Theme{ASCII: true})
+	m.Init()
+	if m.isel != 1 {
+		t.Fatalf("last booted image is preselected: %d", m.isel)
+	}
+	f.last = [2]string{"alpine", "a"}
+	m.RefreshImages()
+	m.OpenImage("alpine")
+	if r := m.selRow(); r.IsBase || r.Node.Label != "a" {
+		t.Fatalf("last snapshot preselected: %+v", r)
+	}
+	f.last = [2]string{}
+	m.OpenImage("alpine")
+	if r := m.selRow(); r.IsBase || !r.Node.Live {
+		t.Fatalf("default row is current, never base: %+v", r)
+	}
+	f.prefs = &Prefs{} // remember_last off
+	m, _ = newModel(t, true)
+	m.Svc = f
+	m.Update(N("enter"))
+	if len(f.remembered) != 0 {
+		t.Fatal("remember_last=false must not record")
+	}
+}
+
+func TestDetailEnterCurrentBoots(t *testing.T) {
+	m, _ := newModel(t, true)
+	m.Update(R('o'))
+	if !m.selRow().Node.Live {
+		t.Fatalf("starts on current: %+v", m.selRow())
+	}
+	m.Update(N("enter"))
+	if m.Result().Boot != (BootRequest{Image: "alpine", Snapshot: "current"}) || m.dlg != nil {
+		t.Fatalf("%+v", m.Result())
+	}
+}
+
+func TestSnapshotKeyOnePrompt(t *testing.T) {
+	m, f := newModel(t, true)
+	m.Update(R('o'))
+	m.Now = func() time.Time { return time.Date(2026, 3, 4, 9, 5, 0, 0, time.Local) }
+	m.Update(R('s'))
+	mustHave(t, m, "Create snapshot", "snap-20260304-0905")
+	m.Update(N("enter")) // Enter accepts the default label
+	if !f.called(`create alpine snap-20260304-0905 note="" tags=[]`) {
+		t.Fatalf("%v", f.calls)
+	}
+	mustHave(t, m, "created snapshot snap-20260304-0905")
+	m.Update(R('s'))
+	keys(m, "\x7f")
+	m.Update(N("bs"))
+	m.Update(N("bs"))
+	keys(m, "")
+	m.Update(N("esc"))
+	if m.dlg != nil {
+		t.Fatal("esc cancels")
+	}
+}
+
+func TestDestructiveStillConfirm(t *testing.T) {
+	m, f := newModel(t, true)
+	m.Update(R('o'))
+	m.Update(N("home"))
+	m.Update(R('j'))
+	m.Update(R('d'))
+	if m.dlg == nil || m.dlg.Kind != dkConfirm {
+		t.Fatal("delete must ask")
+	}
+	m.Update(N("esc"))
+	if f.called("delete alpine") {
+		t.Fatal("cancelled delete")
+	}
+}
+
+func TestMenuKeysFromTerminal(t *testing.T) {
+	for _, in := range []string{"\x1b\r", "\x1b[13;5u", "\x1b[27;5;13~", "\x1b[13;2u"} {
+		ks, rest := ParseKeys([]byte(in))
+		if len(rest) != 0 || len(ks) != 1 || ks[0].Name != "menu" {
+			t.Errorf("%q -> %v rest %q", in, ks, rest)
+		}
+	}
+	if ks, _ := ParseKeys([]byte("\x1b[13u")); len(ks) != 0 {
+		t.Errorf("plain CSI u Enter is not the menu: %v", ks)
+	}
+	m, _ := newModel(t, true)
+	m.Update(N("menu"))
+	mustHave(t, m, "Boot current")
+}
+
+func TestKeyBars(t *testing.T) {
+	m, _ := newModel(t, true)
+	if b := m.View().Lines()[23]; !strings.Contains(b, "Enter:boot") || !strings.Contains(b, "Space/m:menu") || strWidth(b) > 80 {
+		t.Fatalf("images bar %q", b)
+	}
+	m.Update(R('o'))
+	b := m.View().Lines()[23]
+	for _, w := range []string{"Enter:boot", "Space/m:menu", "e:ephemeral", "s:snapshot", "r:revert", "d:delete", "?:help"} {
+		if !strings.Contains(b, w) {
+			t.Fatalf("detail bar lacks %q: %q", w, b)
+		}
+	}
+	m.Update(R('?'))
+	mustHave(t, m, "Space or m", "ephemeral")
+}
+
+// openAt opens the alpine tree and selects the row with the given label ("" = base).
+func openAt(m *Model, label string) {
+	m.Update(R('o'))
+	for i, r := range m.rows {
+		if (label == "" && r.IsBase) || (!r.IsBase && r.Node.Label == label && label != "") {
+			m.dsel = i
+		}
+	}
+}
+
+func TestEnterSnapshotAsksOnceThenRevertsAndBoots(t *testing.T) {
+	m, f := newModel(t, true)
+	openAt(m, "a")
+	m.Update(N("enter"))
+	if m.dlg == nil || m.dlg.Kind != dkConfirm || m.Done() || f.called("revert") {
+		t.Fatalf("one confirmation first: dlg=%v calls=%v", m.dlg, f.calls)
+	}
+	mustHave(t, m, "WARNING", "Booting a reverts the live state to it", "will be LOST", "written since b", "Tip: press K", "[K] Snapshot first")
+	m.Update(N("esc"))
+	if m.dlg != nil || f.called("revert") || m.Done() {
+		t.Fatal("Esc cancels")
+	}
+	m.Update(N("enter"))
+	m.Update(N("enter")) // Enter in the dialog: revert + boot (discard)
+	if !f.called(`revert alpine a keep=""`) || !m.Done() || m.Result().Boot != (BootRequest{Image: "alpine", Snapshot: "current"}) {
+		t.Fatalf("%v %+v", f.calls, m.Result())
+	}
+	for _, c := range f.calls {
+		if strings.HasPrefix(c, "create") {
+			t.Fatalf("no snapshot unless K: %v", f.calls)
+		}
+	}
+	m, f = newModel(t, true)
+	openAt(m, "a")
+	m.Update(N("enter"))
+	m.Update(R('y'))
+	if !f.called("revert alpine a") || !m.Done() {
+		t.Fatal("y confirms")
+	}
+}
+
+func TestRevertDialogKSavesSnapshotFirst(t *testing.T) {
+	m, f := newModel(t, true)
+	m.Now = func() time.Time { return time.Date(2026, 3, 4, 9, 5, 0, 0, time.Local) }
+	openAt(m, "a")
+	m.Update(N("enter"))
+	m.Update(R('K'))
+	mustHave(t, m, "Create snapshot", "snap-20260304-0905")
+	m.Update(N("enter")) // default label accepted
+	if !f.called(`create alpine snap-20260304-0905`) || !f.called(`revert alpine a keep=""`) || !m.Done() {
+		t.Fatalf("%v", f.calls)
+	}
+	ci, ri := -1, -1
+	for i, c := range f.calls {
+		if strings.HasPrefix(c, "create") {
+			ci = i
+		}
+		if strings.HasPrefix(c, "revert") {
+			ri = i
+		}
+	}
+	if ci < 0 || ri < ci {
+		t.Fatalf("create must come before revert: %v", f.calls)
+	}
+	// lower-case k, own label, Esc in the label prompt cancels everything
+	m, f = newModel(t, true)
+	openAt(m, "a")
+	m.Update(N("enter"))
+	m.Update(R('k'))
+	m.Update(N("esc"))
+	if m.dlg != nil || m.Done() || f.called("revert") || f.called("create") {
+		t.Fatalf("cancel: %v", f.calls)
+	}
+}
+
+func TestEnterBaseAsksAndNoChangesSkipsDialog(t *testing.T) {
+	m, f := newModel(t, true)
+	openAt(m, "")
+	m.Update(N("enter"))
+	mustHave(t, m, "Booting base reverts", "will be LOST")
+	m.Update(N("enter"))
+	if !f.called(`revert alpine base keep=""`) || !m.Done() {
+		t.Fatalf("%v", f.calls)
+	}
+	// no live state (never booted / created lazily): nothing to lose, no dialog
+	m, f = newModel(t, true)
+	tr := f.trees["alpine"]
+	var nodes []NodeInfo
+	for _, n := range tr.Nodes {
+		if !n.Live {
+			nodes = append(nodes, n)
+		}
+	}
+	tr.Nodes, tr.Current = nodes, ""
+	openAt(m, "a")
+	m.Update(N("enter"))
+	if m.dlg != nil || !f.called(`revert alpine a keep=""`) || !m.Done() {
+		t.Fatalf("no changes -> direct: dlg=%v %v", m.dlg, f.calls)
+	}
+}
+
+func TestEnterOnHeadSnapshotBootsCurrent(t *testing.T) {
+	m, f := newModel(t, true)
+	openAt(m, "b") // the snapshot the live state sits on
+	m.Update(N("enter"))
+	if m.dlg != nil || f.called("revert") || m.Result().Boot.Snapshot != "current" {
+		t.Fatalf("%v %+v", f.calls, m.Result())
+	}
+}
+
+func TestKeysRevertEphemeralSnapshotMenu(t *testing.T) {
+	m, f := newModel(t, true)
+	openAt(m, "a")
+	m.Update(R('r')) // revert without booting: same dialog
+	mustHave(t, m, "will be LOST")
+	m.Update(N("enter"))
+	if m.Done() || !f.called(`revert alpine a keep=""`) {
+		t.Fatalf("r: %v", f.calls)
+	}
+	mustHave(t, m, "reverted to a")
+	m.Update(R('e')) // selected snapshot read-only (ephemeral): never asks, never reverts
+	if m.Result().Boot != (BootRequest{Image: "alpine", Snapshot: "a", Ephemeral: true}) {
+		t.Fatalf("e on snapshot: %+v", m.Result())
+	}
+	m, f = newModel(t, true)
+	openAt(m, "")
+	m.Update(R('e'))
+	if m.Result().Boot != (BootRequest{Image: "alpine", Snapshot: "base", Ephemeral: true}) || f.called("revert") {
+		t.Fatalf("e on base: %+v", m.Result())
+	}
+	m, _ = newModel(t, true)
+	m.Update(R('o'))
+	m.Update(R('e')) // live row: throwaway current
+	if m.Result().Boot != (BootRequest{Image: "alpine", Snapshot: "current", Ephemeral: true}) {
+		t.Fatalf("e on current: %+v", m.Result())
+	}
+}
+
+func TestRowMenu(t *testing.T) {
+	m, f := newModel(t, true)
+	openAt(m, "a")
+	m.Update(R(' '))
+	mustHave(t, m, "Boot current", "Boot snapshot a read-only", "Revert to the selected state", "Create snapshot", "Tag", "Delete snapshot", "Flatten", "Export", "Details")
+	m.Update(R('2')) // boot snapshot a read-only
+	if m.Result().Boot != (BootRequest{Image: "alpine", Snapshot: "a", Ephemeral: true}) {
+		t.Fatalf("%+v", m.Result())
+	}
+	m, f = newModel(t, true)
+	openAt(m, "a")
+	m.Update(R('m'))
+	for i := 0; i < 4; i++ {
+		m.Update(N("down"))
+	}
+	m.Update(N("enter")) // 5th item: revert without boot -> the dialog
+	mustHave(t, m, "will be LOST")
+	m.Update(N("esc"))
+	m.Update(R('m'))
+	for i := 0; i < 8; i++ {
+		m.Update(N("down"))
+	}
+	m.Update(N("enter"))
+	mustHave(t, m, "everything below it") // delete keeps its consequence confirmation
+	_ = f
+}
+
+func TestSnapshotLabelPromptReplacesDefault(t *testing.T) {
+	m, f := newModel(t, true)
+	m.Update(R('o'))
+	m.Update(R('s'))
+	keys(m, "mine\n") // typing replaces the default label, Enter accepts
+	if !f.called("create alpine mine note") {
+		t.Fatalf("%v", f.calls)
+	}
+	m.Update(R('s'))
+	m.Update(N("bs")) // editing keys still work on the default
+	if !strings.Contains(screen(m), "snap-") {
+		t.Fatal("default shown")
+	}
+	m.Update(N("esc"))
 }

@@ -30,6 +30,7 @@ boot:
   default_snapshot: current
   kernel_cmdline_extra: ""
   vm_fix_esp_fstab: true   # lxd-vm: make the guest's /boot/efi mount nofail (the ESP is not mapped with udev links; avoids a 90 s emergency-mode timeout)
+  remember_last: true   # TUI records the last booted image/snapshot (<data>/omloader/last-boot); default_image: last boots it
   ui: tui          # tui | shell (console at boot when nothing is booted automatically; omloader.ui= kernel flag wins)
 data:
   default_backend: dir

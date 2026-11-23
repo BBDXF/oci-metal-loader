@@ -207,12 +207,13 @@ def run1():
             return s
         s.check(s.screen_has(["OCI Metal Loader", "1:Images", "omloci", "oci"]), "images list shows the fixture image omloci")
         s.check(s.screen_has(["omloader", "store", "net "]), "header row shows loader version, store and network state")
-        s.check(s.screen_has("Enter:open"), "bottom bar shows the keys of the Images screen")
-        s.send("\r")
+        s.check(s.screen_has(["Enter:boot", "Space/m:menu"]), "bottom bar shows the one-key boot keys of the Images screen")
+        s.send("o")  # Enter would boot the image at once; `o` opens the snapshot tree
         s.check(s.screen_has(["omloci", "snapshots=0", "base (original image)", "current (you are here)"]), "image detail (tree) opens: base root + live state")
-        s.send("c")
-        s.check(s.screen_has("Create snapshot"), "create-snapshot form")
-        s.type("s1\r\r\r")
+        s.check(s.screen_has(["Enter:boot", "e:ephemeral", "s:snapshot", "r:revert", "d:delete"]), "bottom bar shows the tree keys")
+        s.send("s")
+        s.check(s.screen_has(["Create snapshot", "snap-"]), "create-snapshot prompt with the default label snap-YYYYMMDD-HHMM")
+        s.type("s1\r")  # typing replaces the default label; ONE prompt, no note/tag fields
         s.check(s.screen_has("nothing to snapshot"), "a never-booted image has no live state to snapshot (refused)")
         s.send("\r")
         # ---- pull from the local fake simplestreams
@@ -242,18 +243,16 @@ def run1():
         s.send("1")
         s.send("j")
         s.check(s.screen_has("omltest-ct"), "images list shows the pulled image")
-        s.send("\r")
+        s.send("o")
         s.check(s.screen_has("type=lxd-container"), "detail of the pulled lxd-container image")
-        s.send("b")
-        s.check(s.screen_has(["Boot omltest-ct", "Continue current", "base (original image), ephemeral"]), "boot menu")
-        s.send("\r")
-        s.check(s.screen_has(["omloader boot --image omltest-ct --snapshot current", "switch-root"]), "boot confirm shows the omloader boot command")
-        s.send("d")
+        s.send(" ")  # Space = action menu
+        s.check(s.screen_has(["Boot current", "throwaway", "Preview the boot command", "Create snapshot"]), "action menu (everything off the one-key path)")
+        s.send("4")  # Preview (dry-run) of the boot command
         ok = s.screen_has("[finished]", 60)
-        s.check(ok and "[FAILED]" not in s.screen(), "dry-run preview streamed")
+        s.check(ok and "[FAILED]" not in s.screen(), "dry-run preview streamed from the menu")
         s.send("\r")
-        s.check(s.screen_has("Boot now?"), "back at the boot confirmation")
-        s.send("\r")
+        s.check(s.screen_has("current (you are here)"), "back in the tree after the preview")
+        s.send("\r")  # Enter on `current`: boots at once, no confirmation
         ok = s.raw_has(r"OMLOADER_LOADER: switch-root", 120) and s.raw_has(r"OMLOADER_COUNTER=1\b", 300)
         s.check(ok, "container booted from the TUI via switch-root (counter == 1)")
         s.check(s.raw_has("OMLOADER_GUEST_OK", 30), "guest reports OMLOADER_GUEST_OK")
@@ -270,19 +269,16 @@ def run2():
             return s
         ok = s.screen_has(["omloci", "omltest-ct"])
         s.check(ok, "second boot: TUI lists both images (pulled image persisted on VTOYDATA)")
-        s.send("j")
-        s.send("\r")
+        s.send("j")  # the image booted last is preselected (boot.remember_last); j only makes sure the selection is on omltest-ct
+        s.send("o")
         s.check(s.screen_has(["omltest-ct", "current (you are here)"]), "pulled image: the live state (created by the first boot) persisted")
-        s.send("c")
-        s.type("s1\rfirst\rkeepme\r")
-        s.check(s.screen_has(["created snapshot s1", "#keepme"]), "snapshot s1 created from the TUI (note + tag) after the boot")
-        s.send("j")
-        s.send("r")
-        s.check(s.screen_has("Revert"), "revert menu")
-        s.send("1")
-        s.check(s.screen_has(["WARNING", "DISCARDED"]), "revert asks for confirmation and says the live state is discarded")
-        s.send("\r")
-        s.check(s.screen_has(["revert to s1: ok", "s1"]), "revert to s1 (no live changes yet: live state rebased on s1)")
+        s.send("s")
+        s.type("s1\r")
+        s.check(s.screen_has(["created snapshot s1", "s1"]), "snapshot s1 created from the TUI (one label prompt) after the boot")
+        s.send("\x1b[H")  # Home: base row
+        s.send("j")        # s1
+        s.send("r")        # revert without booting: s1 is where the live state sits and nothing changed since -> no dialog
+        s.check(s.screen_has("reverted to s1"), "revert to s1 without a dialog (nothing to lose: the live state was just frozen)")
         s.esc()
         s.send("P")
         s.check(s.screen_has(["Reboot", "Power off"]), "power menu")
@@ -307,12 +303,9 @@ def run3():
         s.send("exit\r")
         s.check(start_tui(s, 2), "leaving the shell shows the TUI again")
         s.send("j")
-        s.send("\r")
+        s.send("o")
         s.check(s.screen_has(["omltest-ct", "s1", "[frozen]", "current (you are here)"]), "detail: s1 is frozen, the live state sits on it")
-        s.send("b")
-        s.send("\r")  # continue current
-        s.check(s.screen_has("--snapshot current"), "boot confirm for the current snapshot")
-        s.send("\r")
+        s.send("\r")  # Enter on current: boots at once
         ok = s.raw_has(r"OMLOADER_COUNTER=2\b", 360)
         s.check(ok, "current booted again from the TUI continues from s1 (counter 1 -> 2)")
         s.wait_exit(120)

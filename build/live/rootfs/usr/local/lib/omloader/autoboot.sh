@@ -12,6 +12,13 @@ say() { echo "$@"; echo "$@" > /dev/tty1 2>/dev/null; }
 # Without omloader.image=/hook/selftest on the kernel command line, look for boot.yaml (omloader.yaml format) on VTOYDATA,
 # OMLOADER or the partition holding the ISO. If boot.default_image is set: countdown boot.timeout s (Enter = shell), then
 # behave exactly as if omloader.image=<default_image> [omloader.snapshot=<default_snapshot>] [+ extra_cmdline_flags] was given.
+# image recorded by the TUI at its last boot (first line of <data>/omloader/last-boot); empty when absent
+last_boot_image() {
+  local f
+  for f in /mnt/images/omloader/last-boot /mnt/snap/omloader/last-boot "${MEDIUM_HOST_MNT:-/nonexistent}/omloader/last-boot"; do
+    [ -s "$f" ] && { head -1 "$f"; return; }
+  done
+}
 bootcfg_apply() {
   local f DI TO SN FL ans
   for f in /mnt/images/omloader/boot.yaml /mnt/images/omloader.yaml /mnt/snap/omloader/boot.yaml /mnt/snap/omloader.yaml \
@@ -24,15 +31,20 @@ bootcfg_apply() {
     fi
     TO=$(omloader config get -c "$f" boot.timeout 2>/dev/null); TO=${TO:-5}
     SN=$(omloader config get -c "$f" boot.default_snapshot 2>/dev/null)
+    if [ "$DI" = last ]; then   # boot.default_image: last = what the TUI recorded at its last boot (<data>/omloader/last-boot: image, snapshot, ephemeral flag)
+      DI=$(last_boot_image)
+      if [ -z "$DI" ]; then say "OMLOADER_LOADER: boot config $f: default_image=last but nothing was booted yet (no last-boot file) -- menu"; continue; fi
+      [ -z "$SN" ] && SN=current
+    fi
     FL=$(omloader config get -c "$f" boot.extra_cmdline_flags 2>/dev/null)
-    say "OMLOADER_LOADER: boot config $f: default_image=$DI snapshot=${SN:-current} timeout=${TO}s -- press Enter within ${TO}s to get a shell instead"
+    say "OMLOADER_LOADER: boot config $f: default_image=$DI snapshot=${SN:-current} timeout=${TO}s -- press any key within ${TO}s for the menu instead"
     ( : </dev/ttyS0 ) 2>/dev/null && exec 3</dev/ttyS0 || exec 3</dev/null
     ( : </dev/tty1 ) 2>/dev/null && exec 4</dev/tty1 || exec 4</dev/null
     local end=$((SECONDS + TO)) last=
     while [ $SECONDS -lt $end ]; do
-      [ "$last" != "$((end - SECONDS))" ] && { last=$((end - SECONDS)); say "OMLOADER_LOADER: booting '$DI' in ${last}s (Enter = shell)"; }
-      if read -r -t 0.3 -u 3 ans 2>/dev/null || read -r -t 0.2 -u 4 ans 2>/dev/null; then
-        say "OMLOADER_LOADER: boot cancelled, starting the shell"; exit 0
+      [ "$last" != "$((end - SECONDS))" ] && { last=$((end - SECONDS)); say "OMLOADER_LOADER: Booting '$DI' (${SN:-current}) in ${last} s -- press any key for the menu"; }
+      if read -r -n1 -t 0.3 -u 3 ans 2>/dev/null || read -r -n1 -t 0.2 -u 4 ans 2>/dev/null; then
+        say "OMLOADER_LOADER: boot cancelled, opening the menu"; exit 0
       fi
       sleep 0.1
     done

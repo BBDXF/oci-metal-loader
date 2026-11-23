@@ -10,7 +10,7 @@ omloader tui [-c omloader.yaml] [--images-root DIR] [--snap-root DIR] [--data-ro
 ## Screens and keys
 
 Tabs: `1` Images, `2` Pull, `3` Storage, `4` Network, `5` Settings (also Tab / Shift+Tab). Always: `?` / `F1` full-screen help (all keys
-per screen, the current screen's page first, scrollable), `s` shell, `P` reboot / power off, `q` or `Esc` on the first screen = leave to
+per screen, the current screen's page first, scrollable), `S` shell, `P` reboot / power off, `q` or `Esc` on the first screen = leave to
 the shell, `Ctrl+L` redraw. **Ctrl+C cancels the running operation and never quits the TUI.** Navigation: arrows or `j`/`k`,
 PgUp/PgDn, Home/End, Enter, Esc. UI text: English only, all strings live in `internal/tui/strings.go` (`Strings` / `L`) for later
 translation (there is no zh table yet).
@@ -93,18 +93,42 @@ removes ephemeral leftovers), **store create / grow** (grow releases the store: 
 
 | Screen | What it does |
 |---|---|
-| Images | name, type (`lxd-vm` / `lxd-container` / `oci (exp.)`), base size, base sha state (`ok`/`MISMATCH`/`-`), snapshot count, current snapshot, last use; `r` refresh, Enter opens the image |
-| Image detail | snapshot **tree**: root `base (original image)`, snapshots by label (`[frozen]`, tags, on-disk size), the live state as `● current (you are here)` (the snapshot it sits on is marked too; a live state that does not exist yet is shown as a placeholder and created at the next boot), ephemeral leftovers as `(ephemeral boot)`; a pane shows parent/created/tags/note. Actions: `b`/Enter **Boot** (menu: *continue current*; the selected snapshot read-only (ephemeral); current throwaway (ephemeral); base ephemeral), `c` **create snapshot** (label, note, tag), `r` **revert** to the selected snapshot or base (confirmation; alternative "keep the current live state as a snapshot..." asks for a label), `d` **delete** (confirmation; explains the merge into the child, refuses dm-snapshot merges with the flatten hint, extra confirmation when the whole subtree incl. the live state goes), `t` tag (`-tag` removes), `n` note, `p` prune/GC (dry-run first, then confirm; GC removes ephemeral leftovers), `f` flatten, `e` export, `v` verify (optional deep) |
+| Images | name, type (`lxd-vm` / `lxd-container` / `oci (exp.)`), base size, base sha state (`ok`/`MISMATCH`/`-`), snapshot count, current snapshot, last use. **`Enter` boots the image immediately** (continues `current`, no submenu, no confirmation); the image booted last is preselected (`boot.remember_last`). `o`/`→` open the snapshot tree, `e` boots a throwaway copy (ephemeral), `Space`/`m` open the action menu (boot current / throwaway / open tree / dry-run preview), `r` refresh |
+| Image detail | snapshot **tree**: root `base (original image)`, snapshots by label (`[frozen]`, tags, on-disk size), the live state as `● current (you are here)`, ephemeral leftovers as `(ephemeral boot)`; the selection starts on `current` (or the last booted snapshot); the info pane/side panel shows parent/created/size/tags/note. **One-key flow** — `Enter` on `current` (or on the snapshot the live state sits on) boots at once; `Enter` on another frozen snapshot or `base` **reverts the live state to it and boots**; `e` ephemeral boot of the selected state (read-only snapshot / base / throwaway current); `s` create snapshot (one prompt, default label `snap-YYYYMMDD-HHMM`, `Enter` accepts); `r` revert without booting; `d` delete (consequence dialog: merge into the child, or the dm-snapshot refusal with the flatten hint; extra confirmation when the live state is inside the subtree); `Space`/`m` (or `Alt+Enter` / `Ctrl+Enter` where the terminal delivers them: `ESC CR`, `CSI 13;5u`, `CSI 27;5;13~`) the action menu with everything else: boot options, dry-run preview, revert, snapshot, tag, note, delete, flatten, export, prune/GC, verify, details; the shortcuts `t` tag, `n` note, `p` prune/GC, `f` flatten, `x` export, `v` verify, `R` reload stay |
 | Pull | configured sources (policy shown; from `sources.yaml`, [docs/sources.md](sources.md)), `m` = cycle the mirror of the selected source (official, auto, tuna, nju, ...; shown as `mirror: X`, used by the catalog load and the pull), `t` = `source test` with timings per mirror, Enter loads the catalog (`images list` backend). **Live search**: once the catalog is shown, just type — letters, digits and space go into the search box (`Search: arch vm_`), the list filters on every key: case-insensitive, every word must be a substring of os, release, variant, arch, type (`vm`/`container`) or `lxc:os/release/variant` (e.g. `arch`, `arch vm`, `debian 12 cloud`); exact/prefix matches first; `N of M` match count; the selection stays on the same image while it still matches. Backspace edits, `Esc` clears the search (a second `Esc` returns to the sources), Up/Down/PgUp/PgDn/Home/End move (position `3/296` + scroll bar), `Enter` opens the pull form of the selected image; while the box has the keyboard use Tab / Shift+Tab to change tab and `F1` for help. `/` in the source list jumps to the search box. Same matcher as `omloader images list --search ...` (`internal/imgsearch`). Pull: name, confirm, background pull with progress bar, speed, ETA, sha256 verification line and the result panel. Offline / policy settings are honoured (`policy.allow_online`, `cache.offline`, `allowed_sources`) |
 | Storage | snapshot store: partition or store file (host fs, size, allocated, ext4 clean/dirty, attached), free space, space guard (`snapshot.retention.min_free_percent`); `c` create / grow store-file wizard (reuses `snapmgr` store code) |
 | Network | like `omloader net status` (`r` refresh, `t` also probes the sources) |
 | Settings | resolved config with the source layer of every key (read-only, like `config show --resolved`) |
 
+### Reverting on Enter (the one dialog)
+
+Reverting (`Enter` on a frozen snapshot or `base`, and `r`) throws the live state away, so it asks **once** — and only when there is something to lose:
+
+```
+ WARNING: Revert -> a
+ Booting a reverts the live state to it: the current state (1.0 KiB written since b) will be LOST.
+ Tip: press K to save the current state as a snapshot first, then revert.
+ [Enter/y] Revert  [K] Snapshot first  [Esc/n] Cancel
+```
+
+`Enter`/`y` reverts (the current state is discarded) and boots, `K` asks for a snapshot label (default `snap-YYYYMMDD-HHMM`, `Enter` accepts),
+creates that snapshot and then reverts and boots, `Esc`/`n` cancels. If the live state has **no changes** — the image was never booted, or the live
+layer is created lazily at the next boot (the tree shows only the placeholder) — there is nothing to lose and the revert+boot runs without a dialog.
+Booting `current`, ephemeral boots (`e`, the menu) and booting the image from the list never ask. Delete, prune/GC and store operations keep their
+consequence confirmations. Limit: the dialog reports the size written to the live layer, not a file count; "has changes" means the live layer exists.
+
+### Auto-boot countdown and "last booted"
+
+With `boot.default_image` set (boot.yaml on the data partition, see INSTALL.md) `autoboot.sh` counts down `boot.timeout` seconds before the TUI starts and prints
+`Booting '<image>' (<snapshot>) in N s -- press any key for the menu` on tty1 and the serial console; **any key** opens the TUI instead (or the shell with `boot.ui: shell`).
+`boot.default_snapshot` (`current` | `base` | label; labels/base are throwaway boots) selects what boots. With `boot.remember_last: true` (default) every boot from
+the TUI writes `<data>/omloader/last-boot` (image, snapshot, `ephemeral`), preselects it next time and `boot.default_image: last` auto-boots that image's `current`.
+
 ### Boot handoff
 
 **Snapshots are created, reverted and deleted from the loader (CLI/TUI) before the image is booted; a running system cannot be snapshotted or reverted — shut it down, return to the loader, then manage snapshots (hot snapshots are not supported).**
-Booting *current* continues the live state (no new layer per boot); booting a snapshot or base is an ephemeral boot (`--snapshot <label>` / `--ephemeral`): nothing is kept and the snapshot is never modified.
-Boot confirmation shows the exact `omloader boot ...` command, what it will do, and `d` streams a **dry-run preview**. After the confirmation the TUI restores
+Booting *current* (Enter) continues the live state (no new layer per boot); booting a snapshot or base is an ephemeral boot (`--snapshot <label>` / `--ephemeral`): nothing is kept and the snapshot is never modified.
+The action menu's *Preview the boot command* streams a **dry-run** (`omloader boot --dry-run`); there is no boot confirmation. Right after the key press the TUI restores
 the terminal and runs `runBoot` in the foreground, i.e. **exactly the code path of `omloader boot`**: VM = dm-snapshot + kexec
 (never returns), container = mounts the root and writes `/run/omloader-switch`, then `omloader tui` exits 0 and
 `switch-root.sh` (the code formerly inline in `autoboot.sh`) runs `systemctl switch-root`. If the boot fails the error is printed and the TUI comes back after Enter.

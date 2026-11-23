@@ -748,7 +748,11 @@ func (m *Model) drawDialog(c *Canvas) {
 			lines = append(lines, "")
 		}
 	case dkConfirm:
-		lines = append(lines, "", "[Enter/y] "+L.Yes+"    [Esc/n] "+L.No)
+		btn := "[Enter/y] " + L.Yes + "    [Esc/n] " + L.No
+		if d.Buttons != "" {
+			btn = d.Buttons
+		}
+		lines = append(lines, "", btn)
 	}
 	h := len(lines) + 2
 	if h > m.H-3 {

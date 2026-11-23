@@ -69,8 +69,12 @@ Mind the names: the CLI flags `--vm` and `images list --type vm` keep LXD's imag
    ```yaml
    boot:
      default_image: ubuntu-noble
-     timeout: 5
+     timeout: 5      # any key cancels the countdown; `default_image: last` = what the TUI booted last
    ```
+
+In the TUI, **Enter boots at once** (image, or `current`); Enter on an older snapshot or `base` reverts to it and boots after one "your current state will be lost" dialog (`K` saves it as a snapshot first).
+
+Fully unattended (Ventoy default entry + this countdown): [docs/INSTALL.md](docs/INSTALL.md#unattended-boot-boot-a-chosen-image-with-no-key-presses).
 
 Prefer menus? Run `omloader tui` ([docs/tui.md](docs/tui.md)).
 

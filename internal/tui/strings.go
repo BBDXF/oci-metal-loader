@@ -3,51 +3,54 @@ package tui
 // Strings holds every user-visible UI string (English). Translating the TUI later means providing another Strings value;
 // no other file contains UI text (key names and data values excepted).
 type Strings struct {
-	Title, Tabs                                                    []string
-	AppName                                                        string
-	HintImages, HintDetail, HintPull, HintStorage, HintNet         string
-	HintSettings, HintOp, HintDialog, HintForm, HintHelp           string
-	NoImages, NoSnaps, Loading, Refreshed, Cancelled, Running      string
-	Done, Failed, Close, Yes, No, Cancel, Warning, Error, Info     string
-	ColName, ColType, ColSize, ColBase, ColSnaps, ColCurrent       string
-	ColUsed                                                        string
-	BaseNode, CurrentMark, Frozen, Leaf, Ephemeral, NoLayer        string
-	QuitTitle, QuitText                                            string
-	PowerTitle, PowerReboot, PowerOff, PowerRebooting, PowerBusy   string
-	BootTitle, BootCurrent, BootSelected, BootThrowaway, BootBase  string
-	BootConfirm, BootPreview, BootStarting                         string
-	BootContinues, BootEphemeralNote                               string
-	CurrentNode, EphemeralNode                                     string
-	CreateTitle, FieldName, FieldNote, FieldTag, CreateHelp        string
-	RevertTitle, RevertKeep, RevertDiscard, RevertSure             string
-	RevertSelect, RevertKeepHelp                                   string
-	DeleteTitle, DeleteRec, DeleteCurrent, DeleteBase              string
-	DeleteNotSnap, DeleteMerge, TagNotSnap, SelectSnap             string
-	TagTitle, TagHelp, NoteTitle                                   string
-	PruneTitle, PruneRetention, PruneGC, PruneNothing, PruneAsk    string
-	FlattenTitle, ExportTitle, FieldOut, VerifyTitle, VerifyDeep   string
-	VerifyOK                                                       string
-	SourcesTitle, SourceTest, SourceBlocked, SourceOffline         string
-	CatalogTitle, FilterTitle, FieldSearch, FilterHelp, MatchCount string
-	PullTitle, PullConfirm, PullName, PullProgress, NoSources      string
-	PullOffline, NoCatalog                                         string
-	StoreTitle, StoreNone, StoreCreate, StoreGrow, StoreSize       string
-	StorePath, StoreWizard, StoreGuard, StoreGuardOK               string
-	StoreGuardLow, StoreDirty, StoreClean                          string
-	NetTitle, SettingsTitle                                        string
-	HelpTitle                                                      string
-	HelpPages                                                      []HelpPage
-	HelpScroll                                                     string
-	Working, HdrVersion, HdrStore, HdrFree, HdrRAM, HdrImages      string
-	HdrNet, HdrNoNet, HdrOffline, OpLog, OpRunning, OpOK, OpFail   string
-	OpElapsed, OpDismiss, OpCancelled, OpCancelHint, OpLogOff      string
-	HintPullCat, HintOpRun, HintOpDone, HintMsg, HintMenu          string
-	SearchLabel, SearchEmpty, NoMatch, Matches                     string
-	RevertWhat, RevertTarget, DeleteWhat, PruneWhat, GCWhat        string
-	StoreCreateWarn, StoreGrowWarn, StoreCreateAsk, StoreGrowAsk   string
-	InfoTitle, OpSuccessText, RetWhat, PosFmt, HelpHere            string
-	ASCIINote                                                      string
-	TooSmall                                                       string
+	Title, Tabs                                                                                                     []string
+	AppName                                                                                                         string
+	HintImages, HintDetail, HintPull, HintStorage, HintNet                                                          string
+	HintSettings, HintOp, HintDialog, HintForm, HintHelp                                                            string
+	NoImages, NoSnaps, Loading, Refreshed, Cancelled, Running                                                       string
+	Done, Failed, Close, Yes, No, Cancel, Warning, Error, Info                                                      string
+	ColName, ColType, ColSize, ColBase, ColSnaps, ColCurrent                                                        string
+	ColUsed                                                                                                         string
+	BaseNode, CurrentMark, Frozen, Leaf, Ephemeral, NoLayer                                                         string
+	QuitTitle, QuitText                                                                                             string
+	PowerTitle, PowerReboot, PowerOff, PowerRebooting, PowerBusy                                                    string
+	BootTitle, BootCurrent, BootSelected, BootThrowaway, BootBase                                                   string
+	BootConfirm, BootPreview, BootStarting                                                                          string
+	BootContinues, BootEphemeralNote                                                                                string
+	CurrentNode, EphemeralNode                                                                                      string
+	CreateTitle, FieldName, FieldNote, FieldTag, CreateHelp                                                         string
+	RevertTitle, RevertKeep, RevertDiscard, RevertSure                                                              string
+	RevertSelect, RevertKeepHelp                                                                                    string
+	DeleteTitle, DeleteRec, DeleteCurrent, DeleteBase                                                               string
+	DeleteNotSnap, DeleteMerge, TagNotSnap, SelectSnap                                                              string
+	TagTitle, TagHelp, NoteTitle                                                                                    string
+	PruneTitle, PruneRetention, PruneGC, PruneNothing, PruneAsk                                                     string
+	FlattenTitle, ExportTitle, FieldOut, VerifyTitle, VerifyDeep                                                    string
+	VerifyOK                                                                                                        string
+	SourcesTitle, SourceTest, SourceBlocked, SourceOffline                                                          string
+	CatalogTitle, FilterTitle, FieldSearch, FilterHelp, MatchCount                                                  string
+	PullTitle, PullConfirm, PullName, PullProgress, NoSources                                                       string
+	PullOffline, NoCatalog                                                                                          string
+	StoreTitle, StoreNone, StoreCreate, StoreGrow, StoreSize                                                        string
+	StorePath, StoreWizard, StoreGuard, StoreGuardOK                                                                string
+	StoreGuardLow, StoreDirty, StoreClean                                                                           string
+	NetTitle, SettingsTitle                                                                                         string
+	HelpTitle                                                                                                       string
+	HelpPages                                                                                                       []HelpPage
+	HelpScroll                                                                                                      string
+	Working, HdrVersion, HdrStore, HdrFree, HdrRAM, HdrImages                                                       string
+	HdrNet, HdrNoNet, HdrOffline, OpLog, OpRunning, OpOK, OpFail                                                    string
+	OpElapsed, OpDismiss, OpCancelled, OpCancelHint, OpLogOff                                                       string
+	HintPullCat, HintOpRun, HintOpDone, HintMsg, HintMenu                                                           string
+	SearchLabel, SearchEmpty, NoMatch, Matches                                                                      string
+	RevertWhat, RevertTarget, DeleteWhat, PruneWhat, GCWhat                                                         string
+	StoreCreateWarn, StoreGrowWarn, StoreCreateAsk, StoreGrowAsk                                                    string
+	NoticeReverted, RevertLose, RevertTip, RevertButtons, RevertSaveHelp, MenuTitle, MenuBootCurrent, MenuBootThrow string
+	MenuOpenTree, MenuPreview, MenuBootSelRO, MenuBootSelROFmt, MenuRevert, MenuSnapshot                            string
+	MenuTag, MenuNote, MenuDelete, MenuFlatten, MenuExport, MenuPrune, MenuVerify, MenuDetails                      string
+	InfoTitle, OpSuccessText, RetWhat, PosFmt, HelpHere                                                             string
+	ASCIINote                                                                                                       string
+	TooSmall                                                                                                        string
 }
 
 // HelpPage is one section of the full-screen help.
@@ -65,8 +68,8 @@ func English() Strings {
 		AppName: "OCI Metal Loader",
 		Tabs:    []string{"Images", "Pull", "Storage", "Network", "Settings"},
 
-		HintImages:   "Enter:open  r:refresh  1-5:tabs  s:shell  P:power  ?:help  q:quit",
-		HintDetail:   "Enter/b:boot c:create r:revert d:del t:tag n:note p:prune f:flat e:exp v:ver",
+		HintImages:   "Enter:boot  o:snapshots  Space/m:menu  e:ephemeral  r:refresh  S:shell  ?:help",
+		HintDetail:   "Enter:boot  Space/m:menu  e:ephemeral  s:snapshot  r:revert  d:delete  ?:help",
 		HintPull:     "Enter:load catalog  m:mirror  t:test  /:search  r:reload  Tab:tabs  Esc:back  ?:help",
 		HintStorage:  "c:create/grow store file  r:refresh  1-5:tabs  ?:help",
 		HintNet:      "r:refresh  t:test sources  1-5:tabs  ?:help",
@@ -129,23 +132,27 @@ func English() Strings {
 				"1-5 / Tab / Shift+Tab   switch tab (Images Pull Storage Network Settings)",
 				"Up/Down j/k  PgUp/PgDn  Home/End   move in lists (position shown as n/total, scroll bar on the right)",
 				"Enter select / ok     Esc back / cancel     ?  or F1  this help     Ctrl+L redraw",
-				"s shell (exit the shell to return)     P reboot / power off     q or Esc on the first screen: leave",
+				"S shell (exit the shell to return)     P reboot / power off     q or Esc on the first screen: leave",
 				"Ctrl+C cancels a running operation; it never quits the TUI.",
 				"Header row: loader version, snapshot store free space, images size, network (IP / offline).",
 				"Bottom bar: the keys valid right now.  Boot hands over to the booted system.",
 			}},
 			{"Images", []string{
-				"Enter / o   open the image (snapshot tree)",
-				"r           refresh the list",
+				"Enter       boot the image at once (continues current, no confirmation)",
+				"o / Right   open the snapshot tree     e  boot a throwaway copy (ephemeral)",
+				"Space or m  action menu (boot options, preview, open tree)     r  refresh the list",
+				"S shell, P power, 1-5 tabs, q / Esc leave.  The image booted last is preselected (boot.remember_last).",
 			}},
 			{"Image detail (snapshot tree)", []string{
-				"Enter / b   boot menu: continue current, selected snapshot (ephemeral), throwaway, base (ephemeral)",
-				"c   create snapshot (freeze the live state)     t  tag (-tag removes)     n  note",
-				"r   revert to the selected snapshot / base: the CURRENT LIVE STATE IS DISCARDED (or kept as a snapshot)",
-				"d   delete snapshot (merged into its child on overlay images; refused on dm-snapshot: flatten first)",
-				"p   prune by retention / GC of ephemeral leftovers (dry-run first)",
-				"f   flatten into a new image     e  export     v  verify (deep = hash the base)     R  reload",
-				"Colours: base bold, ● current green, frozen cyan, ephemeral yellow, #tags magenta, sizes dim.",
+				"Enter on current     boot it at once, no confirmation (also on the snapshot the live state sits on)",
+				"Enter on a snapshot or base   revert the live state to it and boot. If the live state has changes ONE dialog",
+				"  says they will be LOST: Enter/y = revert + boot, K = save them as a snapshot first (label prompt, default",
+				"  snap-YYYYMMDD-HHMM, Enter accepts), Esc/n = cancel. No changes -> no dialog.",
+				"Space or m   action menu: boot read-only / throwaway, preview, revert, snapshot, tag, note, delete, flatten, export, verify, details",
+				"e  ephemeral boot of the selected state     s  create snapshot (one label prompt)     r  revert without booting (same dialog)",
+				"d  delete snapshot (asks, explains the merge)     p  prune / GC (asks)     t tag  n note  f flatten  x export  v verify  R reload",
+				"Alt+Enter / Ctrl+Enter (where the terminal sends them) also open the menu.",
+				"Colours: base bold, current green, frozen cyan, ephemeral yellow, #tags magenta, sizes dim.",
 			}},
 			{"Pull", []string{
 				"Sources list: Enter load catalog, t test sources, / go to the search box, r reload, Esc back",
@@ -180,7 +187,17 @@ func English() Strings {
 		DeleteWhat: "The snapshot %q and its %s layer will be removed permanently.", PruneWhat: "dry-run result: would delete %d layer(s); they are removed permanently:", GCWhat: "Garbage collection only removes leftovers of ephemeral boots; snapshots and the live state are kept.",
 		StoreCreateWarn: "Creates an ext4 store file (label OMLOADER) on the host partition.", StoreGrowWarn: "Grows the store file offline (extend + e2fsck + resize2fs). The loader releases (unmounts) the store first: reboot afterwards.",
 		StoreCreateAsk: "Create %s with size %s? Needs that much free space on the host partition; the store is used after a reboot.", StoreGrowAsk: "Grow %s to %s? The store is RELEASED (unmounted) now: snapshot operations stop until you reboot the loader.",
-		PosFmt: "%d/%d", HelpHere: "this screen", InfoTitle: "Selected", OpSuccessText: "Completed without errors.", RetWhat: "Retention prune removes snapshots beyond keep_last / keep_tagged; the live state is kept.",
+		PosFmt: "%d/%d", HelpHere: "this screen", NoticeReverted: "reverted to %s",
+		RevertLose:     "Booting %s reverts the live state to it: the current state (%s written since %s) will be LOST.",
+		RevertTip:      "Tip: press K to save the current state as a snapshot first, then revert.",
+		RevertButtons:  "[Enter/y] Revert  [K] Snapshot first  [Esc/n] Cancel",
+		RevertSaveHelp: "Name of the snapshot that keeps the current state; then the revert continues.",
+		MenuTitle:      "Actions:", MenuBootCurrent: "Boot current (continue the live state)", MenuBootThrow: "Boot a throwaway copy of current (ephemeral)",
+		MenuOpenTree: "Open the snapshot tree", MenuPreview: "Preview the boot command (dry-run)", MenuBootSelRO: "Boot base read-only (ephemeral)",
+		MenuBootSelROFmt: "Boot snapshot %s read-only (ephemeral)", MenuRevert: "Revert to the selected state, do not boot", MenuSnapshot: "Create snapshot...",
+		MenuTag: "Tag...", MenuNote: "Note...", MenuDelete: "Delete snapshot...", MenuFlatten: "Flatten into a new image...", MenuExport: "Export...",
+		MenuPrune: "Prune / GC...", MenuVerify: "Verify...", MenuDetails: "Details",
+		InfoTitle: "Selected", OpSuccessText: "Completed without errors.", RetWhat: "Retention prune removes snapshots beyond keep_last / keep_tagged; the live state is kept.",
 		ASCIINote: "ASCII",
 		TooSmall:  "Terminal too small (need 80x24)",
 	}

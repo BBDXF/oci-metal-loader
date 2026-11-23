@@ -114,6 +114,9 @@ type Boot struct {
 	// UI: what the console shows when nothing is booted automatically: "tui" (interactive terminal UI, default) or "shell".
 	// The kernel flag omloader.ui=shell|tui wins over this key.
 	UI string `yaml:"ui" json:"ui"`
+	// RememberLast: the TUI records the last booted image/snapshot in <data>/omloader/last-boot (silently skipped when not
+	// writable); it becomes the TUI's initial selection, and default_image: last boots it automatically.
+	RememberLast bool `yaml:"remember_last" json:"remember_last"`
 }
 type DataCfg struct {
 	DefaultBackend    string `yaml:"default_backend" json:"default_backend"`

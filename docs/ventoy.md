@@ -28,6 +28,7 @@ If the host partition is labelled `VTOYDATA`/`OMLOADER` it is switched to read-w
 Any other partition holding the ISO stays read-only. At shutdown `mounts.sh stop` unmounts the data partitions in the right order.
 
 ## Default image without kernel parameters
+Fully unattended (Ventoy default entry + omloader countdown): see [INSTALL.md, Unattended boot](INSTALL.md#unattended-boot-boot-a-chosen-image-with-no-key-presses).
 Create `omloader/boot.yaml` on VTOYDATA (or `/omloader/boot.yaml` next to the ISO on the Ventoy partition; also `omloader.yaml` on VTOYDATA/OMLOADER is read):
 ```yaml
 boot:

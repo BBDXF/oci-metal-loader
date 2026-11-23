@@ -43,6 +43,8 @@ type Dialog struct {
 	OnPick   func(i int)
 	OnSubmit func(vals []string)
 	Extra    map[rune]func()
+	Replace  bool   // forms: the first printable key replaces the (default) value of the first field instead of appending
+	Buttons  string // confirm dialogs: replaces the default "[Enter/y] Yes  [Esc/n] No" line
 }
 
 // TreeRow is one displayed line of the snapshot tree.
@@ -114,7 +116,7 @@ func New(svc Service, th Theme) *Model {
 }
 
 // Init loads the images list.
-func (m *Model) Init() { m.refreshHeader(true); m.RefreshImages() }
+func (m *Model) Init() { m.refreshHeader(true); m.RefreshImages(); m.selectLast() }
 
 // Result returns the outcome once Done.
 func (m *Model) Result() Result { return m.res }
