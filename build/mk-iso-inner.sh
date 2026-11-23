@@ -11,6 +11,12 @@ rm -rf $X; mkdir -p $X
 cp -a $W/build/live/rootfs/. $X/
 install -D -m755 $W/bin/omloader $X/usr/local/bin/omloader
 install -D -m644 $W/configs/sources.yaml $X/etc/omloader/sources.yaml   # sources + mirrors catalog (docs/sources.md); override: <data partition>/omloader/sources.yaml
+# base info: static part from the live layer (build/gen-base-info.sh) + build-time keys -> /etc/omloader-release, packages.txt
+BD=$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y-%m-%d)
+mkdir -p $X/etc $X/usr/share/omloader
+{ echo "OMLOADER_VERSION=${OML_VERSION:-dev}"; echo "BUILD_DATE=$BD"; echo "GIT_COMMIT=${GIT_COMMIT:-unknown}"; cat /usr/share/omloader/base-release; } > $X/etc/omloader-release
+cp /usr/share/omloader/packages.txt $X/usr/share/omloader/packages.txt
+cp $X/etc/omloader-release $OUT/omloader-release; cp /usr/share/omloader/packages.txt $OUT/packages.txt
 mksquashfs $X $OUT/omloader.squashfs -noappend -comp zstd -quiet -no-progress
 
 # ---- stage-1 initramfs: busybox + mount/blkid/modprobe + the boot-critical modules ----
@@ -39,6 +45,7 @@ cp $W/build/stage1-init $R/init; chmod +x $R/init
 cp /boot/vmlinuz-$KVER $ISO/boot/vmlinuz
 cp $OUT/live.squashfs $OUT/omloader.squashfs $ISO/live/
 echo marker > $ISO/boot/omloader.marker
+cp $OUT/omloader-release $OUT/packages.txt $ISO/   # readable without booting (mount the ISO)
 cp $W/build/grub.cfg $ISO/boot/grub/grub.cfg
 # grub font for gfxterm (grub.cfg: loadfont ($root)/boot/grub/fonts/unicode.pf2); grub-common ships it (~2.3 MB on the ISO)
 mkdir -p $ISO/boot/grub/fonts; cp /usr/share/grub/unicode.pf2 $ISO/boot/grub/fonts/unicode.pf2

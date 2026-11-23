@@ -92,6 +92,10 @@ Release (`.github/workflows/release.yml`): pushing a tag `0.1.0` or `v0.1.0` bui
 with `omloader-<version>.iso`, `omloader-<version>-linux-amd64.tar.gz`, `omloader-<version>-config.zip` and `SHA256SUMS` (which covers all three). The workflow can be re-run from the *Actions* tab
 (*Re-run jobs*, or *Run workflow* with a tag name for an existing tag). The ISO build and the smoke test have **not run on GitHub runners yet** — treat the first manual/tag run as the test.
 
+### Updating the Debian base
+
+Every build uses the latest packages of one Debian stable release (`DEBIAN_RELEASE`, default `bookworm`, in `build/Containerfile`; override with the env var of the same name for `build/build-iso.sh`). The build records the result in `/etc/omloader-release` and `packages.txt` (also at the ISO root and as the Release asset `omloader-<ver>-packages.txt`). `make update-base` compares the last build's base (`out/omloader-release`) with the current point release and kernel and says whether a rebuild is advised. Rebuild on a kernel security fix or a new Debian point release, and always before a tag (bump `VERSION`, `make iso`, run `make e2e-live`); the Release notes point to the base info.
+
 ## Contributing
 
 Keep changes small and tested: `make test` must pass; run the relevant `e2e-*` suite (remote harness or a local KVM host) for boot/snapshot changes.

@@ -41,6 +41,7 @@ Pipeline (`build/build-iso.sh`; podman or docker; needs `mksquashfs` with zstd o
 - Kernel cmdline from `grub.cfg`: `console=tty0 console=ttyS0,115200 loglevel=4 systemd.show_status=auto`. Container guests share it (so tty1 *and* ttyS0 consoles work; `/dev/console` = ttyS0, the last `console=`).
 - Before `systemctl switch-root`, `autoboot.sh` bind-mounts `/mnt/snap` and `/mnt/images` to `<newroot>/.omloader/{snap,images}` and writes `<newroot>/.omloader/devs`; the guest's shutdown hooks (installed by the firstboot adapter) remount them read-only at poweroff. The loader's own poweroff paths (`poweroff_now` in autoboot.sh) run `sync` + `remount,ro`.
 - Passing args in tests: grub.cfg sources `/boot/grub/extra.cfg` if present; `test/run-kvm.sh` copies the ISO and injects it with xorriso (no rebuild).
+- `make update-base` -> is the last-built Debian base behind current stable? (advice only)
 - `make licenses` -> `out/licenses.tsv` (package, version, license ids); `build/THIRD-PARTY.md` has the licensing notes.
 - `make e2e-live` (`test/e2e-live.sh`): DHCP lease/route, resolver, CA bundle, extra CA via `update-ca-certificates` + TLS to a local https server (QEMU user-net 10.0.2.2), tool set, selftest flag, boot-to-shell time, ISO size.
 

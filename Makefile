@@ -11,7 +11,7 @@ RSH  = $(if $(OML_REMOTE_PASS),sshpass -e )ssh -o StrictHostKeyChecking=no
 CONTAINER_ENGINE ?= $(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
 export CONTAINER_ENGINE
 
-.PHONY: screenshots bin config-pkg test vet fmt version iso iso-local e2e-live-local sync iso-remote fixture disk e2e e2e-oci e2e-snap e2e-live e2e-ui e2e-pull e2e-ventoy e2e-store e2e-tui e2e-real licenses clean clean-remote check-remote
+.PHONY: update-base screenshots bin config-pkg test vet fmt version iso iso-local e2e-live-local sync iso-remote fixture disk e2e e2e-oci e2e-snap e2e-live e2e-ui e2e-pull e2e-ventoy e2e-store e2e-tui e2e-real licenses clean clean-remote check-remote
 
 version:
 	@echo $(VERSION)
@@ -89,3 +89,7 @@ screenshots:
 	rm -rf out/screenshots-sim && mkdir -p out/screenshots-sim/ans
 	OML_SHOTS_DIR=$(CURDIR)/out/screenshots-sim/ans go test ./internal/tui -count=1 -run TestSimShots
 	python3 test/screenshots/ans2png.py out/screenshots-sim/ans out/screenshots-sim
+
+# Is the last-built live base behind current Debian stable? (podman/docker + network; builds nothing)
+update-base:
+	build/update-base.sh

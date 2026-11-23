@@ -42,6 +42,8 @@ jobs:
           name: omloader-iso
           path: |
             out/omloader-*.iso
+            out/omloader-*-packages.txt
+            out/omloader-release
             out/omloader-*-config.zip
             out/SHA256SUMS
           if-no-files-found: error

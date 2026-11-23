@@ -1,7 +1,10 @@
 # Two targets from one package set (shared layer cache):
 #   live    - the Debian bookworm live userspace; exported (podman export) and squashed to live.squashfs
 #   builder - live + ISO tooling (grub, xorriso, ...); runs build/mk-iso-inner.sh (stage-1 initramfs + ISO)
-FROM debian:bookworm AS live
+# The live base is always the latest packages of one Debian stable release; change DEBIAN_RELEASE to move to the next one.
+ARG DEBIAN_RELEASE=bookworm
+FROM debian:${DEBIAN_RELEASE} AS live
+ARG DEBIAN_RELEASE
 ARG DEBIAN_MIRROR=http://deb.debian.org/debian
 ENV DEBIAN_FRONTEND=noninteractive
 RUN sed -i "s#http://deb.debian.org/debian#$DEBIAN_MIRROR#g; s#^Components: main\$#Components: main non-free-firmware#" /etc/apt/sources.list.d/debian.sources
@@ -31,6 +34,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends kbd \
  && printf 'Terminus console fonts (Uni3-Terminus*.psf.gz) extracted from the Debian package console-setup-linux (source: console-setup, Terminus font by Dimitar Toshkov Zhekov, SIL Open Font License 1.1). See the package copyright in Debian bookworm.\n' > /usr/share/doc/console-setup-linux/copyright \
  && rm -rf /var/lib/apt/lists/* /var/cache/apt/* /var/log/* /usr/share/man /usr/share/info /usr/share/lintian /usr/share/locale \
  && find /usr/share/doc -type f ! -name copyright -delete && find /usr/share/doc -type d -empty -delete
+# base description for /etc/omloader-release and packages.txt (see build/gen-base-info.sh; finished by mk-iso-inner.sh)
+COPY gen-base-info.sh /tmp/gen-base-info.sh
+RUN BASE_IMAGE=debian:$DEBIAN_RELEASE DEBIAN_MIRROR=$DEBIAN_MIRROR sh /tmp/gen-base-info.sh && rm -f /tmp/gen-base-info.sh
 
 FROM live AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends \

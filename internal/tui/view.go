@@ -691,6 +691,9 @@ func (m *Model) helpRows() []seg {
 		}
 	}
 	var out []seg
+	if m.hdrOK && m.hdr.Base != "" {
+		out = append(out, seg{"omloader " + m.hdr.Version + ", " + m.hdr.Base, StFaint}, seg{"", StNormal})
+	}
 	for n, i := range order {
 		if i >= len(L.HelpPages) {
 			continue

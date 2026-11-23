@@ -2,6 +2,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -9,13 +10,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	"omloader/internal/baseinfo"
 	"omloader/internal/boot"
 	"omloader/internal/config"
 	"omloader/internal/imgimport"
 )
 
 const usage = `usage:
-  omloader version
+  omloader version [--long|--json]   (--long/--json add the Debian live base info from /etc/omloader-release)
   omloader config validate [-c omloader.yaml] [-i image.yaml]
   omloader config show --resolved [-c omloader.yaml] [-i image.yaml]
   omloader config get [-c omloader.yaml] KEY   (print one resolved value, e.g. boot.default_image; for scripts)
@@ -50,9 +52,8 @@ func parse(fs *flag.FlagSet, args []string) ([]string, error) {
 
 func run(args []string, out, errw io.Writer) int {
 	fail := func(err error) int { fmt.Fprintln(errw, "error:", err); return 1 }
-	if len(args) == 1 && (args[0] == "version" || args[0] == "--version") {
-		fmt.Fprintln(out, "omloader", version)
-		return 0
+	if len(args) >= 1 && (args[0] == "version" || args[0] == "--version") {
+		return runVersion(args[1:], out, errw)
 	}
 	if len(args) < 1 || (len(args) < 2 && args[0] != "boot" && args[0] != "guest-assemble" && args[0] != "snapshot" && args[0] != "tui") {
 		fmt.Fprint(errw, usage)
@@ -230,5 +231,46 @@ func runImport(args []string, out, errw io.Writer) int {
 		return 1
 	}
 	fmt.Fprintln(out, "imported:", d)
+	return 0
+}
+
+// baseFile is the live base description; a variable so tests can point it elsewhere.
+var baseFile = baseinfo.Path
+
+// runVersion prints the loader version; --long adds the live base (/etc/omloader-release), --json prints both as JSON.
+// Without the file (dev builds, not in the live system) only the loader version is shown.
+func runVersion(args []string, out, errw io.Writer) int {
+	fs := flag.NewFlagSet("version", flag.ContinueOnError)
+	fs.SetOutput(errw)
+	long := fs.Bool("long", false, "also print the Debian live base info")
+	asJSON := fs.Bool("json", false, "JSON output (loader version + base info)")
+	if err := fs.Parse(args); err != nil || fs.NArg() > 0 {
+		return 2
+	}
+	in, _ := baseinfo.Read(baseFile)
+	switch {
+	case *asJSON:
+		m := map[string]any{"omloader": version, "base": map[string]string(in)}
+		if in == nil {
+			m["base"] = nil
+		}
+		b, _ := json.MarshalIndent(m, "", "  ")
+		fmt.Fprintln(out, string(b))
+	case *long:
+		fmt.Fprintln(out, "omloader", version)
+		if in == nil {
+			fmt.Fprintln(out, "base: unknown ("+baseFile+" not present; not running from the live ISO)")
+			break
+		}
+		fmt.Fprintln(out, "base:", in.Line())
+		for _, l := range in.Long() {
+			fmt.Fprintln(out, "  "+l)
+		}
+	default:
+		fmt.Fprintln(out, "omloader", version)
+		if in != nil {
+			fmt.Fprintln(out, "base:", in.Line())
+		}
+	}
 	return 0
 }

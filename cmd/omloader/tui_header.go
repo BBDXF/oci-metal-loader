@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"omloader/internal/baseinfo"
 	"omloader/internal/snapmgr"
 	"omloader/internal/tui"
 )
@@ -18,6 +19,9 @@ func (s *realSvc) Header() tui.HeaderInfo {
 	h := tui.HeaderInfo{Version: version, ImagesUsed: -1}
 	if v := os.Getenv("OMLOADER_VERSION"); v != "" && version == "dev" {
 		h.Version = v
+	}
+	if in, err := baseinfo.Read(baseFile); err == nil {
+		h.Base = in.Line()
 	}
 	if t, f, _, err := snapmgr.FreePercent(s.snapRoot, nil); err == nil {
 		h.StoreTotal, h.StoreFree = int64(t), int64(f)

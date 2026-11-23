@@ -130,3 +130,23 @@ func TestSimShots(t *testing.T) {
 		dump(m, "5-storage-"+sfx)
 	}
 }
+
+type baseSvc struct{ *fakeSvc }
+
+func (b baseSvc) Header() HeaderInfo {
+	h := b.fakeSvc.Header()
+	h.Base = "Debian 12.8 bookworm, kernel 6.1.0-28-amd64, built 2026-11-23"
+	return h
+}
+
+func TestHelpShowsBase(t *testing.T) {
+	m := New(baseSvc{newFake()}, Theme{ASCII: true})
+	m.Init()
+	m.Update(R('?'))
+	mustHave(t, m, "omloader v9.9, Debian 12.8 bookworm, kernel 6.1.0-28-amd64, built 2026-11-23")
+	m2, _ := newModel(t, true)
+	m2.Update(R('?'))
+	if strings.Contains(screen(m2), "omloader v9.9,") {
+		t.Fatal("no Base line without base info")
+	}
+}

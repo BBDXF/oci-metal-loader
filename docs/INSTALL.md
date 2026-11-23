@@ -115,6 +115,8 @@ Images live in `images/<name>/` (`image.yaml` + `base.raw` for `lxd-vm` or `base
 
 Desktop environments (which sources have ready desktop VMs, how to add one to a server image): [desktops.md](desktops.md).
 
+**What is inside the ISO:** a Debian stable live base plus the `omloader` binary. See which with `omloader version --long` (reads `/etc/omloader-release`; also shown in the TUI `?` help), or without booting: `omloader-release` and `packages.txt` at the ISO root (the Release also has `omloader-<ver>-packages.txt`).
+
 Validate a hand-written config: `omloader config validate -c omloader.yaml -i images/NAME/image.yaml`; `omloader config show --resolved` shows every value and the layer/line it came from.
 
 ## 6. Default account and security

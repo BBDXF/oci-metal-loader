@@ -15,6 +15,7 @@ type HeaderInfo struct {
 	ImagesUsed int64  // bytes used below the images root
 	Net        string // IP address(es), "" = no address
 	Offline    bool   // policy / cache.offline: only cached images
+	Base       string // compact Debian live base line ("Debian 12.8 bookworm, kernel ..., built ..."), "" = unknown (dev build)
 }
 
 // HeaderProvider is optionally implemented by a Service; Header must be cheap (statfs, interface list).

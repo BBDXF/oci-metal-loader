@@ -51,7 +51,7 @@ jobs:
       - name: Package
         run: |
           mkdir -p dist
-          cp out/omloader-${VERSION}.iso dist/
+          cp out/omloader-${VERSION}.iso out/omloader-${VERSION}-packages.txt dist/
           tar -C bin -czf dist/omloader-${VERSION}-linux-amd64.tar.gz omloader
           OML_VERSION="$VERSION" build/mk-config-pkg.sh && cp out/omloader-${VERSION}-config.zip dist/
           (cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS)
@@ -64,9 +64,12 @@ jobs:
           name: OCI Metal Loader ${{ env.VERSION }}
           prerelease: ${{ env.PRERELEASE == 'true' }}
           generate_release_notes: true
+          body: |
+            Debian live base: see `omloader version --long` in the live system, `omloader-release` at the ISO root, and the attached `omloader-${{ env.VERSION }}-packages.txt`.
           fail_on_unmatched_files: true
           files: |
             dist/omloader-${{ env.VERSION }}.iso
+            dist/omloader-${{ env.VERSION }}-packages.txt
             dist/omloader-${{ env.VERSION }}-linux-amd64.tar.gz
             dist/omloader-${{ env.VERSION }}-config.zip
             dist/SHA256SUMS

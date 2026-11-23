@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"omloader/internal/baseinfo"
 	"omloader/internal/boot"
 	"omloader/internal/config"
 	"omloader/internal/simplestreams"
@@ -656,7 +657,12 @@ func (s *realSvc) Settings() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return append([]string{fmt.Sprintf("images root: %s", s.imagesRoot), fmt.Sprintf("snapshots root: %s", s.snapRoot), ""}, r.Flat()...), nil
+	head := []string{fmt.Sprintf("omloader %s", version)}
+	if in, err := baseinfo.Read(baseFile); err == nil && in["BUILD_DATE"] != "" {
+		head[0] += " (built " + in["BUILD_DATE"] + ")"
+	}
+	head = append(head, "", fmt.Sprintf("images root: %s", s.imagesRoot), fmt.Sprintf("snapshots root: %s", s.snapRoot), "")
+	return append(head, r.Flat()...), nil
 }
 
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }

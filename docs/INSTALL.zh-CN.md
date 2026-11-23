@@ -111,6 +111,8 @@ NTFS 注意：存放 **ISO 本身**的 Ventoy 分区不能是 NTFS（加载器�
 
 桌面环境（哪些源有现成的桌面 VM、如何给服务器镜像加桌面）：[desktops.zh-CN.md](desktops.zh-CN.md)。
 
+**ISO 里有什么：** Debian stable 的 live 基础系统加 `omloader` 二进制。用 `omloader version --long` 查看具体版本（读取 `/etc/omloader-release`，TUI 的 `?` 帮助里也有）；不启动也能看：ISO 根目录的 `omloader-release` 和 `packages.txt`（Release 另附 `omloader-<ver>-packages.txt`）。
+
 校验手写配置：`omloader config validate -c omloader.yaml -i images/NAME/image.yaml`；`omloader config show --resolved` 会显示每个值及其来源层/行号。
 
 ## 6. 默认账号与安全
