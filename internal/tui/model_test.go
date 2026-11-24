@@ -1056,3 +1056,23 @@ func TestSnapshotLabelPromptReplacesDefault(t *testing.T) {
 	}
 	m.Update(N("esc"))
 }
+
+func TestLeftGoesBack(t *testing.T) {
+	for _, k := range []Key{N("left"), R('h'), N("bs"), N("esc"), R('q')} {
+		m, _ := newModel(t, true)
+		m.Update(N("right")) // Right opens the snapshot tree
+		if m.Screen != ScrDetail {
+			t.Fatalf("%v: right must open the tree", k)
+		}
+		m.Update(k)
+		if m.Screen != ScrImages {
+			t.Fatalf("%v: must go back to the images list", k)
+		}
+	}
+	m, _ := newModel(t, true)
+	m.Update(R('2'))
+	m.Update(N("left"))
+	if m.Screen != ScrImages {
+		t.Fatal("left on the pull sources list goes back to Images")
+	}
+}

@@ -88,7 +88,7 @@ func (m *Model) pullKey(k Key, act string) {
 	}
 	m.ssel = moveSel(act, m.ssel, len(m.sources), m.bodyRows())
 	switch {
-	case act == "back":
+	case act == "back" || k.Name == "left" || k.Name == "bs":
 		m.gotoTab(ScrImages)
 	case act == "select":
 		if m.ssel < len(m.sources) {

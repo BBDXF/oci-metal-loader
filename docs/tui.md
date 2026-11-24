@@ -52,6 +52,8 @@ Wide (CJK) characters take two cells (width-aware padding, truncation, wrapping 
 Layouts: 80x24 is the reference. From 100 columns the lists use wider columns (image names, catalog spec up to 60 cells); from **110 columns** the
 image detail shows the node info (parent, created, size, tags, note) as a side panel on the right and the tree uses the full height.
 
+**Back navigation:** where `Right` / `o` drills in (Images -> snapshot tree) `Left`, `h`, `Backspace` and `Esc` come back; on the Pull sources list `Left` also returns to Images (in the catalog the search box owns the keys: `Esc`).
+
 ### Console font and resolution (tty1 / VNC / physical screen)
 
 The loader ships `kbd` and a Terminus subset (`Uni3-Terminus[Bold]` 16, 20x10, 24x12, 28x14, 32x16 in `/usr/share/consolefonts`, SIL OFL; `kbd` +2.0 MB installed
@@ -71,6 +73,8 @@ VTs to UTF-8 (`ESC % G`, `kbd_mode -u`); `tui-launch.sh` re-applies it on tty1 a
 Override: kernel argument `omloader.font=NAME` (a file in `/usr/share/consolefonts` without `.psf.gz`, `auto`, or `default` = keep the kernel font), or
 `font=NAME` in `<VTOYDATA|OMLOADER>/omloader/console.conf` (read after the data partitions are mounted, i.e. by `tui-launch.sh`). Boot messages
 before this unit runs (kernel, stage 1) still use the kernel's built-in font. Local test of the size rule: `test/console-font-test.sh`; remote screenshot of the loader at a given resolution: `test/look-screenshot.sh 1920x1080` (virtio-vga + qemu `screendump`).
+
+**Resolution drop in VMs:** a VM's display driver (virtio_gpu, bochs) replaces GRUB's framebuffer ~3 s after boot with its own mode (often 1280x800). The default entry keeps native drivers (container guests need them); use the GRUB entry *safe display* (`nomodeset`) or a fixed video mode in the VM, see [ventoy.md](ventoy.md#console-resolution-tty1--vnc).
 
 GRUB (UEFI): `grub.cfg` sets `gfxmode=1920x1080,1600x900,1366x768,1280x800,1280x720,1024x768,auto`, `gfxpayload=keep` (the Linux console keeps the GOP mode,
 efifb/simpledrm), `terminal_output serial gfxterm` (serial stays active, so the serial-first test boots are unchanged) with a dark background and

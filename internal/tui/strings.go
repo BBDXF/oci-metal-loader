@@ -133,7 +133,7 @@ func English() Strings {
 			{"Everywhere", []string{
 				"1-5 / Tab / Shift+Tab   switch tab (Images Pull Storage Network Settings)",
 				"Up/Down j/k  PgUp/PgDn  Home/End   move in lists (position shown as n/total, scroll bar on the right)",
-				"Enter select / ok     Esc back / cancel     ?  or F1  this help     Ctrl+L redraw",
+				"Enter select / ok     Esc back / cancel (Left/Backspace where Right drilled in)     ?  or F1  this help     Ctrl+L redraw",
 				"S shell (exit the shell to return)     P reboot / power off     q or Esc on the first screen: leave",
 				"Ctrl+C cancels a running operation; it never quits the TUI.",
 				"Header row: loader version, snapshot store free space, images size, network (IP / offline).",
@@ -141,7 +141,7 @@ func English() Strings {
 			}},
 			{"Images", []string{
 				"Enter       boot the image at once (continues current, no confirmation)",
-				"o / Right   open the snapshot tree     e  boot a throwaway copy (ephemeral)",
+				"o / Right   open the snapshot tree (Left, h, Backspace, Esc: back)   e  boot a throwaway copy (ephemeral)",
 				"Space or m  action menu (boot options, preview, open tree)     r  refresh the list",
 				"S shell, P power, 1-5 tabs, q / Esc leave.  The image booted last is preselected (boot.remember_last).",
 			}},

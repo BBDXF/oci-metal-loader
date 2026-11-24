@@ -8,7 +8,7 @@
 # Persistent: out/manual-usb.raw (VTOYDATA = images, OMLOADER = snapshots/cache; libvirt chowns it to libvirt-qemu while the domain runs)
 # and the domain's NVRAM (/var/lib/libvirt/qemu/nvram/omloader-manual_VARS.fd).
 # The serial output is also logged to work/manual/serial.log (libvirt-qemu owned, world-readable).
-# Env: OML_ARGS (extra kernel args, e.g. omloader.ui=shell), ISO, MEM_MIB (default 4096), VCPUS (default 2), DOM (domain name), VNC_PORT
+# Env: OML_ARGS (extra kernel args, e.g. omloader.ui=shell; OML_ARGS=nomodeset = the "safe display" behaviour: keep GRUB's resolution), RES_X/RES_Y (virtio video resolution, default 1920x1080), ISO, MEM_MIB (default 4096), VCPUS (default 2), DOM (domain name), VNC_PORT
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; O=$ROOT/out; M=$ROOT/work/manual; mkdir -p $M; chmod o+rx $ROOT $O $ROOT/work $M 2>/dev/null
 ISO=${ISO:-$O/omloader.iso}; DISK=$O/manual-usb.raw; DOM=${DOM:-omloader-manual}
 V="virsh -c qemu:///system"
@@ -49,7 +49,7 @@ ${UUID:+  <uuid>$UUID</uuid>
     <serial type='pty'><log file='$M/serial.log' append='off'/><target type='isa-serial' port='0'><model name='isa-serial'/></target></serial>
     <console type='pty'><target type='serial' port='0'/></console>
     <graphics type='vnc' port='${VNC_PORT:--1}' autoport='$([ -n "${VNC_PORT:-}" ] && echo no || echo yes)' listen='127.0.0.1'><listen type='address' address='127.0.0.1'/></graphics>
-    <video><model type='virtio'/></video>   <!-- Ubuntu's kernel has virtio-gpu but no bochs driver: with VGA the guest console stays blank after kexec -->
+    <video><model type='virtio' heads='1'><resolution x='${RES_X:-1920}' y='${RES_Y:-1080}'/></model></video>   <!-- Ubuntu's kernel has virtio-gpu but no bochs driver: with VGA the guest console stays blank after kexec -->
     <memballoon model='virtio' freePageReporting='on'><stats period='5'/></memballoon>   <!-- statistics for Cockpit; free page reporting returns the guest's free RAM to the host (qemu's RSS otherwise stays at the full 4 GiB after a boot) -->
     <input type='tablet' bus='usb'/>
     <rng model='virtio'><backend model='random'>/dev/urandom</backend></rng>

@@ -379,7 +379,7 @@ func (m *Model) detailKey(k Key, act string) {
 		r = 0
 	}
 	switch {
-	case act == "back" || r == 'q':
+	case act == "back" || r == 'q' || r == 'h' || k.Name == "left" || k.Name == "bs": // Left/h/Backspace: back to the list (Right/o drilled in)
 		m.Screen = ScrImages
 		m.RefreshImages()
 	case act == "select":

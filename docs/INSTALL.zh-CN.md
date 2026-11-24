@@ -453,6 +453,7 @@ Boot: omloader boot --image <image> [--snapshot current|base|<label>] [--ephemer
 - **选择 ISO 后黑屏 / 没有菜单。** 多半是 Secure Boot 没关：请关闭。试试 Ventoy 的另一种启动模式（normal ↔ GRUB2）。Ventoy 菜单只在 VGA 显示；加载器自己的 GRUB 与启动日志同时输出到串口（`console=ttyS0,115200`）。
   帧缓冲控制台会按分辨率挑选字体（`omloader.font=`、`console.conf`）。*真机表现未测试。*
 - **第一阶段提示找不到 live 介质 / 进入救援 shell。** 加载器找不到它的 ISO：请把 ISO 放在 exFAT、ext4、xfs 或 FAT32 上（不要 NTFS），位置 `/omloader.iso`、`/omloader/` 或 `/ISO/`，或用 `omloader.isofile=` 指定。
+- **虚拟机里启动后控制台分辨率变低（如 1920x1080 -> 1280x800）。** 虚拟机的显示驱动替换了固件帧缓冲。请选择 GRUB 菜单项「safe display」（`nomodeset`），或在虚拟机里固定视频模式；真机上由原生驱动选择模式。详见 [ventoy.md](ventoy.md)。
 - **Secure Boot。** 不支持（没有签名的 shim/内核）。请在固件设置里关闭。
 - **NTFS。** 加载器内核没有 `ntfs3`；NTFS 数据分区通过 ntfs-3g（FUSE）挂载。若 Windows 让卷处于休眠（快速启动）或脏状态，则以**只读**挂载：镜像可读，但其上的存储文件不可用（快照只在内存里）。请彻底关闭 Windows（`shutdown /s /t 0`）或运行 `chkdsk`。
 - **exFAT 与稀疏文件。** exFAT 不能创建稀疏文件，所以 `store create` 和 `ext4-file` 数据卷会立即占满全部大小（20G 以上会很慢）；vfat 文件限制 < 4 GiB。可以减小 `--size`，或改用 `OMLOADER` ext4 分区。
