@@ -97,7 +97,21 @@ sources:
         title: Xuanyuan proxy
         url: docker.xuanyuan.me
         region: cn
-      # docker.nju.edu.cn answers 403 (restricted to campus), hub.rat.dev redirects elsewhere, ustc/163/baidu/tencent/sjtug docker
+      vvvv:
+        title: proxy.vvvv.ee
+        url: proxy.vvvv.ee
+        region: cn
+      jiaxin:
+        title: Jiaxin mirror
+        url: docker.jiaxin.site
+        region: cn
+      hubfast:
+        title: HubFast (free)
+        url: free.hubfast.cn
+        region: cn
+      # Candidates taken from https://github.com/dongyubin/DockerHub (checked 2026-11-24). Flaky/unreachable when checked: dockerproxy.net,
+      # dockerproxy.link, registry.cyou. Login/token needed: mirror.houlang.cloud. China-only: docker.1panel.live. docker.nju.edu.cn answers 403
+      # (restricted to campus), hub.rat.dev redirects elsewhere, ustc/163/baidu/tencent/sjtug docker
       # mirrors were unreachable when checked: not listed (add them in your own sources.yaml if they work for you).
   # Deepin, Linux Mint, Debian desktop etc. have NO LXD/simplestreams catalog: define your own source (docs/sources.md) or convert
   # an image yourself and use `omloader import`.

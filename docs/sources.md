@@ -69,7 +69,7 @@ on an image file; `omloader source test --mirror auto`).
 | `lxd-images` | images.lxd.canonical.com | – | Canonical's LXD server, same layout, subset of the above |
 | `ubuntu-releases` | cloud-images.ubuntu.com/releases | `nju` mirror.nju.edu.cn/ubuntu-cloud-images/releases | Ubuntu cloud/server images, no desktop. TUNA/USTC/BFSU/CERNET have no `releases/streams` index (404) |
 | `ubuntu-daily` | cloud-images.ubuntu.com/daily | `tuna`, `ustc`, `nju`, `cernet` (`…/ubuntu-cloud-images/daily`) | |
-| `dockerhub` (experimental) | registry-1.docker.io | `1ms` docker.1ms.run, `daocloud` docker.m.daocloud.io, `xuanyuan` docker.xuanyuan.me | `/v2/` answers 401 = alive. Not listed because they failed: docker.nju.edu.cn (403), hub.rat.dev (redirect), docker.mirrors.ustc.edu.cn, mirror.ccs.tencentyun.com, dockerproxy.net, 163/baidu/sjtug hosts (unreachable) |
+| `dockerhub` (experimental) | registry-1.docker.io | `1ms` docker.1ms.run, `daocloud` docker.m.daocloud.io, `xuanyuan` docker.xuanyuan.me, `vvvv` proxy.vvvv.ee, `jiaxin` docker.jiaxin.site, `hubfast` free.hubfast.cn | `/v2/` answers 401 = alive. Not listed because they failed: docker.nju.edu.cn (403), hub.rat.dev (redirect), docker.mirrors.ustc.edu.cn, mirror.ccs.tencentyun.com, dockerproxy.net / dockerproxy.link / registry.cyou (flaky), 163/baidu/sjtug hosts (unreachable) |
 
 `mirrors.cernet.edu.cn` ([help.mirrors.cernet.edu.cn](https://help.mirrors.cernet.edu.cn/)) is CERNET's unified entry: it redirects to the
 nearest university mirror that carries the repository (observed: NJU for lxc-images, USTC for ubuntu-cloud-images). Because the
