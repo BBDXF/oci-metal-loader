@@ -526,7 +526,9 @@
       "additionalProperties": false,
       "properties": {
         "oci_images": {
-          "type": "boolean"
+          "type": "boolean",
+          "default": true,
+          "description": "EXPERIMENTAL Docker/OCI image support (import, pull docker:, boot). On by default; set false (or OML_EXPERIMENTAL=off / omloader.experimental=off) to disable."
         }
       }
     },

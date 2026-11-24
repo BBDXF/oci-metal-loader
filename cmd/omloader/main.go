@@ -29,7 +29,7 @@ const usage = `usage:
   omloader snapshot <op> ...   (run 'omloader snapshot' for the operations)
   omloader store create|info|check|grow|find ...   (ext4 store FILE on exFAT/NTFS: see docs/store-file.md)
   omloader import lxd PATH --name N --out IMAGES_ROOT [--force] [--autologin] [--data SPEC]...
-` + usageM4 + `  experimental (disabled by default; --experimental-oci, OML_EXPERIMENTAL=oci or experimental.oci_images: true):
+` + usageM4 + `  EXPERIMENTAL Docker/OCI images (on by default; switch off with experimental.oci_images: false, OML_EXPERIMENTAL=off or omloader.experimental=off):
     omloader import oci-dir|oci-archive|docker-archive PATH --name N --out IMAGES_ROOT ...   and  boot of type: oci images
 `
 
@@ -123,7 +123,7 @@ func runBoot(args []string, out, errw io.Writer) int {
 	cl := fs.String("exec-cmd-log", "", "append executed commands to FILE")
 	ro := fs.Bool("ro", false, "with --snapshot base: mount the original read-only (no ephemeral COW child)")
 	dataRoot := fs.String("data-root", "", "data volumes root (default <snap-root>/../data)")
-	expOCI := fs.Bool("experimental-oci", false, "enable experimental Docker/OCI image support")
+	expOCI := fs.Bool("experimental-oci", false, "force-enable the experimental Docker/OCI image support (on by default; accepted for compatibility)")
 	noInj := fs.Bool("no-inject", false, "do not append the guest-assemble initrd")
 	shell := fs.String("shell", "", "console shell for this boot: auto | image | busybox (overrides runtime.shell; default: the omloader.shell= kernel flag)")
 	if pos, err := parse(fs, args); err != nil || len(pos) > 0 {
@@ -214,7 +214,7 @@ func runImport(args []string, out, errw io.Writer) int {
 	autologin := fs.Bool("autologin", false, "set runtime.autologin (serial-getty autologin on ttyS0)")
 	var data multi
 	fs.Var(&data, "data", "data volume name:/mount:backend[:size[:snapshot]] (repeatable)")
-	expOCI := fs.Bool("experimental-oci", false, "enable experimental Docker/OCI image support")
+	expOCI := fs.Bool("experimental-oci", false, "force-enable the experimental Docker/OCI image support (on by default; accepted for compatibility)")
 	cfg := fs.String("c", "", "global omloader.yaml (experimental.oci_images)")
 	tmp := fs.String("tmp", "", "temp dir for archive extraction (default $TMPDIR)")
 	noProbe := fs.Bool("no-probe", false, "lxd-vm: skip kernel/initrd/root-partition detection (needs root)")
@@ -226,13 +226,14 @@ func runImport(args []string, out, errw io.Writer) int {
 		fmt.Fprint(errw, usage)
 		return 1
 	}
-	if !*expOCI && *cfg != "" {
-		if g, err := config.Load(*cfg, ""); err == nil && g.Config.OCIEnabled() {
-			*expOCI = true
+	ociOff := false
+	if !*expOCI {
+		if g, err := config.Load(*cfg, ""); err == nil && !g.Config.OCIEnabled() {
+			ociOff = true
 		}
 	}
 	d, err := imgimport.Import(imgimport.Options{Kind: pos[0], Path: pos[1], Name: *name, Out: *dst, TmpDir: *tmp,
-		Runner: &boot.ExecRunner{}, Warn: errw, Force: *force, NoProbe: *noProbe, Autologin: *autologin, Data: data, ExperimentalOCI: *expOCI})
+		Runner: &boot.ExecRunner{}, Warn: errw, Force: *force, NoProbe: *noProbe, Autologin: *autologin, Data: data, ExperimentalOCI: *expOCI, OCIDisabled: ociOff})
 	if err != nil {
 		fmt.Fprintln(errw, "error:", err)
 		return 1

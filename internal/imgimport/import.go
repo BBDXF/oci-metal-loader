@@ -35,6 +35,8 @@ type Options struct {
 	Data []string
 	// ExperimentalOCI opts in to oci-dir/oci-archive/docker-archive (also OML_EXPERIMENTAL=oci).
 	ExperimentalOCI bool
+	// OCIDisabled: experimental.oci_images is false in the config (OCI is experimental but on by default); ExperimentalOCI overrides.
+	OCIDisabled bool
 	// NoProbe (lxd-vm): skip the loop-attach kernel/initrd/root-partition detection (needs root); fill image.yaml kernel.* by hand.
 	NoProbe bool
 }
@@ -100,7 +102,7 @@ func sha256File(p string) (string, error) {
 
 // Import converts the image to <out>/<name>/{base.squashfs,image.yaml}.
 func Import(o Options) (string, error) {
-	if o.Kind != "lxd" && o.Kind != "lxd-vm" && !o.ExperimentalOCI && !config.EnvOCI() {
+	if o.Kind != "lxd" && o.Kind != "lxd-vm" && !o.ExperimentalOCI && !config.EnvOCI() && (o.OCIDisabled || config.EnvOCIOff()) {
 		return "", fmt.Errorf("%s", config.OCIDisabledMsg)
 	}
 	if !nameRe.MatchString(o.Name) {

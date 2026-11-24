@@ -86,7 +86,7 @@ func runPullDocker(o dockerOpts, out, errw io.Writer) int {
 		return fail(err)
 	}
 	if !o.experimental && !c.OCIEnabled() {
-		return fail(errors.New("Docker/OCI images are experimental and disabled by default (use --experimental-oci, experimental.oci_images: true or OML_EXPERIMENTAL=oci)"))
+		return fail(errors.New(config.OCIDisabledMsg))
 	}
 	if o.source == "" {
 		o.source = "dockerhub"

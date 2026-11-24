@@ -40,8 +40,10 @@ func TestPullDockerWithFakeCrane(t *testing.T) {
 	imgs := filepath.Join(d, "images")
 
 	var o, e bytes.Buffer
-	// gate: experimental off -> refused before anything runs
-	if rc := run([]string{"pull", "docker:nginx:alpine", "-c", cfg, "--out", imgs}, &o, &e); rc == 0 || !strings.Contains(e.String(), "experimental") {
+	// gate: explicitly switched off -> refused before anything runs (on by default)
+	cfgOff := filepath.Join(d, "off.yaml")
+	os.WriteFile(cfgOff, []byte("experimental:\n  oci_images: false\n"), 0o644)
+	if rc := run([]string{"pull", "docker:nginx:alpine", "-c", cfgOff, "--out", imgs}, &o, &e); rc == 0 || !strings.Contains(e.String(), "experimental") {
 		t.Fatalf("gate: rc=%d %s", rc, e.String())
 	}
 	if _, err := os.Stat(filepath.Join(d, "crane.args")); err == nil {

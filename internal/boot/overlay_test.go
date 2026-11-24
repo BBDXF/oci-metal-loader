@@ -281,13 +281,24 @@ func TestBindModulesDirect(t *testing.T) {
 	}
 }
 
-func TestOCIDisabledByDefault(t *testing.T) {
+func TestOCIGatedWhenSwitchedOff(t *testing.T) {
 	f := osetup(t, nil, "")
 	t.Setenv("OML_EXPERIMENTAL", "")
-	if _, err := config.Load("", filepath.Join(f.img, "image.yaml")); err == nil || !strings.Contains(err.Error(), "experimental and disabled by default") {
-		t.Fatalf("config validation must reject type oci: %v", err)
+	// on by default (experimental)
+	if _, err := config.Load("", filepath.Join(f.img, "image.yaml")); err != nil {
+		t.Fatalf("type oci must validate by default: %v", err)
 	}
-	// opt-in through the config key
+	// explicit false => gated
+	goff := filepath.Join(f.root, "off.yaml")
+	os.WriteFile(goff, []byte("experimental:\n  oci_images: false\n"), 0o644)
+	if _, err := config.Load(goff, filepath.Join(f.img, "image.yaml")); err == nil || !strings.Contains(err.Error(), "have been disabled") {
+		t.Fatalf("oci_images:false must reject type oci: %v", err)
+	}
+	t.Setenv("OML_EXPERIMENTAL", "off")
+	if _, err := config.Load("", filepath.Join(f.img, "image.yaml")); err == nil {
+		t.Fatalf("OML_EXPERIMENTAL=off must reject type oci")
+	}
+	t.Setenv("OML_EXPERIMENTAL", "")
 	g := filepath.Join(f.root, "g.yaml")
 	os.WriteFile(g, []byte("experimental:\n  oci_images: true\n"), 0o644)
 	res, err := config.Load(g, filepath.Join(f.img, "image.yaml"))

@@ -485,6 +485,11 @@ func (s *realSvc) Sources() ([]tui.SourceInfo, error) {
 			si.Note = tui.L.SourceBlocked
 		} else if !si.Usable {
 			si.Note = tui.L.SourceOffline
+		} else if src.Type == "oci-registry" {
+			si.Note = "experimental"
+			if !c.OCIEnabled() {
+				si.Note = "experimental, disabled"
+			}
 		}
 		out = append(out, si)
 	}

@@ -5,9 +5,9 @@ boot:
   timeout: 10
 mirror_policy:
   region_preset: cn
-# Docker/OCI images are experimental and off by default:
+# Docker/OCI images are EXPERIMENTAL and on by default; to switch them off:
 # experimental:
-#   oci_images: true
+#   oci_images: false
 # Online pull (M4): mirrors, proxy, cache
 # sources:
 #   lxc-images:

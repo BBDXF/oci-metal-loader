@@ -329,13 +329,22 @@ func TestParseDataAndMerge(t *testing.T) {
 	}
 }
 
-func TestImportOCIDisabledByDefault(t *testing.T) {
-	t.Setenv("OML_EXPERIMENTAL", "")
+func TestImportOCIGatedWhenOff(t *testing.T) {
+	t.Setenv("OML_EXPERIMENTAL", "off")
 	for _, k := range []string{"oci-dir", "oci-archive", "docker-archive"} {
 		_, err := Import(Options{Kind: k, Path: "x", Name: "n", Out: t.TempDir(), Runner: &fakeRunner{}})
-		if err == nil || !strings.Contains(err.Error(), "experimental and disabled by default") {
+		if err == nil || !strings.Contains(err.Error(), "have been disabled") {
 			t.Errorf("%s: %v", k, err)
 		}
+	}
+	// config key false (OCIDisabled) gates too; the flag overrides it
+	t.Setenv("OML_EXPERIMENTAL", "")
+	if _, err := Import(Options{Kind: "oci-dir", Path: "x", Name: "n", Out: t.TempDir(), Runner: &fakeRunner{}, OCIDisabled: true}); err == nil || !strings.Contains(err.Error(), "have been disabled") {
+		t.Errorf("config false must gate: %v", err)
+	}
+	// default (no env, no config veto): passes the gate
+	if _, err := Import(Options{Kind: "oci-dir", Path: "x", Name: "n", Out: t.TempDir(), Runner: &fakeRunner{}}); err != nil && strings.Contains(err.Error(), "have been disabled") {
+		t.Errorf("on by default: %v", err)
 	}
 	t.Setenv("OML_EXPERIMENTAL", "oci")
 	if _, err := Import(Options{Kind: "oci-dir", Path: "/nonexistent", Name: "n", Out: t.TempDir(), Runner: &fakeRunner{}}); err == nil || strings.Contains(err.Error(), "experimental") {

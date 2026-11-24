@@ -253,7 +253,7 @@ Keys marked **reserved** are accepted and validated but nothing in the current c
 **`sources`, `default_source`** — same keys as `sources.yaml` (see [sources.md](sources.md)); `default_source` defaults to `lxc-images`. Per source: `type` (`simplestreams`\|`oci-registry`\|`http`\|`local`),
 `url`, `mirrors` (plain URL list), `proxy` (`direct` = none), `rewrite` (`[{from, to}]`), `title`, `note`, `enabled`, `mirror` (`official`\|`auto`\|server id), `servers.<id>` (`title`, `url`, `path`, `region`, `note`, `enabled`, `rewrite`).
 
-**`experimental`**: `experimental.oci_images` (bool, `false`) enables Docker/OCI image import and boot (also `OML_EXPERIMENTAL=oci`, `--experimental-oci`, `omloader.experimental=oci`).
+**`experimental`**: `experimental.oci_images` (bool, **`true`**) — EXPERIMENTAL Docker/OCI image import, pull and boot; set `false` to switch it off (also `OML_EXPERIMENTAL=off`, `omloader.experimental=off`; `oci` / `--experimental-oci` force it on).
 
 **`guest_defaults`** (public defaults, see [section 6](#6-default-account-and-security))
 
@@ -281,7 +281,7 @@ Located at `<images>/<name>/image.yaml`; written by `pull`/`import`, hand-editab
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | string | – | Image name (= folder name; no path separators). |
-| `type` | `lxd-vm` \| `lxd-container` \| `oci` | – | `lxd-vm`: whole-disk image booted with its own kernel via `kexec` (**not** virtualised; the old spelling `vm` is rejected). `lxd-container`: root filesystem on the loader's kernel. `oci`: experimental. |
+| `type` | `lxd-vm` \| `lxd-container` \| `oci` | – | `lxd-vm`: whole-disk image booted with its own kernel via `kexec` (**not** virtualised; the old spelling `vm` is rejected). `lxd-container`: root filesystem on the loader's kernel. `oci`: EXPERIMENTAL (on by default). |
 | `format` | `raw` \| `squashfs` | – | `lxd-vm` requires `raw`; containers/oci require `squashfs`. |
 | `base` | path | – | Base file: relative to the image folder (`base.raw` / `base.squashfs`, as written by pull/import) or an absolute path on the loader's filesystem. `://` URLs are not supported by `boot`. |
 | `sha256` | 64 hex | – | Checksum of the base file, verified at boot (`verify.base_checksum`). |
@@ -382,7 +382,7 @@ Ventoy cannot pass kernel parameters; use `boot.yaml` (`boot.extra_cmdline_flags
 | `omloader.ui=tui\|shell` | Console UI when nothing boots automatically (wins over `boot.ui`). |
 | `omloader.poweroff_on_fail=1` | Power off if the automatic boot fails. |
 | `omloader.shell=auto\|image\|busybox` | Console shell policy of container/OCI boots (overrides `runtime.shell`). |
-| `omloader.experimental=oci` | Enable the experimental OCI support (same as `OML_EXPERIMENTAL=oci`). |
+| `omloader.experimental=off\|oci` | `off` switches the experimental (default-on) OCI support off; `oci` forces it on (same as `OML_EXPERIMENTAL`). |
 | `omloader.store=off` | Do not attach a store file (maintenance: offline check/grow). |
 | `omloader.font=NAME\|auto\|default` | Linux console font ([tui.md](tui.md)). |
 | `omloader.gfx=WxH\|off` | GRUB video mode (via `omloader_args`; not under Ventoy GRUB2 mode). |
@@ -395,7 +395,7 @@ The loader's own kernel line is `console=tty0 console=ttyS0,115200 loglevel=4 sy
 
 | Variable | Used by | Meaning |
 |---|---|---|
-| `OML_EXPERIMENTAL` | `omloader` | Comma separated experimental features; `oci` enables OCI images. |
+| `OML_EXPERIMENTAL` | `omloader` | Comma separated experimental features; `off` disables the experimental OCI images (on by default), `oci` forces them on. |
 | `OML_SOURCES` | `omloader` | Extra `sources.yaml` file merged above the stick/ISO copies. |
 | `OMLOADER_VERSION` | TUI | Version shown in the header when the binary was built without a version. |
 | `OML_VERSION` | `build/version.sh`, `make` | Override the build version (default: git tag, else `VERSION`). |
@@ -422,14 +422,14 @@ usage:
   omloader import lxd PATH --name N --out IMAGES_ROOT [--force] [--autologin] [--data SPEC]...
   omloader images list [--source S] [--mirror M] [--type container|vm] [--os X] [--release R] [--variant V] [--arch amd64] [--offline] [-c omloader.yaml]
   omloader pull lxc:<os>/<release>[/<variant>] [--vm|--container] [--arch amd64] [--name N] [--out IMAGES_ROOT] [--source S] [--mirror M] [--variant V]
-  omloader pull docker:<image[:tag]> [--mirror auto|ID|official] [--name N] [--out IMAGES_ROOT] [--experimental-oci]   # experimental; uses the bundled crane (sources.md)
+  omloader pull docker:<image[:tag]> [--mirror auto|ID|official] [--name N] [--out IMAGES_ROOT] [--experimental-oci]   # EXPERIMENTAL, on by default; uses the bundled crane (sources.md)
             [-c omloader.yaml] [--offline] [--force] [--no-probe] [--tmp DIR]
   omloader import lxd-vm PATH --name N --out IMAGES_ROOT [--no-probe]   (disk.qcow2 | dir with disk.qcow2 [+lxd.tar.xz])
   omloader source list|test [NAME] [--mirror M] [-c omloader.yaml] [--offline]   (M: official | auto | a server id from sources.yaml; docs/sources.md)
   omloader source ref IMAGE [--source dockerhub] [--mirror M] [-c omloader.yaml]    (Docker Hub image reference rewritten for a proxy mirror; experimental)
   omloader cache ls|gc [--max-size-gb N] [-c omloader.yaml]
   omloader net status [-c omloader.yaml] [--offline]
-  experimental (disabled by default; --experimental-oci, OML_EXPERIMENTAL=oci or experimental.oci_images: true):
+  EXPERIMENTAL Docker/OCI images (on by default; switch off with experimental.oci_images: false, OML_EXPERIMENTAL=off or omloader.experimental=off):
     omloader import oci-dir|oci-archive|docker-archive PATH --name N --out IMAGES_ROOT ...   and  boot of type: oci images
 ```
 
@@ -469,10 +469,11 @@ Store file commands: see [store-file.md](store-file.md). `omloader version` prin
 - **Pull is slow or fails.** Use a mirror: `omloader source test`, `omloader pull … --mirror auto`, `mirror_policy.region_preset: cn`, or set `network.proxy`. Details in [sources.md](sources.md). `--offline` uses only the cache.
 - **Network does not come up.** DHCP is configured for wired `en*`/`eth*` only; check `networkctl`, `omloader net status`. Wi-Fi is not configured.
 - **Forgot the login / want it gone.** See [section 6](#6-default-account-and-security).
+- **`Docker/OCI images are experimental and have been disabled here`.** Docker/OCI support is experimental and on by default; something switched it off (`experimental.oci_images: false`, `OML_EXPERIMENTAL=off` or `omloader.experimental=off`). Remove that, or force it with `--experimental-oci`.
 - **Where are the logs?** Serial console and `journalctl`; `OMLOADER_LOADER:` and `OMLOADER_STAGE1:` lines summarise detection.
 
 ## 15. Limits
 
 Alpha, QEMU/OVMF-tested only. UEFI x86_64 only; no Secure Boot; Linux guests only; VM guests: ext4/xfs root with `/boot`, no LVM/LUKS, verified on Debian-style guests only, no independent data volumes, no clean unmount of the store at poweroff;
 container console login is implemented for systemd guests (others get a busybox debug shell); no hot snapshots; dm-snapshot VM snapshots cannot be merge-deleted (use `flatten`); Wi-Fi unconfigured; pull supports Simplestreams sources only (sha256, no GPG);
-Docker/OCI images are experimental and off by default. The complete list is in [DEVELOPMENT.md](DEVELOPMENT.md#known-limitations).
+Docker/OCI images are EXPERIMENTAL (on by default; need systemd-or-shell images, no port mapping, uneven proxy support; switch off with `experimental.oci_images: false`). The complete list is in [DEVELOPMENT.md](DEVELOPMENT.md#known-limitations).

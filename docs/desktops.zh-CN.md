@@ -60,7 +60,7 @@ Deepin、Manjaro、EndeavourOS、Pop!_OS、Zorin、elementary、KDE neon、openK
 ## 4. OCI 桌面镜像（实验性，不太合适）
 
 `linuxserver/webtop`、`kasmweb/*`、`dorowu/ubuntu-desktop-lxde-vnc` 是在应用容器里跑 X/VNC，通常没有完整的 systemd。
-omloader 的 OCI 支持是实验性的且默认关闭；这些镜像未在此处验证，不建议用作真正的桌面，请改用 `lxd-vm` 桌面镜像。
+omloader 的 OCI 支持是实验性功能（默认开启，可关闭）；这些镜像未在此处验证，不建议用作真正的桌面，请改用 `lxd-vm` 桌面镜像。
 
 ## 如何使用
 

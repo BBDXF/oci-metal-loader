@@ -84,7 +84,7 @@ Prefer menus? Run `omloader tui` ([docs/tui.md](docs/tui.md)).
 |---|---|---|---|---|
 | `lxd-vm` | LXD *VM* image: a whole-disk image (`disk.qcow2` is converted to `base.raw` on import). "VM" names the format — nothing is virtualised. | the image's own (`kexec`) | `dm-snapshot` COW files | UEFI + GPT, root filesystem ext4 or xfs with `/boot` holding the kernel and initrd; no LVM/LUKS root; guest must use an initramfs the loader can extend (verified only on Debian/initramfs-tools guests); no independent data volumes; default accounts only (`oci`/`Oci123`, sudo, root, autologin — public password, see below), no clean unmount |
 | `lxd-container` | LXD *container* image: `rootfs.squashfs` (+ `metadata.yaml`) | the loader's (Debian 6.1), modules bind-mounted into the guest | `overlayfs` upper layers | needs a Linux root with an init; hardware support is whatever the loader's kernel offers; default console accounts are provisioned at boot (autologin: systemd and busybox-init guests; others get a busybox debug shell); data volumes `dir` / `ext4-file` |
-| `oci` | Docker/OCI image — **experimental, off by default** (`experimental.oci_images: true`) | the loader's | `overlayfs` | application images usually have no init or login; no registry pull |
+| `oci` | Docker/OCI image — **EXPERIMENTAL, on by default** (switch off: `experimental.oci_images: false`) | the loader's | `overlayfs` | needs images with systemd or a shell; no port mapping; proxy support uneven; application images usually have no init or login |
 
 Common to all types: the base image is read-only and checksummed, snapshots are never modified by booting (a snapshot boots as a throwaway layer), Linux guests only (use Ventoy for Windows),
 x86_64 UEFI only. Details: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
@@ -123,7 +123,7 @@ What is missing or unverified: real hardware (testing postponed), LUKS/LVM guest
 **Hostname:** every guest (container, VM, OCI) gets the image name as hostname (`vm-ubuntu-noble`, not `distrobuilder-<uuid>`); change or disable it with `guest_defaults.hostname` (`image` | `keep` | a name) or `runtime.hostname` in `image.yaml`.
 
 **Limitations:** UEFI **Secure Boot is not supported** and must be disabled. omloader is deliberately bound to Ventoy: put `omloader.iso` on a Ventoy stick (there is no `omloader install`).
-Docker/OCI images are **experimental and off by default** (they are application images, not systems). Details and the full list of limitations: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+Docker/OCI images (`pull docker:`, `import oci-*`, `type: oci`) are **EXPERIMENTAL and on by default**: they need images with systemd or a shell, there is no port mapping, and proxy handling is uneven (they are application images, not systems). Switch it off with `experimental.oci_images: false` in `omloader.yaml`, `OML_EXPERIMENTAL=off`, or `omloader.experimental=off` on the kernel command line. Details and the full list of limitations: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ## Documentation
 

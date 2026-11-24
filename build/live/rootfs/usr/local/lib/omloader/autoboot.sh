@@ -108,7 +108,7 @@ else
   decide_ui
   if [ -z "$(arg omloader.image)" ] && [ "$(arg omloader.hook)" != 1 ] && [ "$(arg omloader.selftest)" != 1 ]; then bootcfg_apply; fi
 fi
-# omloader.experimental=oci -> opt in to the experimental Docker/OCI image support (disabled by default)
+# omloader.experimental=off -> switch the EXPERIMENTAL Docker/OCI image support off (it is on by default; =oci forces it on)
 EXP=$(arg omloader.experimental); [ -n "$EXP" ] && export OML_EXPERIMENTAL="$EXP"
 echo 1 > /proc/sys/kernel/sysrq
 

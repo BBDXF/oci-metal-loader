@@ -108,22 +108,22 @@ func TestSnapshotOpsCLI(t *testing.T) {
 }
 
 func TestOCIGatedCLI(t *testing.T) {
-	t.Setenv("OML_EXPERIMENTAL", "")
+	t.Setenv("OML_EXPERIMENTAL", "off")
 	d := t.TempDir()
 	var o, e bytes.Buffer
-	if c := run([]string{"import", "oci-archive", "x", "--name", "n", "--out", d}, &o, &e); c != 1 || !strings.Contains(e.String(), "experimental and disabled by default") {
+	if c := run([]string{"import", "oci-archive", "x", "--name", "n", "--out", d}, &o, &e); c != 1 || !strings.Contains(e.String(), "have been disabled") {
 		t.Fatalf("import oci-archive must be refused: %d %s", c, e.String())
 	}
 	os.MkdirAll(d+"/images/c", 0o755)
 	os.WriteFile(d+"/images/c/image.yaml", []byte("name: c\ntype: oci\nformat: squashfs\nbase: b\nsnapshots:\n  mode: overlayfs\n"), 0o644)
 	e.Reset()
-	if c := run([]string{"boot", "--image", "c", "--images-root", d + "/images", "--snap-root", d + "/s", "--dry-run"}, &o, &e); c != 1 || !strings.Contains(e.String(), "experimental and disabled by default") {
+	if c := run([]string{"boot", "--image", "c", "--images-root", d + "/images", "--snap-root", d + "/s", "--dry-run"}, &o, &e); c != 1 || !strings.Contains(e.String(), "have been disabled") {
 		t.Fatalf("boot of type oci must be refused: %d %s", c, e.String())
 	}
 	e.Reset()
 	// --experimental-oci lifts the gate (then it fails later on the missing base, not on the gate)
 	run([]string{"boot", "--image", "c", "--images-root", d + "/images", "--snap-root", d + "/s", "--dry-run", "--experimental-oci"}, &o, &e)
-	if strings.Contains(e.String(), "experimental and disabled") {
+	if strings.Contains(e.String(), "have been disabled") {
 		t.Fatalf("flag must opt in: %s", e.String())
 	}
 	t.Setenv("OML_EXPERIMENTAL", "")

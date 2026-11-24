@@ -61,7 +61,7 @@ Deepin, Manjaro, EndeavourOS, Pop!_OS, Zorin, elementary, KDE neon, openKylin, U
 ## 4. OCI desktop images (experimental, weak fit)
 
 `linuxserver/webtop`, `kasmweb/*`, `dorowu/ubuntu-desktop-lxde-vnc` run X/VNC inside an application container, usually
-without a full systemd. omloader's OCI support is experimental and off by default; these are unverified here and not recommended
+without a full systemd. omloader's OCI support is EXPERIMENTAL (on by default, can be switched off); these are unverified here and not recommended
 for a real desktop. Use an `lxd-vm` desktop image instead.
 
 ## How to consume

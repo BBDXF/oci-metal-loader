@@ -1,7 +1,7 @@
 #!/bin/bash
 # Run ON THE REMOTE. Boots the loader ISO under KVM/OVMF with the simulated USB disk.
 # Env: NAME (image; => omloader.image=NAME) SNAP (=> omloader.snapshot) EXTRA (more cmdline)
-#      EXPERIMENTAL_OCI=1 (=> omloader.experimental=oci: opt in to the experimental OCI support)
+#      EXPERIMENTAL_OCI=1 (=> omloader.experimental=oci: force the experimental OCI support on; it is on by default)
 #      SELFTEST=1 (mount check + poweroff) LOG=serial log file TIMEOUT=sec (default 240)
 #      SERIALSOCK=unix-socket path (serial console as a socket for input; the log file still gets the output)
 #      VGA=virtio (virtio-vga instead of the default std VGA, like the libvirt domain of test/manual-run.sh; RES=WxH sets its xres/yres)

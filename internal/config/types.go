@@ -260,26 +260,41 @@ type DataVolume struct {
 	Shared   bool   `yaml:"shared" json:"shared"`
 }
 
-// Experimental gates features that are not part of the project's focus (LXD images).
+// Experimental labels features that are not part of the project's focus (Docker/OCI images).
 type Experimental struct {
-	OCIImages bool `yaml:"oci_images" json:"oci_images"` // Docker/OCI image support (import + boot); off by default
+	OCIImages bool `yaml:"oci_images" json:"oci_images"` // Docker/OCI image support (import + boot); EXPERIMENTAL, on by default (default from defaults.yaml); false switches it off
 }
 
-// OCIDisabledMsg is the error shown when OCI/Docker support is used without opt-in.
-const OCIDisabledMsg = "OCI/Docker images are experimental and disabled by default; set experimental.oci_images: true, pass --experimental-oci or set OML_EXPERIMENTAL=oci"
+// OCIDisabledMsg is the error shown when OCI/Docker support has been switched off.
+const OCIDisabledMsg = "Docker/OCI images are experimental and have been disabled here (experimental.oci_images: false or OML_EXPERIMENTAL=off / omloader.experimental=off); re-enable with experimental.oci_images: true, --experimental-oci or OML_EXPERIMENTAL=oci"
 
 // EnvOCI reports whether OML_EXPERIMENTAL (comma separated) contains "oci".
-func EnvOCI() bool {
+func EnvOCI() bool { return envHas("oci") }
+
+// EnvOCIOff reports whether OML_EXPERIMENTAL switches the OCI support off (off, none, 0 or false) and does not also say "oci".
+func EnvOCIOff() bool {
+	return !EnvOCI() && (envHas("off") || envHas("none") || envHas("0") || envHas("false"))
+}
+
+func envHas(w string) bool {
 	for _, f := range strings.Split(os.Getenv("OML_EXPERIMENTAL"), ",") {
-		if strings.TrimSpace(f) == "oci" {
+		if strings.TrimSpace(f) == w {
 			return true
 		}
 	}
 	return false
 }
 
-// OCIEnabled is true when the config key or the environment opts in to OCI images.
-func (c *Config) OCIEnabled() bool { return c.Experimental.OCIImages || EnvOCI() }
+// OCIEnabled: OML_EXPERIMENTAL=oci forces on, =off forces off, otherwise experimental.oci_images (default true).
+func (c *Config) OCIEnabled() bool {
+	if EnvOCI() {
+		return true
+	}
+	if EnvOCIOff() {
+		return false
+	}
+	return c.Experimental.OCIImages
+}
 
 // ShellMode is the effective console shell policy: auto | image | busybox.
 func (rt Runtime) ShellMode() string {

@@ -27,7 +27,7 @@ import (
 const usageM4 = `  omloader images list [--source S] [--mirror M] [--type container|vm] [--os X] [--release R] [--variant V] [--arch amd64] [--offline] [-c omloader.yaml]
   omloader pull lxc:<os>/<release>[/<variant>] [--vm|--container] [--arch amd64] [--name N] [--out IMAGES_ROOT] [--source S] [--mirror M] [--variant V]
             [-c omloader.yaml] [--offline] [--force] [--no-probe] [--tmp DIR]
-  omloader pull docker:<image[:tag]> [--source dockerhub] [--mirror auto|ID|official] [--arch amd64] [--name N] [--out IMAGES_ROOT] [--experimental-oci]   (needs crane, bundled in the ISO)
+  omloader pull docker:<image[:tag]> [--source dockerhub] [--mirror auto|ID|official] [--arch amd64] [--name N] [--out IMAGES_ROOT] [--experimental-oci]   (EXPERIMENTAL, on by default; needs crane, bundled in the ISO)
   omloader import lxd-vm PATH --name N --out IMAGES_ROOT [--no-probe]   (disk.qcow2 | dir with disk.qcow2 [+lxd.tar.xz])
   omloader source list|test [NAME] [--mirror M] [-c omloader.yaml] [--offline]   (M: official | auto | a server id from sources.yaml; docs/sources.md)
   omloader source ref IMAGE [--source dockerhub] [--mirror M] [-c omloader.yaml]    (Docker Hub image reference rewritten for a proxy mirror; experimental)
@@ -241,7 +241,7 @@ func runPull(args []string, out, errw io.Writer) int {
 	force := fs.Bool("force", false, "replace an existing image")
 	noProbe := fs.Bool("no-probe", false, "VM: skip kernel/initrd/root-partition detection (needs root)")
 	tmp := fs.String("tmp", "", "temp dir (default $TMPDIR)")
-	expOCI := fs.Bool("experimental-oci", false, "docker: images: enable the experimental Docker/OCI support")
+	expOCI := fs.Bool("experimental-oci", false, "docker: images: force-enable the experimental Docker/OCI support (on by default; compat)")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return 1

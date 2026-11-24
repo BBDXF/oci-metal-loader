@@ -140,7 +140,7 @@ sources:
 
 ## Docker Hub (experimental)
 
-OCI images stay experimental (off by default: `experimental.oci_images: true`, `omloader.experimental=oci` or `--experimental-oci`). The loader ISO bundles the
+OCI images are EXPERIMENTAL and on by default (switch off: `experimental.oci_images: false`, `OML_EXPERIMENTAL=off` or `omloader.experimental=off`; `--experimental-oci` is accepted for compatibility). Known limits: needs systemd-or-shell images, no port mapping, proxies uneven. The loader ISO bundles the
 static registry client **`crane`** (google/go-containerregistry, Apache-2.0, pinned + sha256-checked in `build/Containerfile`, about 12 MB) and
 `omloader pull docker:IMAGE` shells out to it:
 

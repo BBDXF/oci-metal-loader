@@ -188,7 +188,7 @@ func (m *Model) dockerForm(s SourceInfo) {
 		return
 	}
 	src := m.SourceRef(s)
-	m.form("Pull Docker image (experimental)", []string{"source: " + src, "Needs experimental OCI support (experimental.oci_images / omloader.experimental=oci)."},
+	m.form("Pull Docker image (experimental)", []string{"source: " + src, "EXPERIMENTAL: on by default; switch off with experimental.oci_images: false / omloader.experimental=off."},
 		[]string{"Image (e.g. nginx:alpine)", L.PullName + " (optional)"}, []string{"", ""}, func(v []string) {
 			image, name := strings.TrimSpace(v[0]), strings.TrimSpace(v[1])
 			if image == "" {

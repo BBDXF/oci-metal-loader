@@ -14,11 +14,13 @@ directly on the hardware, without installing anything.
 > and hands the real hardware over to the image's own kernel with `kexec`. `type: lxd-container` images contain only a root filesystem and boot on the loader's kernel.
 > QEMU appears only in the tests (to emulate a PC) and `qemu-img` only converts disk formats.
 
-**Docker/OCI images are experimental only**: the code exists (import of oci-dir/oci-archive/docker-archive, boot as a container) but it is
-**disabled by default**, not part of the project focus and not planned to be extended (there will be no registry client). Reason: Docker/OCI images are
+**Docker/OCI images are EXPERIMENTAL** (enabled by default, labelled experimental everywhere): the code exists (import of oci-dir/oci-archive/docker-archive, `pull docker:`, boot as a container) but it is
+not part of the project focus and not planned to be extended (there will be no registry client). Reason: Docker/OCI images are
 application-centric (no init system, no users/login/network setup, one process), whereas LXD images are full systems that boot like a distribution.
-To opt in: `experimental.oci_images: true` in `omloader.yaml`, `--experimental-oci` on `import`/`boot`, `OML_EXPERIMENTAL=oci` in the environment, or
-`omloader.experimental=oci` on the loader kernel command line. Without it, `type: oci` images are rejected by config validation, `omloader import oci-*|docker-archive` and `omloader boot` refuse.
+Known limits: needs images with systemd or a shell, no port mapping, proxy handling uneven.
+Gating: `experimental.oci_images` defaults to `true`. To switch off: `experimental.oci_images: false` in `omloader.yaml`, `OML_EXPERIMENTAL=off` (also `none`/`0`/`false`) in the environment, or
+`omloader.experimental=off` on the loader kernel command line; then `type: oci` images are rejected by config validation and `omloader import oci-*|docker-archive`, `pull docker:` and `omloader boot` refuse.
+`OML_EXPERIMENTAL=oci` / `omloader.experimental=oci` / `--experimental-oci` force it on (override a config `false`); the flag is otherwise a compatibility no-op.
 
 > Disclaimer: this project is not an official Open Container Initiative (OCI) project and is not affiliated with or endorsed by the OCI
 > (or by the LXD/Canonical projects). "OCI" in the name is historical; the supported focus is LXD images.

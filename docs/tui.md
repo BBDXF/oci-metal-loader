@@ -52,7 +52,7 @@ Wide (CJK) characters take two cells (width-aware padding, truncation, wrapping 
 Layouts: 80x24 is the reference. From 100 columns the lists use wider columns (image names, catalog spec up to 60 cells); from **110 columns** the
 image detail shows the node info (parent, created, size, tags, note) as a side panel on the right and the tree uses the full height.
 
-**Boot with the busybox shell:** the image menu (Space/m) and the tree row menu have *Boot with the busybox shell (this boot only)* (`omloader boot --shell busybox`, see `runtime.shell` in INSTALL.md); it applies to containers/OCI images without a login. **Docker pull (experimental):** Enter on the `dockerhub` source in the Pull tab asks for an image reference (`nginx:alpine`) and pulls it through the mirrors with the bundled `crane` (needs experimental OCI support).
+**Boot with the busybox shell:** the image menu (Space/m) and the tree row menu have *Boot with the busybox shell (this boot only)* (`omloader boot --shell busybox`, see `runtime.shell` in INSTALL.md); it applies to containers/OCI images without a login. **Docker pull (experimental):** Enter on the `dockerhub` source in the Pull tab asks for an image reference (`nginx:alpine`) and pulls it through the mirrors with the bundled `crane` (EXPERIMENTAL, on by default; the source is tagged `(experimental)`; off with `experimental.oci_images: false`).
 
 **Back navigation:** where `Right` / `o` drills in (Images -> snapshot tree) `Left`, `h`, `Backspace` and `Esc` come back; on the Pull sources list `Left` also returns to Images (in the catalog the search box owns the keys: `Esc`).
 

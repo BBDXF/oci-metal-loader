@@ -249,7 +249,7 @@ VM 客户系统通过 `kexec` 启动，关机时无法卸载存储，所以下�
 **`sources`、`default_source`** —— 与 `sources.yaml` 的键相同（见 [sources.md](sources.md)）；`default_source` 默认 `lxc-images`。每个源：`type`（`simplestreams`\|`oci-registry`\|`http`\|`local`）、
 `url`、`mirrors`（纯 URL 列表）、`proxy`（`direct` = 不用代理）、`rewrite`（`[{from, to}]`）、`title`、`note`、`enabled`、`mirror`（`official`\|`auto`\|服务器 id）、`servers.<id>`（`title`、`url`、`path`、`region`、`note`、`enabled`、`rewrite`）。
 
-**`experimental`**：`experimental.oci_images`（bool，默认 `false`）启用 Docker/OCI 镜像的导入与启动（也可用 `OML_EXPERIMENTAL=oci`、`--experimental-oci`、`omloader.experimental=oci`）。
+**`experimental`**：`experimental.oci_images`（bool，默认 **`true`**）—— 实验性的 Docker/OCI 镜像导入、拉取与启动；设为 `false` 关闭（也可用 `OML_EXPERIMENTAL=off`、`omloader.experimental=off`；`oci` / `--experimental-oci` 强制开启）。
 
 **`guest_defaults`**（公开的默认值，见[第 6 节](#6-默认账号与安全)）
 
@@ -277,7 +277,7 @@ VM 客户系统通过 `kexec` 启动，关机时无法卸载存储，所以下�
 | 键 | 类型 | 默认值 | 含义 |
 |---|---|---|---|
 | `name` | 字符串 | – | 镜像名（= 目录名；不含路径分隔符）。 |
-| `type` | `lxd-vm` \| `lxd-container` \| `oci` | – | `lxd-vm`：整盘镜像，用自带内核经 `kexec` 启动（**不是**虚拟化；旧写法 `vm` 已被拒绝）。`lxd-container`：根文件系统跑在加载器内核上。`oci`：实验性。 |
+| `type` | `lxd-vm` \| `lxd-container` \| `oci` | – | `lxd-vm`：整盘镜像，用自带内核经 `kexec` 启动（**不是**虚拟化；旧写法 `vm` 已被拒绝）。`lxd-container`：根文件系统跑在加载器内核上。`oci`：实验性（默认开启）。 |
 | `format` | `raw` \| `squashfs` | – | `lxd-vm` 必须是 `raw`；容器/oci 必须是 `squashfs`。 |
 | `base` | 路径 | – | 基础文件：相对镜像目录（`base.raw` / `base.squashfs`，pull/import 写出的形式）或加载器文件系统上的绝对路径。`boot` 不支持 `://` URL。 |
 | `sha256` | 64 位十六进制 | – | 基础文件校验和，启动时校验（`verify.base_checksum`）。 |
@@ -378,7 +378,7 @@ Ventoy 不能传内核参数，请改用 `boot.yaml`（`boot.extra_cmdline_flags
 | `omloader.ui=tui\|shell` | 没有自动启动时的控制台界面（优先于 `boot.ui`）。 |
 | `omloader.poweroff_on_fail=1` | 自动启动失败时关机。 |
 | `omloader.shell=auto\|image\|busybox` | 容器/OCI 启动的控制台 shell 策略（覆盖 `runtime.shell`）。 |
-| `omloader.experimental=oci` | 启用实验性 OCI 支持（等同 `OML_EXPERIMENTAL=oci`）。 |
+| `omloader.experimental=off\|oci` | `off` 关闭默认开启的实验性 OCI 支持；`oci` 强制开启（等同 `OML_EXPERIMENTAL`）。 |
 | `omloader.store=off` | 不挂载存储文件（维护用：离线检查/扩容）。 |
 | `omloader.font=NAME\|auto\|default` | Linux 控制台字体（[tui.md](tui.md)）。 |
 | `omloader.gfx=WxH\|off` | GRUB 视频模式（通过 `omloader_args`；Ventoy GRUB2 模式下无效）。 |
@@ -391,7 +391,7 @@ Ventoy 不能传内核参数，请改用 `boot.yaml`（`boot.extra_cmdline_flags
 
 | 变量 | 使用者 | 含义 |
 |---|---|---|
-| `OML_EXPERIMENTAL` | `omloader` | 逗号分隔的实验功能；`oci` 启用 OCI 镜像。 |
+| `OML_EXPERIMENTAL` | `omloader` | 逗号分隔的实验功能；`off` 关闭实验性 OCI 镜像（默认开启），`oci` 强制开启。 |
 | `OML_SOURCES` | `omloader` | 额外的 `sources.yaml`，优先于盘/ISO 上的副本。 |
 | `OMLOADER_VERSION` | TUI | 二进制构建时没有版本号时，TUI 顶栏显示的版本。 |
 | `OML_VERSION` | `build/version.sh`、`make` | 覆盖构建版本（默认：git tag，否则 `VERSION`）。 |
@@ -418,14 +418,14 @@ usage:
   omloader import lxd PATH --name N --out IMAGES_ROOT [--force] [--autologin] [--data SPEC]...
   omloader images list [--source S] [--mirror M] [--type container|vm] [--os X] [--release R] [--variant V] [--arch amd64] [--offline] [-c omloader.yaml]
   omloader pull lxc:<os>/<release>[/<variant>] [--vm|--container] [--arch amd64] [--name N] [--out IMAGES_ROOT] [--source S] [--mirror M] [--variant V]
-  omloader pull docker:<image[:tag]> [--mirror auto|ID|official] [--name N] [--out IMAGES_ROOT] [--experimental-oci]   # experimental; uses the bundled crane (sources.md)
+  omloader pull docker:<image[:tag]> [--mirror auto|ID|official] [--name N] [--out IMAGES_ROOT] [--experimental-oci]   # EXPERIMENTAL, on by default; uses the bundled crane (sources.md)
             [-c omloader.yaml] [--offline] [--force] [--no-probe] [--tmp DIR]
   omloader import lxd-vm PATH --name N --out IMAGES_ROOT [--no-probe]   (disk.qcow2 | dir with disk.qcow2 [+lxd.tar.xz])
   omloader source list|test [NAME] [--mirror M] [-c omloader.yaml] [--offline]   (M: official | auto | a server id from sources.yaml; docs/sources.md)
   omloader source ref IMAGE [--source dockerhub] [--mirror M] [-c omloader.yaml]    (Docker Hub image reference rewritten for a proxy mirror; experimental)
   omloader cache ls|gc [--max-size-gb N] [-c omloader.yaml]
   omloader net status [-c omloader.yaml] [--offline]
-  experimental (disabled by default; --experimental-oci, OML_EXPERIMENTAL=oci or experimental.oci_images: true):
+  EXPERIMENTAL Docker/OCI images (on by default; switch off with experimental.oci_images: false, OML_EXPERIMENTAL=off or omloader.experimental=off):
     omloader import oci-dir|oci-archive|docker-archive PATH --name N --out IMAGES_ROOT ...   and  boot of type: oci images
 ```
 
@@ -465,10 +465,11 @@ Boot: omloader boot --image <image> [--snapshot current|base|<label>] [--ephemer
 - **拉取很慢或失败。** 使用镜像站：`omloader source test`、`omloader pull … --mirror auto`、`mirror_policy.region_preset: cn`，或设置 `network.proxy`。详见 [sources.md](sources.md)。`--offline` 只用缓存。
 - **网络起不来。** 仅对有线 `en*`/`eth*` 配置了 DHCP；检查 `networkctl`、`omloader net status`。Wi-Fi 未配置。
 - **想改/去掉默认登录。** 见[第 6 节](#6-默认账号与安全)。
+- **`Docker/OCI images are experimental and have been disabled here`。** Docker/OCI 支持是实验性的、默认开启；有设置把它关了（`experimental.oci_images: false`、`OML_EXPERIMENTAL=off` 或 `omloader.experimental=off`）。去掉该设置，或用 `--experimental-oci` 强制开启。
 - **日志在哪？** 串口控制台与 `journalctl`；`OMLOADER_LOADER:` 和 `OMLOADER_STAGE1:` 行汇总了检测结果。
 
 ## 15. 限制
 
 Alpha 阶段，仅在 QEMU/OVMF 中测试。仅 UEFI x86_64；不支持 Secure Boot；仅 Linux 客户系统；VM 客户系统：ext4/xfs 根且 `/boot` 可用，无 LVM/LUKS，仅在 Debian 风格客户系统上验证，无独立数据卷，关机时不能干净卸载存储；
 容器的控制台登录仅对 systemd 客户系统实现（其他得到 busybox 调试 shell）；无热快照；dm-snapshot 的 VM 快照不能“合并删除”（请用 `flatten`）；Wi-Fi 未配置；拉取只支持 Simplestreams 源（sha256 校验，无 GPG）；
-Docker/OCI 镜像是实验性功能，默认关闭。完整列表见 [DEVELOPMENT.md](DEVELOPMENT.md#known-limitations)。
+Docker/OCI 镜像是实验性功能（默认开启；需要带 systemd 或 shell 的镜像，不支持端口映射，代理支持不均衡；可用 `experimental.oci_images: false` 关闭）。完整列表见 [DEVELOPMENT.md](DEVELOPMENT.md#known-limitations)。
