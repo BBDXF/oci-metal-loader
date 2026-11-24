@@ -25,7 +25,7 @@ Contents: [1 Requirements](#1-requirements) · [2 Download and verify](#2-downlo
 ## 2. Download and verify
 
 Download from the [Releases page](https://github.com/BBDXF/oci-metal-loader/releases): `omloader-<version>.iso` (the loader), `omloader-<version>-linux-amd64.tar.gz` (the static binary, for scripting on other Linux hosts),
-`omloader-<version>-config.zip` (the config package: commented `boot.yaml`, `sources.yaml`, `images/` placeholder, `ventoy.json.example`, examples, schemas, `README-FIRST.txt`; unzip it into the root of the Ventoy data partition, see section 3) and `SHA256SUMS`. A development ISO can be built on demand with the manual *ISO (manual)* workflow (Actions → Run workflow → *Artifacts*); it is not built on every push.
+`omloader-<version>-config.zip` (the config package: commented `boot.yaml`, `sources.yaml`, `omloader/images/` placeholder, `ventoy.json.example`, examples, schemas, `README-FIRST.txt`; unzip it into the root of the Ventoy data partition, see section 3) and `SHA256SUMS`. A development ISO can be built on demand with the manual *ISO (manual)* workflow (Actions → Run workflow → *Artifacts*); it is not built on every push.
 
     sha256sum -c --ignore-missing SHA256SUMS         # Linux/macOS (coreutils)
     Get-FileHash .\omloader-0.1.0.iso -Algorithm SHA256   # Windows PowerShell: compare with SHA256SUMS
@@ -35,29 +35,29 @@ Build it yourself instead: `make iso` (podman or docker; [build/README.md](../bu
 ## 3. Put the ISO on a Ventoy stick
 
 1. Install Ventoy on the stick (Ventoy2Disk). It creates a large data partition (exFAT by default) and a small `VTOYEFI` partition.
-2. Copy `omloader-<version>.iso` to the data partition, e.g. as `/omloader.iso`. Any path works; the loader finds the ISO file by scanning
+2. Copy `omloader-<version>.iso` to the data partition, e.g. as `/omloader/omloader-<version>.iso` (everything of the loader lives in the one folder `omloader/`). Any path works; the loader finds the ISO file by scanning
    (`/`, `/omloader/`, `/ISO/`, then up to two directory levels for an ISO with volume label `OMLOADER_LIVE`). Details: [ventoy.md](ventoy.md).
-3. Unzip `omloader-<version>-config.zip` into the **root** of the same partition (files, no version folder). It creates `omloader/boot.yaml` (everything commented out), `omloader/sources.yaml`, `images/README.txt`, `ventoy/ventoy.json.example`, `schema/`, `examples/` and `README-FIRST.txt`. It never contains a `ventoy.json`: merge the `.example` into your own by hand (menu alias/timeout, see [ventoy.md](ventoy.md)).
+3. Unzip `omloader-<version>-config.zip` into the **root** of the same partition (files, no version folder). It creates `omloader/boot.yaml` (everything commented out), `omloader/sources.yaml`, `omloader/images/README.txt`, `ventoy/ventoy.json.example`, `schema/`, `examples/` and `README-FIRST.txt`. It never contains a `ventoy.json`: merge the `.example` into your own by hand (menu alias/timeout, see [ventoy.md](ventoy.md)).
 4. Boot the PC from the stick (UEFI), pick the ISO. Ventoy offers *normal* and *GRUB2* mode; both work (memdisk mode does not).
 
 **Where do images, snapshots and config live?** Three options (the loader picks them automatically, see [section 10](#10-file-and-folder-layout)):
 
 | Option | What you do | Notes |
 |---|---|---|
-| A. **Store file** (simplest) | Keep the single Ventoy exFAT/NTFS partition (label it `VTOYDATA`). Put images in `images/`. Create the store once in the loader: `omloader store create --path /mnt/images/omloader/store.img --size 20G` (or in the TUI Storage tab). | No Linux partition needed. exFAT has no sparse files: the file is fully allocated when created. See [store-file.md](store-file.md). |
+| A. **Store file** (simplest) | Keep the single Ventoy exFAT/NTFS partition (label it `VTOYDATA`). Put images in `omloader/images/`. Create the store once in the loader: `omloader store create --path /mnt/images/omloader/store.img --size 20G` (or in the TUI Storage tab). | No Linux partition needed. exFAT has no sparse files: the file is fully allocated when created. See [store-file.md](store-file.md). |
 | B. **`OMLOADER` partition** (most robust) | Add an ext4 (xfs/btrfs also accepted) partition labelled `OMLOADER` (e.g. `mkfs.ext4 -L OMLOADER /dev/sdX3`, on the free space after reserving it in Ventoy2Disk *Option → Partition configuration → Preserve some space*) and keep the Ventoy partition as `VTOYDATA`. | One filesystem layer less; a real `OMLOADER` partition always wins over a store file. |
 | C. **Nothing** | Just boot. | Snapshots/cache live in RAM and vanish at poweroff (the loader says `SNAPOK=0`). Fine for trying it out. |
 
-The images folder is `images/` on the partition labelled `VTOYDATA` (or, if there is none, `images/` on the `OMLOADER` store). You can relabel the Ventoy partition to `VTOYDATA`
-(`exfatlabel /dev/sdX1 VTOYDATA`; Windows: right-click → Rename) — Ventoy keeps working. NTFS cautions: the Ventoy partition holding **the ISO** must not be NTFS (stage 1 cannot read it: no `ntfs3` in the loader kernel);
-a *separate* NTFS `VTOYDATA` partition works through ntfs-3g, read-only if Windows left it hibernated/dirty.
+**One folder:** everything lives in `omloader/` at the root of the data partition: `omloader/omloader-<ver>.iso`, `boot.yaml`, `sources.yaml`, `images/`, `store.img`. Only `ventoy/ventoy.json` stays outside (it is Ventoy's own).
+**Which partition is the data partition?** 1. the one named by the kernel flag `omloader.data=LABEL=x|UUID=x|/dev/x`, 2. the partition labelled `VTOYDATA`, 3. otherwise **the partition that holds the ISO file**, whatever its label (e.g. `VHDX`). No relabelling is needed. (On an `OMLOADER` store without a data partition the images folder is `omloader/images/` there.)
+**NTFS** works everywhere, including the partition holding the ISO: stage 1 carries ntfs-3g (FUSE) because Debian's 6.1 kernel has no `ntfs3`. If Windows left the volume hibernated (Fast Startup) or dirty, it is mounted **read-only** (images stay usable, a store file on it does not).
 
 ## 4. First boot
 
 Pick the ISO. GRUB shows its menu for 1 s, the Debian-based loader boots (usually under a minute, longer from slow USB) and the **TUI** opens on tty1 and on the serial console. Nothing is booted automatically
 unless you configure it:
 
-- **Auto-boot with a countdown** (Ventoy cannot pass kernel parameters): create `omloader/boot.yaml` on the `VTOYDATA` partition:
+- **Auto-boot with a countdown** (Ventoy cannot pass kernel parameters): create `omloader/boot.yaml` on the data partition:
   ```yaml
   boot:
     default_image: ubuntu-noble   # empty/absent = show the TUI; `last` = the image the TUI booted last
@@ -95,29 +95,29 @@ Two independent countdowns chain together: **Ventoy** picks the ISO, then **omlo
 
 ## 5. Get images
 
-Images live in `images/<name>/` (`image.yaml` + `base.raw` for `lxd-vm` or `base.squashfs` for `lxd-container`). Three ways to get them there:
+Images live in `omloader/images/<name>/` (`image.yaml` + `base.raw` for `lxd-vm` or `base.squashfs` for `lxd-container`). Three ways to get them there:
 
 1. **Pull inside the loader** (needs network). In the TUI *Pull* tab (`2`) pick an image, or on the shell:
    ```sh
    omloader images list --os ubuntu --type vm            # browse the catalog (--type container|vm)
-   omloader pull lxc:ubuntu/noble --vm --name ubuntu-noble --out /mnt/images/images
-   omloader pull lxc:debian/bookworm --container --name debian-bookworm --out /mnt/images/images
+   omloader pull lxc:ubuntu/noble --vm --name ubuntu-noble --out /mnt/images/omloader/images
+   omloader pull lxc:debian/bookworm --container --name debian-bookworm --out /mnt/images/omloader/images
    ```
    Sources and mirrors (official, USTC, NJU, TUNA, CERNET...): `omloader source list`, `omloader source test`, `--source S --mirror M|auto|official`, `mirror_policy.region_preset: cn`.
    Everything is described in [sources.md](sources.md). Downloads are sha256-checked and cached (`/mnt/snap/cache`, `omloader cache ls|gc`); `--offline` never touches the network.
 2. **Import files you already have** (LXD export: a directory or `lxd.tar.xz` next to `rootfs.squashfs`; for VMs a `disk.qcow2`):
    ```sh
-   omloader import lxd /path/to/lxd-container-dir --name mybox --out /mnt/images/images
-   omloader import lxd-vm /path/to/disk.qcow2 --name myvm --out /mnt/images/images     # converts to base.raw; --no-probe skips the kernel probe
+   omloader import lxd /path/to/lxd-container-dir --name mybox --out /mnt/images/omloader/images
+   omloader import lxd-vm /path/to/disk.qcow2 --name myvm --out /mnt/images/omloader/images     # converts to base.raw; --no-probe skips the kernel probe
    ```
-   Imports can be run on any Linux PC with the `omloader` binary from the release tarball (`--out` = `images/` folder of the mounted stick), except the VM kernel probe which needs root; use `--no-probe` there and write `kernel:` in `image.yaml` yourself.
-3. **Copy a ready image folder** (`image.yaml` + base file, see [section 9.3](#93-imageyaml-per-image-config)) into `images/` of the stick.
+   Imports can be run on any Linux PC with the `omloader` binary from the release tarball (`--out` = `omloader/images/` folder of the mounted stick), except the VM kernel probe which needs root; use `--no-probe` there and write `kernel:` in `image.yaml` yourself.
+3. **Copy a ready image folder** (`image.yaml` + base file, see [section 9.3](#93-imageyaml-per-image-config)) into `omloader/images/` of the stick.
 
 Desktop environments (which sources have ready desktop VMs, how to add one to a server image): [desktops.md](desktops.md).
 
 **What is inside the ISO:** a Debian stable live base plus the `omloader` binary. See which with `omloader version --long` (reads `/etc/omloader-release`; also shown in the TUI `?` help), or without booting: `omloader-release` and `packages.txt` at the ISO root (the Release also has `omloader-<ver>-packages.txt`).
 
-Validate a hand-written config: `omloader config validate -c omloader.yaml -i images/NAME/image.yaml`; `omloader config show --resolved` shows every value and the layer/line it came from.
+Validate a hand-written config: `omloader config validate -c omloader.yaml -i omloader/images/NAME/image.yaml`; `omloader config show --resolved` shows every value and the layer/line it came from.
 
 ## 6. Default account and security
 
@@ -175,9 +175,9 @@ Three file families, all YAML, all optional (everything has a built-in default):
 
 | File | Where | Schema |
 |---|---|---|
-| Global config `omloader.yaml` / **`boot.yaml`** (same format and keys; `boot.yaml` is the name used on the stick) | `<VTOYDATA>/omloader/boot.yaml`, `<VTOYDATA>/omloader.yaml`, `<OMLOADER>/omloader/boot.yaml`, `<OMLOADER>/omloader.yaml`, `<ISO host partition>/omloader/boot.yaml` (first found wins); CLI: `-c FILE` | [`schema/omloader.schema.json`](../schema/omloader.schema.json) |
+| Global config `omloader.yaml` / **`boot.yaml`** (same format and keys; `boot.yaml` is the name used on the stick) | `<data partition>/omloader/boot.yaml`, `<OMLOADER>/omloader/boot.yaml`, `<ISO host partition>/omloader/boot.yaml` (first found wins); CLI: `-c FILE` | [`schema/omloader.schema.json`](../schema/omloader.schema.json) |
 | Built-in defaults `configs/defaults.yaml` | embedded in the binary; shown in [9.1](#91-global-config-omloaderyaml--bootyaml) | same schema |
-| `sources.yaml` (catalog of image sources and mirrors) | embedded copy `configs/sources.yaml`, `/etc/omloader/sources.yaml` in the ISO, then your copy at `<VTOYDATA>/omloader/sources.yaml`... | [`schema/sources.schema.json`](../schema/sources.schema.json), [sources.md](sources.md) |
+| `sources.yaml` (catalog of image sources and mirrors) | embedded copy `configs/sources.yaml`, `/etc/omloader/sources.yaml` in the ISO, then your copy at `<data partition>/omloader/sources.yaml`... | [`schema/sources.schema.json`](../schema/sources.schema.json), [sources.md](sources.md) |
 | Per-image `image.yaml` | `<images>/<name>/image.yaml` | [`schema/image.schema.json`](../schema/image.schema.json) |
 
 Layers: built-in defaults < `omloader.yaml`/`boot.yaml` < `image.yaml`, deep-merged per key. Unknown keys are errors (file and line are reported). Sizes accept `512M`, `20G`, `1.5G`, bytes.
@@ -190,7 +190,7 @@ Keys marked **reserved** are accepted and validated but nothing in the current c
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `storage.images.label` | list of string | `[VTOYDATA, OMLOADER]` | **Reserved.** The loader scripts look for fs label `VTOYDATA` (images) and `OMLOADER` (store) themselves. |
-| `storage.images.path` | string | `/images` | Default for `--images-root` of the CLI. In the loader it passes `/mnt/images/images` explicitly. |
+| `storage.images.path` | string | `/omloader/images` | Default for `--images-root` of the CLI. In the loader it passes `/mnt/images/omloader/images` explicitly. |
 | `storage.snapshots.label` | string | `OMLOADER` | **Reserved** (the label `OMLOADER` is fixed in `mounts.sh`). |
 | `storage.snapshots.path` | string | `/snapshots` | Default for `--snap-root`/`--root` of the CLI. In the loader: `/mnt/snap/snapshots`. |
 | `storage.snapshots.fs_required` | list | `[ext4, btrfs, xfs]` | **Reserved** (the loader accepts exactly these filesystems on the `OMLOADER` partition). |
@@ -198,7 +198,7 @@ Keys marked **reserved** are accepted and validated but nothing in the current c
 | `storage.snapshots.store_file.enabled` | bool | `true` | Look for an ext4 store file on the host partition ([store-file.md](store-file.md)). |
 | `…store_file.path` | string | `""` | Exact path of the file inside the host partition, checked first. |
 | `…store_file.glob` | list | `[/omloader/store.img, /ventoy/*.dat]` | Patterns inside the host partition; only files whose ext4 label is `OMLOADER` count. |
-| `…store_file.host_match.label` / `.uuid` | string | `VTOYDATA` / `""` | Which partition holds the file (uuid wins over label; mismatch = no store file search). |
+| `…store_file.host_match.label` / `.uuid` | string | `""` / `""` | Optionally restrict which data partition may hold the file (empty = the data partition: VTOYDATA, else the one holding the ISO; uuid wins over label; mismatch = no store file search). |
 | `…store_file.size` | size | `20G` | Default size of `omloader store create`. |
 | `…store_file.prealloc` | `auto`\|`yes`\|`no` | `auto` | `auto` = fully allocate on exFAT/vfat (no sparse files), sparse elsewhere. |
 
@@ -328,15 +328,15 @@ oci-metal-loader/
 **On the Ventoy stick** (what you create):
 
 ```
-Ventoy data partition (exFAT/NTFS/…; label VTOYDATA recommended)  ── mounted at /mnt/images in the loader
-├── omloader-0.1.0.iso            the loader (any name/path; found by scanning)
-├── ventoy/ventoy.json            optional Ventoy menu config (merge from ventoy.json.example in the config zip)
-├── images/                       IMAGES ROOT (images_root)
-│   ├── ubuntu-noble/             one folder per image
-│   │   ├── image.yaml
-│   │   └── base.raw              (lxd-vm)  |  base.squashfs (lxd-container)
-│   └── debian-bookworm/ …
-└── omloader/
+Data partition (exFAT/NTFS/…; label VTOYDATA preferred, else the partition holding the ISO)  ── mounted at /mnt/images in the loader
+├── ventoy/ventoy.json            optional Ventoy menu config (Ventoy's own file; merge from ventoy.json.example in the config zip)
+└── omloader/                     EVERYTHING of the loader
+    ├── omloader-0.1.0.iso        the loader (any name/path; found by scanning)
+    ├── images/                   IMAGES ROOT (images_root)
+    │   ├── ubuntu-noble/         one folder per image
+    │   │   ├── image.yaml
+    │   │   └── base.raw          (lxd-vm)  |  base.squashfs (lxd-container)
+    │   └── debian-bookworm/ …
     ├── boot.yaml                 global config (auto-boot, guest_defaults, network, …)
     ├── sources.yaml              your sources/mirrors (merged over the built-in catalog)
     ├── console.conf              optional: font=NAME for the Linux console
@@ -353,7 +353,7 @@ OMLOADER partition (ext4/xfs/btrfs, optional)  ── mounted at /mnt/snap
 ├── data/<image>/<vol>   persistent data volumes (dir) or <vol>.img (ext4-file)
 ├── cache/               download cache (blobs, catalog indexes, tmp/*.part)
 ├── omloader/            optional config copies (boot.yaml, sources.yaml, console.conf) — also read here
-└── images/              images fallback when there is no VTOYDATA partition
+└── omloader/images/     images when there is no data partition (store partition only)
 ```
 
 **Inside the live ISO** (read-only squashfs layers + RAM overlay; nothing persists except on the two partitions above):
@@ -368,7 +368,7 @@ OMLOADER partition (ext4/xfs/btrfs, optional)  ── mounted at /mnt/snap
 ISO: /boot/{vmlinuz,initrd.img,grub/grub.cfg,efiboot.img}  /live/{live.squashfs,omloader.squashfs}   volume label OMLOADER_LIVE
 ```
 
-Config lookup order for the loader's boot decisions (first existing, valid file): `/mnt/images/omloader/boot.yaml`, `/mnt/images/omloader.yaml`, `/mnt/snap/omloader/boot.yaml`, `/mnt/snap/omloader.yaml`, `<ISO host partition>/omloader/boot.yaml`.
+Config lookup order for the loader's boot decisions (first existing, valid file): `/mnt/images/omloader/boot.yaml`, `/mnt/snap/omloader/boot.yaml`, `<ISO host partition>/omloader/boot.yaml`.
 Cache location: `/mnt/snap/cache` (RAM-only without a store). Layers of `sources.yaml`: see [sources.md](sources.md).
 
 ## 11. Kernel command line (`omloader.*`)
@@ -386,6 +386,7 @@ Ventoy cannot pass kernel parameters; use `boot.yaml` (`boot.extra_cmdline_flags
 | `omloader.store=off` | Do not attach a store file (maintenance: offline check/grow). |
 | `omloader.font=NAME\|auto\|default` | Linux console font ([tui.md](tui.md)). |
 | `omloader.gfx=WxH\|off` | GRUB video mode (via `omloader_args`; not under Ventoy GRUB2 mode). |
+| `omloader.data=LABEL=x\|UUID=x\|/dev/x` | Data partition override (default: label `VTOYDATA`, else the partition holding the ISO). |
 | `omloader.live=/dev/X`, `omloader.isofile=/path.iso`, `omloader.isodev=LABEL=…\|UUID=…\|/dev/…` | Stage 1: pin the live medium / the ISO file location. |
 | `omloader.selftest=1`, `omloader.hook=1`, `omloader.marker=NAME` | Test helpers (mount check + poweroff; run `hook.sh` from an `OMLSTAGE` disk; marker for the test guests). |
 
@@ -458,10 +459,10 @@ Store file commands: see [store-file.md](store-file.md). `omloader version` prin
 
 - **Black screen / no menu after choosing the ISO.** Secure Boot is probably on: disable it. Try Ventoy's other boot mode (normal ↔ GRUB2). Ventoy's menu is VGA only; the loader's GRUB and boot log also go to the serial console
   (`console=ttyS0,115200`). The framebuffer console picks a font to fit the resolution (`omloader.font=`, `console.conf`). *Real-hardware behaviour is untested.*
-- **"live medium not found" / rescue shell in stage 1.** The loader could not find its ISO: keep the ISO on exFAT, ext4, xfs or FAT32 (not NTFS), at `/omloader.iso`, `/omloader/` or `/ISO/`, or pin it with `omloader.isofile=`.
+- **"live medium not found" / rescue shell in stage 1.** The loader could not find its ISO: the ISO may be on exFAT, NTFS, ext4, xfs or FAT32, at `/omloader.iso`, `/omloader/` or `/ISO/`, or pin it with `omloader.isofile=`.
 - **The console resolution drops after boot in a VM (e.g. 1920x1080 -> 1280x800).** The VM's display driver replaced the firmware framebuffer. Choose the GRUB entry "safe display" (`nomodeset`), or set a fixed video mode in the VM; on real hardware the native driver picks the mode. Details: [ventoy.md](ventoy.md#console-resolution-tty1--vnc).
 - **Secure Boot.** Not supported (no signed shim/kernel). Disable it in the firmware setup.
-- **NTFS.** The loader kernel has no `ntfs3`; NTFS data partitions are mounted with ntfs-3g (FUSE). If Windows left the volume hibernated (Fast Startup) or dirty, it is mounted **read-only**: images are readable, but a store file on it is not usable (snapshots stay in RAM). Fully shut Windows down (`shutdown /s /t 0`) or run `chkdsk`.
+- **NTFS.** The loader kernel has no `ntfs3`; NTFS partitions (also the one holding the ISO) are mounted with ntfs-3g (FUSE, built into stage 1). If Windows left the volume hibernated (Fast Startup) or dirty, it is mounted **read-only**: images are readable, but a store file on it is not usable (snapshots stay in RAM). Fully shut Windows down (`shutdown /s /t 0`) or run `chkdsk`.
 - **exFAT and sparse files.** exFAT cannot create sparse files, so `store create` and `ext4-file` data volumes allocate their whole size immediately (slow for 20G+); vfat files are limited to < 4 GiB. Pick a smaller `--size`, or use an `OMLOADER` ext4 partition.
 - **Snapshots vanish at poweroff.** No store was found (`SNAPOK=0` in the log): create a store file or an `OMLOADER` partition ([section 3](#3-put-the-iso-on-a-ventoy-stick)).
 - **VM guest: `update-grub`/ESP errors.** The guest's `/boot/efi` is deliberately not mounted (`boot.vm_fix_esp_fstab`): the guest is started by `kexec` and never uses the ESP; tools that write there have nothing to write to.

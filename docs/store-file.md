@@ -2,7 +2,7 @@
 
 By default the loader keeps snapshots (`tree.json`, dm-snapshot COW files, overlay uppers), data volumes and the pull cache on an ext4 partition
 labelled `OMLOADER`. **Store-file mode** puts the same ext4 filesystem into an *image file* on the Windows-readable host partition
-(the Ventoy data partition, label `VTOYDATA`, exFAT or NTFS), so no separate Linux partition is needed. The design is unchanged
+(the loader's data partition: label `VTOYDATA`, else the partition holding the ISO; exFAT or NTFS), so no separate Linux partition is needed. The design is unchanged
 (ext4 + dm-snapshot / overlayfs); only the container of the store is different.
 
 ## When to use it
@@ -26,12 +26,12 @@ storage:
       enabled: true
       path: ""                                    # exact file inside the host partition (checked first)
       glob: [/omloader/store.img, /ventoy/*.dat]  # Ventoy .dat convention; label must be OMLOADER
-      host_match: {label: VTOYDATA, uuid: ""}     # uuid wins over label
+      host_match: {label: "", uuid: ""}            # empty = the loader data partition (VTOYDATA, else the ISO partition); label/uuid restrict it
       size: 20G                                   # default for `omloader store create`
       prealloc: auto                              # auto: yes on exFAT/vfat (no sparse files), no elsewhere
 ```
 
-The loader reads `/omloader.yaml` from the root of the host partition if present (`-c`). The host partition is the `VTOYDATA`-labelled one;
+The loader reads `omloader/boot.yaml` of the host partition if present (`-c`). The host partition is the data partition (`omloader.data=`, else `VTOYDATA`, else the partition holding the ISO);
 `host_match` is verified against it (a mismatch skips the store file search).
 Kernel command line: `omloader.store=off` = never attach a store file (maintenance, offline check/grow).
 
@@ -54,7 +54,7 @@ multi-GB zero fill anyway or fail on write when the partition is full). On ext4/
 | Host fs | Notes |
 |---|---|
 | exFAT | kernel `exfat`. No sparse files: the store is fully preallocated. A power cut can leave the exFAT dirty flag set (harmless for the kernel driver; Windows may offer a check). |
-| NTFS | Debian bookworm's 6.1 loader kernel has **no ntfs3**: the loader uses **ntfs-3g (FUSE)**; if a kernel with `ntfs3` is present it is preferred. A *dirty* or *hibernated* volume (Windows **Fast Startup**, hibernation, unclean removal) refuses read-write: the loader mounts it **read-only** and prints a warning. Images stay readable, but the store file cannot be used (snapshots stay ephemeral). Fix: shut Windows down fully (`shutdown /s /t 0`, disable Fast Startup) or `chkdsk`/`ntfsfix`, then reboot. The ntfs-3g daemon runs as `@ntfs-3g` (systemd "root storage daemon" convention) so it survives the container root switch, and is terminated cleanly at the end of the guest's shutdown hook. |
+| NTFS | Debian bookworm's 6.1 loader kernel has **no ntfs3**: the loader uses **ntfs-3g (FUSE)** (also in stage 1, so the ISO may sit on the same NTFS partition); if a kernel with `ntfs3` is present it is preferred. A *dirty* or *hibernated* volume (Windows **Fast Startup**, hibernation, unclean removal) refuses read-write: the loader mounts it **read-only** and prints a warning. Images stay readable, but the store file cannot be used (snapshots stay ephemeral). Fix: shut Windows down fully (`shutdown /s /t 0`, disable Fast Startup) or `chkdsk`/`ntfsfix`, then reboot. The ntfs-3g daemon runs as `@ntfs-3g` (systemd "root storage daemon" convention) so it survives the container root switch, and is terminated cleanly at the end of the guest's shutdown hook. |
 | vfat | Files are limited to < 4 GiB: `store create/grow` refuse larger sizes. Fully preallocated. |
 | ext4 / xfs / btrfs | Works, sparse. Pointless if you can simply label a partition `OMLOADER`. |
 | BitLocker / encrypted | Not supported (no LUKS/BitLocker handling yet). |

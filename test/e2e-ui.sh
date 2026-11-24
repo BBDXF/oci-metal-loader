@@ -107,7 +107,7 @@ eq "$(fsv needs_recovery)" no "bb1: OMLOADER ext4 clean after busybox-init power
 # ---------- 4. baseline: shutdown_sync=false reproduces the old behaviour ----------
 IND=$(awk '/^runtime:/{f=1;next} f{match($0,/^ */);print RLENGTH;exit}' $O/oci-images/omlui/image.yaml); PAD=$(printf '%*s' ${IND:-2} '')
 rm -rf $W/hk; mkdir -p $W/hk
-echo "sed -i 's/^runtime:/runtime:\\n${PAD}shutdown_sync: false/' /mnt/images/images/omlui/image.yaml; grep -A2 '^runtime:' /mnt/images/images/omlui/image.yaml; sync" > $W/hk/hook.sh
+echo "sed -i 's/^runtime:/runtime:\\n${PAD}shutdown_sync: false/' /mnt/images/omloader/images/omlui/image.yaml; grep -A2 '^runtime:' /mnt/images/omloader/images/omlui/image.yaml; sync" > $W/hk/hook.sh
 rm -f $W/hk.img; truncate -s 16M $W/hk.img; mkfs.ext4 -q -L OMLSTAGE -d $W/hk $W/hk.img
 DISK2=$W/hk.img EXTRA=omloader.hook=1 NAME= SNAP= LOG=$W/hook.log $T/run-kvm.sh > /dev/null; clean hook
 grep -q 'OMLOADER_HOOK_RC=0' $W/hook.clean && pass "hook: image.yaml patched (shutdown_sync: false)" || fail "hook: patch failed"

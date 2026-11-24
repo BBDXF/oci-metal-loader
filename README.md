@@ -23,7 +23,7 @@ pick one, and it runs directly on the real hardware: **no installation, no hyper
 - **Snapshots are built in.** VM-style: create, revert, delete, tag, prune, flatten and export. Base images stay read-only and checksummed.
   VMs use `dm-snapshot`, containers use `overlayfs`.
 - **Your data survives.** Snapshots and data volumes live in a persistent store; container data volumes are independent of the system layer, so rolling back the OS keeps your files.
-- **Windows-friendly drive.** Images sit on exFAT. The store can be an *ext4 file* on an exFAT/NTFS partition (Ventoy's `.dat` convention) — no extra Linux partition needed.
+- **Windows-friendly drive.** Images sit on exFAT or NTFS (everything in one `omloader/` folder). The store can be an *ext4 file* on an exFAT/NTFS partition (Ventoy's `.dat` convention) — no extra Linux partition needed.
 - **Plays well with Ventoy.** It is just another entry in the Ventoy menu; Ventoy keeps booting your Windows/Linux ISOs and VHD(x) files natively.
 - **Online or fully offline.** Pull from `images.linuxcontainers.org`-style (simplestreams) sources with mirrors, proxy and a content-addressed cache; SHA-256 verified. Offline mode never touches the network.
 - **Simple to operate.** One static Go binary, plain YAML config, a keyboard-only terminal UI and a scriptable CLI.
@@ -41,10 +41,10 @@ snapshots / data / cache → ext4 store (a partition, or an ext4 file on exFAT/N
 
 1. **Get the ISO** from [Releases](https://github.com/BBDXF/oci-metal-loader/releases) (see *Download*), or build it with `make iso`. Step-by-step: [docs/INSTALL.md](docs/INSTALL.md).
 2. **Put it on a Ventoy drive** and boot it from the Ventoy menu ([docs/ventoy.md](docs/ventoy.md)).
-3. **Get images** (inside the loader, or copy them to `images/` on the data partition):
+3. **Get images** (inside the loader, or copy them to `omloader/images/` on the data partition):
    ```sh
    omloader images list --os ubuntu --type vm
-   omloader pull lxc:ubuntu/noble --vm --name ubuntu-noble --out /mnt/images/images
+   omloader pull lxc:ubuntu/noble --vm --name ubuntu-noble --out /mnt/images/omloader/images
    ```
 4. **Boot one** (continues your live state, "current"):
    ```sh

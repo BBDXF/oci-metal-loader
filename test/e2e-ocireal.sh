@@ -28,14 +28,14 @@ printf '%s\n' "${ENTRIES:-$DEFAULT_ENTRIES}" | while IFS='|' read -r n src extra
   rm -rf $R/stage-imp; mkdir -p $R/stage-imp
   case $src in
     tar:*) cp $R/${src#tar:}.tar $R/stage-imp/oci.tar
-      IMP='omloader import oci-archive --experimental-oci /mnt/stage/oci.tar --name real --out /mnt/images/images --autologin --tmp /mnt/snap';;
-    docker:*) IMP="omloader pull ${src} --mirror ${PULL_MIRROR:-auto} --experimental-oci --name real --out /mnt/images/images --tmp /mnt/snap";;
+      IMP='omloader import oci-archive --experimental-oci /mnt/stage/oci.tar --name real --out /mnt/images/omloader/images --autologin --tmp /mnt/snap';;
+    docker:*) IMP="omloader pull ${src} --mirror ${PULL_MIRROR:-auto} --experimental-oci --name real --out /mnt/images/omloader/images --tmp /mnt/snap";;
   esac
   T0=$(date +%s)
   HOOK_TIMEOUT=${PULL_TIMEOUT:-600} hook imp $D <<BODY
 for i in \$(seq 1 40); do ip route 2>/dev/null | grep -q default && break; sleep 1; done; echo "##NET \$i s: \$(ip -4 -o addr show | tail -1)"
 echo "##IMPORT"; $IMP > /tmp/imp.out 2>&1; rc=\$?; tail -25 /tmp/imp.out; echo "##IMPORT_RC=\$rc"
-echo "##YAML"; cat /mnt/images/images/real/image.yaml; ls -la /mnt/images/images/real | head -5
+echo "##YAML"; cat /mnt/images/omloader/images/real/image.yaml; ls -la /mnt/images/omloader/images/real | head -5
 BODY
   echo "--- import/pull: $(( $(date +%s)-T0 )) s"
   sed -n '/##IMPORT/,/HOOK_RC/p' $R/hook-imp.clean | grep -av '^\[' | grep -a "pull:\|imported\|error\|IMPORT_RC\|denied\|trying\|shell:\|autologin" | head -14 | cut -c1-200
@@ -55,8 +55,8 @@ BODY
   pkill -u $USER -f "$W/ocr-$n.raw" 2>/dev/null; sleep 1
   echo "--- tail of the serial log:"; clean $R/boot-$n.log | tail -4 | cut -c1-200
   hook snap $D <<'BODY'
-echo "##SNAP"; omloader snapshot create real s1 --root /mnt/snap/snapshots --images-root /mnt/images/images 2>&1 | tail -1; echo "##RC1=$?"
-omloader snapshot revert real s1 --root /mnt/snap/snapshots --images-root /mnt/images/images 2>&1 | tail -1; echo "##RC2=$?"
+echo "##SNAP"; omloader snapshot create real s1 --root /mnt/snap/snapshots --images-root /mnt/images/omloader/images 2>&1 | tail -1; echo "##RC1=$?"
+omloader snapshot revert real s1 --root /mnt/snap/snapshots --images-root /mnt/images/omloader/images 2>&1 | tail -1; echo "##RC2=$?"
 BODY
   sed -n '/##SNAP/,/HOOK_RC/p' $R/hook-snap.clean | grep -av '^\[' | head -6
   rm -f $D

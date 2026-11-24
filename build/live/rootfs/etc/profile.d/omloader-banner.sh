@@ -15,7 +15,7 @@ if [ -z "$OMLOADER_BANNER_SHOWN" ]; then
 
 === OCI Metal Loader (omloader) live shell ===
   omloader tui   (interactive UI; exit the shell to get it back)    boot.ui: shell / omloader.ui=shell disables it
-  omloader boot --image <name> [--snapshot <n>] --images-root ${IMAGES_ROOT:-/mnt/images/images} --snap-root /mnt/snap/snapshots [--dry-run]
+  omloader boot --image <name> [--snapshot <n>] --images-root ${IMAGES_ROOT:-/mnt/images/omloader/images} --snap-root /mnt/snap/snapshots [--dry-run]
   omloader snapshot list|create|revert|delete|gc|prune|verify|flatten ...   (omloader snapshot for all operations)
   mounts: /mnt/snap (OMLOADER) /mnt/images (VTOYDATA)    network: networkctl / resolvectl     poweroff: poweroff -f
 ===============================================

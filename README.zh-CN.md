@@ -23,7 +23,7 @@
 - **快照是内置的。** 类似虚拟机快照：创建、回退、删除、打标签、清理、压平和导出。基础镜像只读并带校验和。
   虚拟机用 `dm-snapshot`，容器用 `overlayfs`。
 - **数据不丢。** 快照和数据卷都放在持久的存储区；容器的数据卷独立于系统层，回退快照不会影响你的文件。
-- **对 Windows 友好。** 镜像放在 exFAT 上。存储区可以是 exFAT/NTFS 分区里的一个 *ext4 文件*（沿用 Ventoy 的 `.dat` 约定），不需要额外划分 Linux 分区。
+- **对 Windows 友好。** 镜像放在 exFAT 或 NTFS 上（全部在一个 `omloader/` 文件夹里）。存储区可以是 exFAT/NTFS 分区里的一个 *ext4 文件*（沿用 Ventoy 的 `.dat` 约定），不需要额外划分 Linux 分区。
 - **和 Ventoy 配合。** 它只是 Ventoy 菜单里的一个条目；Windows/Linux 的 ISO 和 VHD(x) 仍由 Ventoy 原生启动。
 - **在线和离线都行。** 可从 `images.linuxcontainers.org` 这类（simplestreams）源拉取，支持 mirror、代理和按内容寻址的缓存，并校验 SHA-256；离线模式不会访问网络。
 - **易于使用。** 单个静态 Go 二进制、纯 YAML 配置、键盘操作的终端界面和可脚本化的命令行。
@@ -41,10 +41,10 @@ Ventoy / UEFI → GRUB → 加载器（Debian live：systemd、networkd、工具
 
 1. **获取 ISO。** 从 [Releases](https://github.com/BBDXF/oci-metal-loader/releases) 下载（见*下载*），或用 `make iso` 构建。分步说明：[docs/INSTALL.zh-CN.md](docs/INSTALL.zh-CN.md)。
 2. **放进 Ventoy 盘**，在 Ventoy 菜单里启动它（[docs/ventoy.md](docs/ventoy.md)）。
-3. **获取镜像**（在加载器里执行，或者把镜像复制到数据分区的 `images/` 目录）：
+3. **获取镜像**（在加载器里执行，或者把镜像复制到数据分区的 `omloader/images/` 目录）：
    ```sh
    omloader images list --os ubuntu --type vm
-   omloader pull lxc:ubuntu/noble --vm --name ubuntu-noble --out /mnt/images/images
+   omloader pull lxc:ubuntu/noble --vm --name ubuntu-noble --out /mnt/images/omloader/images
    ```
 4. **启动一个镜像**（继续你的当前状态 "current"）：
    ```sh

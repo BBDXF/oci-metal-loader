@@ -16,12 +16,12 @@ mirror_policy:
 #     mirrors: [https://mirror.example.org/lxc-images]
 # network: {proxy: "http://proxy.lan:3128", no_proxy: ".lan"}
 # cache: {path: /OMLOADER/cache, offline: auto}
-# Store-file mode: keep snapshots/data in an ext4 image on the (exFAT/NTFS) VTOYDATA partition instead of a Linux partition.
+# Store-file mode: keep snapshots/data in an ext4 image on the (exFAT/NTFS) data partition instead of a Linux partition.
 # Create it with `omloader store create --path /mnt/images/omloader/store.img --size 20G`.
 # storage:
 #   snapshots:
 #     store_file:
 #       glob: [/omloader/store.img, /ventoy/*.dat]
-#       host_match: {label: VTOYDATA}
+#       host_match: {label: ""}
 #       size: 20G
 #       prealloc: auto

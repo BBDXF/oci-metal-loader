@@ -30,7 +30,7 @@ try_dev() { # $1 = block device. Typed mount only: an untyped `mount` probes eve
 FOUND=; HOW=
 # ---- (c) iso-scan: the ISO is a *file* on some partition (Ventoy, a plain data stick, ...) ----
 # omloader.isofile=/path.iso [omloader.isodev=LABEL=x|UUID=x|/dev/x] pins it; else /omloader.iso, /omloader/omloader.iso,
-# /ISO/omloader.iso, then every *.iso within two directory levels whose volume label is OMLOADER_LIVE.
+# /ISO/omloader.iso (+ /omloader/omloader-<ver>.iso), then every *.iso within two directory levels whose volume label is OMLOADER_LIVE.
 HOST=/run/medium-host; mkdir -p $HOST /run/omloader
 ISOFILE=$(arg omloader.isofile); ISODEV=$(arg omloader.isodev); SCANNED=" "; ISOLOOP=; ISOPATH=
 iso_try() { # $1 = ISO file, $2 = 1 -> no volume label check (explicit name)
@@ -41,26 +41,45 @@ iso_try() { # $1 = ISO file, $2 = 1 -> no volume label check (explicit name)
   umount /run/medium 2>/dev/null; losetup -d "$lo" 2>/dev/null; return 1
 }
 resolve_dev() { case "$1" in LABEL=*) blkid -L "${1#LABEL=}";; UUID=*) blkid -U "${1#UUID=}";; *) echo "$1";; esac 2>/dev/null; }
+# NTFS: the loader kernel (Debian 6.1) has no ntfs3, so stage 1 carries ntfs-3g (FUSE: fuse.ko + /dev/fuse). It is installed as
+# "@ntfs-3g": the '@' argv[0] convention makes systemd leave the daemon alone at switch-root / shutdown (it keeps serving the
+# ISO's host partition for the whole session; mounts.sh bind-mounts it as /mnt/images, mounts.sh stop ends it cleanly).
+hostmnt() { # $1 = fs type, $2 = mount options (ro|rw), $3 = device; mounted on $HOST
+  if [ "$1" = ntfs ]; then @ntfs-3g "$3" $HOST -o "$2,noatime" 2>/run/ntfs.err; else mount -t "$1" -o "$2" "$3" $HOST 2>/dev/null; fi
+}
+want_rw() { # $1 = device: is it the loader's data partition (omloader.data=, else VTOYDATA, else the partition holding the ISO)? then rw
+  local da v; da=$(arg omloader.data)
+  if [ -n "$da" ]; then [ "$(resolve_dev "$da")" = "$1" ]; return; fi
+  v=$(blkid -L VTOYDATA 2>/dev/null)
+  [ -z "$v" ] || [ "$v" = "$1" ] || [ "$(blkid -o value -s LABEL "$1" 2>/dev/null)" = OMLOADER ]
+}
 scan_dev() { # $1 = partition/disk device. 0 = ISO found (host fs stays mounted on $HOST, ISO on /run/medium)
-  d=$1; t=$(blkid -o value -s TYPE "$d" 2>/dev/null)
-  case "$t" in exfat|vfat|ext2|ext3|ext4|xfs) ft=$t;; *) return 1;; # no ntfs3 in the loader kernel; ntfs-3g (FUSE) is not available in stage 1
-   esac
-  mount -t "$ft" -o ro "$d" $HOST 2>/dev/null || return 1
+  d=$1; t=$(blkid -o value -s TYPE "$d" 2>/dev/null); HRW=0
+  case "$t" in exfat|vfat|ext2|ext3|ext4|xfs|ntfs) ft=$t;; *) return 1;; esac
+  hostmnt "$ft" ro "$d" || return 1
   f=
   if [ -n "$ISOFILE" ]; then iso_try "$HOST$ISOFILE" 1 && f=$ISOFILE
   else
-    for c in /omloader.iso /omloader/omloader.iso /ISO/omloader.iso; do iso_try "$HOST$c" 1 && { f=$c; break; }; done
+    for c in /omloader.iso /omloader/omloader.iso /omloader/omloader-*.iso /ISO/omloader.iso; do iso_try "$HOST$c" 1 && { f=$c; break; }; done
     if [ -z "$f" ]; then for c in "$HOST"/*.iso "$HOST"/*/*.iso "$HOST"/*/*/*.iso; do iso_try "$c" && { f=${c#$HOST}; break; }; done; fi
   fi
   if [ -n "$f" ]; then
     ISOPATH=$f
-    # the loader's own data partitions are mounted rw by omloader-mounts later: switch this (shared) mount to rw now so both agree
-    case "$(blkid -o value -s LABEL "$d" 2>/dev/null)" in VTOYDATA|OMLOADER) mount -o remount,rw $HOST 2>/dev/null;; esac
+    # the data partition is mounted rw by omloader-mounts later: switch this (shared) mount to rw now so both agree
+    if want_rw "$d"; then
+      if [ "$ft" = ntfs ]; then # FUSE cannot remount: release the ISO, mount again rw (dirty/hibernated volume: stays ro), reattach the ISO
+        umount /run/medium 2>/dev/null; losetup -d "$ISOLOOP" 2>/dev/null; umount $HOST 2>/dev/null
+        k=0; while [ $k -lt 15 ]; do hostmnt ntfs rw "$d" && { HRW=1; break; }; k=$((k+1)); sleep 0.2; done
+        if [ $HRW = 0 ]; then echo "OMLOADER_STAGE1: $d (ntfs) not mountable read-write ($(tail -1 /run/ntfs.err)): read-only"; hostmnt ntfs ro "$d" || return 1; fi
+        iso_try "$HOST$f" 1 || { umount $HOST 2>/dev/null; return 1; }
+      else mount -o remount,rw $HOST 2>/dev/null && HRW=1; fi
+    fi
     cat > /run/omloader/medium.env <<ENV
 MEDIUM_VIA=iso-scan
 MEDIUM_HOST_DEV=$d
 MEDIUM_HOST_FS=$ft
 MEDIUM_HOST_MNT=$HOST
+MEDIUM_HOST_RW=$HRW
 MEDIUM_ISO=$f
 MEDIUM_ISO_LOOP=$ISOLOOP
 ENV

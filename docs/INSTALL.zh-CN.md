@@ -24,7 +24,7 @@
 ## 2. 下载与校验
 
 从 [Releases 页面](https://github.com/BBDXF/oci-metal-loader/releases)下载：`omloader-<版本>.iso`（加载器）、`omloader-<版本>-linux-amd64.tar.gz`（静态二进制，可在其他 Linux 主机上做脚本/导入）、
-`omloader-<版本>-config.zip`（配置包：已注释的 `boot.yaml`、`sources.yaml`、`images/` 占位、`ventoy.json.example`、示例、schema、`README-FIRST.txt`；解压到 Ventoy 数据分区根目录，见第 3 节）和 `SHA256SUMS`。开发版 ISO 可用手动工作流 *ISO (manual)* 按需构建（Actions → Run workflow → *Artifacts*），不会在每次推送时构建。
+`omloader-<版本>-config.zip`（配置包：已注释的 `boot.yaml`、`sources.yaml`、`omloader/images/` 占位、`ventoy.json.example`、示例、schema、`README-FIRST.txt`；解压到 Ventoy 数据分区根目录，见第 3 节）和 `SHA256SUMS`。开发版 ISO 可用手动工作流 *ISO (manual)* 按需构建（Actions → Run workflow → *Artifacts*），不会在每次推送时构建。
 
     sha256sum -c --ignore-missing SHA256SUMS         # Linux/macOS
     Get-FileHash .\omloader-0.1.0.iso -Algorithm SHA256   # Windows PowerShell，与 SHA256SUMS 比对
@@ -34,26 +34,27 @@
 ## 3. 把 ISO 放到 Ventoy 盘
 
 1. 用 Ventoy2Disk 在盘上安装 Ventoy，它会建立一个大的数据分区（默认 exFAT）和一个很小的 `VTOYEFI` 分区。
-2. 把 `omloader-<版本>.iso` 拷到数据分区，例如 `/omloader.iso`。路径随意，加载器会扫描查找（`/`、`/omloader/`、`/ISO/`，以及两层目录内卷标为 `OMLOADER_LIVE` 的 ISO）。详见 [ventoy.md](ventoy.md)。
-3. 把 `omloader-<版本>-config.zip` 解压到同一分区的**根目录**（直接是文件，没有版本号目录）。会生成 `omloader/boot.yaml`（全部已注释）、`omloader/sources.yaml`、`images/README.txt`、`ventoy/ventoy.json.example`、`schema/`、`examples/` 和 `README-FIRST.txt`。包里不含 `ventoy.json`：请手工把 `.example` 合并进你自己的文件（菜单别名/超时，见 [ventoy.md](ventoy.md)）。
+2. 把 `omloader-<版本>.iso` 拷到数据分区，例如 `/omloader/omloader-<版本>.iso`（加载器的一切都放在唯一的文件夹 `omloader/` 里）。路径随意，加载器会扫描查找（`/`、`/omloader/`、`/ISO/`，以及两层目录内卷标为 `OMLOADER_LIVE` 的 ISO）。详见 [ventoy.md](ventoy.md)。
+3. 把 `omloader-<版本>-config.zip` 解压到同一分区的**根目录**（直接是文件，没有版本号目录）。会生成 `omloader/boot.yaml`（全部已注释）、`omloader/sources.yaml`、`omloader/images/README.txt`、`ventoy/ventoy.json.example`、`schema/`、`examples/` 和 `README-FIRST.txt`。包里不含 `ventoy.json`：请手工把 `.example` 合并进你自己的文件（菜单别名/超时，见 [ventoy.md](ventoy.md)）。
 4. 从盘启动电脑（UEFI），选择该 ISO。Ventoy 会提供 *normal* 与 *GRUB2* 两种模式，都可用（不支持 memdisk 模式）。
 
 **镜像、快照和配置放在哪？** 三种方式（加载器会自动识别，见[第 10 节](#10-文件与目录布局)）：
 
 | 方式 | 做法 | 说明 |
 |---|---|---|
-| A. **存储文件**（最简单） | 保留 Ventoy 的单个 exFAT/NTFS 分区（卷标改为 `VTOYDATA`），镜像放进 `images/`。在加载器里创建一次存储：`omloader store create --path /mnt/images/omloader/store.img --size 20G`（或在 TUI 的 Storage 页）。 | 不需要 Linux 分区。exFAT 不支持稀疏文件：创建时会占满整个大小。见 [store-file.md](store-file.md)。 |
+| A. **存储文件**（最简单） | 保留 Ventoy 的单个 exFAT/NTFS 分区（卷标改为 `VTOYDATA`），镜像放进 `omloader/images/`。在加载器里创建一次存储：`omloader store create --path /mnt/images/omloader/store.img --size 20G`（或在 TUI 的 Storage 页）。 | 不需要 Linux 分区。exFAT 不支持稀疏文件：创建时会占满整个大小。见 [store-file.md](store-file.md)。 |
 | B. **`OMLOADER` 分区**（最稳） | 增加一个卷标为 `OMLOADER` 的 ext4（也接受 xfs/btrfs）分区（如 `mkfs.ext4 -L OMLOADER /dev/sdX3`；可在 Ventoy2Disk 的 *选项 → 分区设置 → 保留空间* 里预留），Ventoy 分区保持 `VTOYDATA`。 | 少一层文件系统；真正的 `OMLOADER` 分区总是优先于存储文件。 |
 | C. **都不要** | 直接启动。 | 快照/缓存只在内存里，关机即丢（日志里会显示 `SNAPOK=0`）。适合试用。 |
 
-镜像目录是卷标为 `VTOYDATA` 的分区上的 `images/`（没有时用 `OMLOADER` 存储里的 `images/`）。可以把 Ventoy 分区改名为 `VTOYDATA`（`exfatlabel /dev/sdX1 VTOYDATA`；Windows 里右键重命名），不影响 Ventoy。
-NTFS 注意：存放 **ISO 本身**的 Ventoy 分区不能是 NTFS（加载器内核没有 `ntfs3`，第一阶段读不了）；*另一个* NTFS 的 `VTOYDATA` 分区可通过 ntfs-3g 使用，若被 Windows 休眠/未干净卸载则只读挂载。
+**唯一的文件夹：** 一切都在数据分区根目录的 `omloader/` 里：`omloader/omloader-<版本>.iso`、`boot.yaml`、`sources.yaml`、`images/`、`store.img`。只有 `ventoy/ventoy.json` 在外面（它是 Ventoy 自己的文件）。
+**哪个分区是数据分区？** 1. 内核参数 `omloader.data=LABEL=x|UUID=x|/dev/x` 指定的分区；2. 卷标为 `VTOYDATA` 的分区；3. 否则就是**存放 ISO 文件的那个分区**，不管卷标是什么（例如 `VHDX`），无需改名。
+**NTFS** 处处可用，包括存放 ISO 的分区：第一阶段自带 ntfs-3g（FUSE），因为 Debian 6.1 内核没有 `ntfs3`。若 Windows 让卷处于休眠（快速启动）或脏状态，则以**只读**挂载（镜像可用，其上的存储文件不可用）。
 
 ## 4. 首次启动
 
 选择 ISO 后，GRUB 菜单停留 1 秒，随后基于 Debian 的加载器启动（通常一分钟内，USB 慢时更久），**TUI** 会出现在 tty1 和串口控制台。除非配置，否则不会自动启动任何镜像：
 
-- **带倒计时的自动启动**（Ventoy 不能传内核参数）：在 `VTOYDATA` 分区创建 `omloader/boot.yaml`：
+- **带倒计时的自动启动**（Ventoy 不能传内核参数）：在数据分区创建 `omloader/boot.yaml`：
   ```yaml
   boot:
     default_image: ubuntu-noble   # 留空/不写 = 显示 TUI；`last` = TUI 上次启动的镜像
@@ -91,29 +92,29 @@ NTFS 注意：存放 **ISO 本身**的 Ventoy 分区不能是 NTFS（加载器�
 
 ## 5. 获取镜像
 
-镜像位于 `images/<名称>/`（`image.yaml` + `lxd-vm` 的 `base.raw` 或 `lxd-container` 的 `base.squashfs`）。三种方式：
+镜像位于 `omloader/images/<名称>/`（`image.yaml` + `lxd-vm` 的 `base.raw` 或 `lxd-container` 的 `base.squashfs`）。三种方式：
 
 1. **在加载器里拉取**（需要网络）。在 TUI 的 *Pull* 页（`2`）选择，或用命令行：
    ```sh
    omloader images list --os ubuntu --type vm            # 浏览目录（--type container|vm）
-   omloader pull lxc:ubuntu/noble --vm --name ubuntu-noble --out /mnt/images/images
-   omloader pull lxc:debian/bookworm --container --name debian-bookworm --out /mnt/images/images
+   omloader pull lxc:ubuntu/noble --vm --name ubuntu-noble --out /mnt/images/omloader/images
+   omloader pull lxc:debian/bookworm --container --name debian-bookworm --out /mnt/images/omloader/images
    ```
    源与镜像站（官方、USTC、南大、清华、CERNET……）：`omloader source list`、`omloader source test`、`--source S --mirror M|auto|official`、`mirror_policy.region_preset: cn`。
    全部说明见 [sources.md](sources.md)。下载会校验 sha256 并缓存（`/mnt/snap/cache`，`omloader cache ls|gc`）；`--offline` 绝不联网。
 2. **导入已有文件**（LXD 导出：含 `rootfs.squashfs` 的目录或 `lxd.tar.xz`；VM 为 `disk.qcow2`）：
    ```sh
-   omloader import lxd /path/to/lxd-container-dir --name mybox --out /mnt/images/images
-   omloader import lxd-vm /path/to/disk.qcow2 --name myvm --out /mnt/images/images     # 转成 base.raw；--no-probe 跳过内核探测
+   omloader import lxd /path/to/lxd-container-dir --name mybox --out /mnt/images/omloader/images
+   omloader import lxd-vm /path/to/disk.qcow2 --name myvm --out /mnt/images/omloader/images     # 转成 base.raw；--no-probe 跳过内核探测
    ```
-   导入也可在任意 Linux 电脑上用发布包里的 `omloader` 完成（`--out` 指向已挂载盘的 `images/`）；VM 的内核探测需要 root，此时用 `--no-probe` 并自己在 `image.yaml` 里写 `kernel:`。
-3. **直接拷贝现成的镜像目录**（`image.yaml` + 基础文件，见[9.3](#93-imageyaml单个镜像的配置)）到盘的 `images/`。
+   导入也可在任意 Linux 电脑上用发布包里的 `omloader` 完成（`--out` 指向已挂载盘的 `omloader/images/`）；VM 的内核探测需要 root，此时用 `--no-probe` 并自己在 `image.yaml` 里写 `kernel:`。
+3. **直接拷贝现成的镜像目录**（`image.yaml` + 基础文件，见[9.3](#93-imageyaml单个镜像的配置)）到盘的 `omloader/images/`。
 
 桌面环境（哪些源有现成的桌面 VM、如何给服务器镜像加桌面）：[desktops.zh-CN.md](desktops.zh-CN.md)。
 
 **ISO 里有什么：** Debian stable 的 live 基础系统加 `omloader` 二进制。用 `omloader version --long` 查看具体版本（读取 `/etc/omloader-release`，TUI 的 `?` 帮助里也有）；不启动也能看：ISO 根目录的 `omloader-release` 和 `packages.txt`（Release 另附 `omloader-<ver>-packages.txt`）。
 
-校验手写配置：`omloader config validate -c omloader.yaml -i images/NAME/image.yaml`；`omloader config show --resolved` 会显示每个值及其来源层/行号。
+校验手写配置：`omloader config validate -c omloader.yaml -i omloader/images/NAME/image.yaml`；`omloader config show --resolved` 会显示每个值及其来源层/行号。
 
 ## 6. 默认账号与安全
 
@@ -171,9 +172,9 @@ VM 客户系统通过 `kexec` 启动，关机时无法卸载存储，所以下�
 
 | 文件 | 位置 | Schema |
 |---|---|---|
-| 全局配置 `omloader.yaml` / **`boot.yaml`**（格式与键相同；盘上通常叫 `boot.yaml`） | `<VTOYDATA>/omloader/boot.yaml`、`<VTOYDATA>/omloader.yaml`、`<OMLOADER>/omloader/boot.yaml`、`<OMLOADER>/omloader.yaml`、`<ISO 所在分区>/omloader/boot.yaml`（取第一个存在的）；命令行：`-c FILE` | [`schema/omloader.schema.json`](../schema/omloader.schema.json) |
+| 全局配置 `omloader.yaml` / **`boot.yaml`**（格式与键相同；盘上通常叫 `boot.yaml`） | `<数据分区>/omloader/boot.yaml`、`<OMLOADER>/omloader/boot.yaml`、`<ISO 所在分区>/omloader/boot.yaml`（取第一个存在的）；命令行：`-c FILE` | [`schema/omloader.schema.json`](../schema/omloader.schema.json) |
 | 内置默认值 `configs/defaults.yaml` | 嵌入二进制；见 [9.1](#91-全局配置omloaderyaml--bootyaml) | 同上 |
-| `sources.yaml`（镜像源与 mirror 目录） | 内置 `configs/sources.yaml`、ISO 内 `/etc/omloader/sources.yaml`，然后是你放在 `<VTOYDATA>/omloader/sources.yaml` 的副本…… | [`schema/sources.schema.json`](../schema/sources.schema.json)、[sources.md](sources.md) |
+| `sources.yaml`（镜像源与 mirror 目录） | 内置 `configs/sources.yaml`、ISO 内 `/etc/omloader/sources.yaml`，然后是你放在 `<数据分区>/omloader/sources.yaml` 的副本…… | [`schema/sources.schema.json`](../schema/sources.schema.json)、[sources.md](sources.md) |
 | 单镜像 `image.yaml` | `<images>/<名称>/image.yaml` | [`schema/image.schema.json`](../schema/image.schema.json) |
 
 层次：内置默认值 < `omloader.yaml`/`boot.yaml` < `image.yaml`，按键深度合并。未知键会报错（附文件和行号）。大小可写 `512M`、`20G`、`1.5G` 或字节数。
@@ -186,7 +187,7 @@ VM 客户系统通过 `kexec` 启动，关机时无法卸载存储，所以下�
 | 键 | 类型 | 默认值 | 含义 |
 |---|---|---|---|
 | `storage.images.label` | 字符串列表 | `[VTOYDATA, OMLOADER]` | **保留。** 加载器脚本自己按卷标 `VTOYDATA`（镜像）和 `OMLOADER`（存储）查找。 |
-| `storage.images.path` | 字符串 | `/images` | 命令行 `--images-root` 的默认值。在加载器里会显式传 `/mnt/images/images`。 |
+| `storage.images.path` | 字符串 | `/omloader/images` | 命令行 `--images-root` 的默认值。在加载器里会显式传 `/mnt/images/omloader/images`。 |
 | `storage.snapshots.label` | 字符串 | `OMLOADER` | **保留**（卷标 `OMLOADER` 固定写在 `mounts.sh` 里）。 |
 | `storage.snapshots.path` | 字符串 | `/snapshots` | 命令行 `--snap-root`/`--root` 的默认值。在加载器里为 `/mnt/snap/snapshots`。 |
 | `storage.snapshots.fs_required` | 列表 | `[ext4, btrfs, xfs]` | **保留**（加载器固定接受这几种文件系统）。 |
@@ -194,7 +195,7 @@ VM 客户系统通过 `kexec` 启动，关机时无法卸载存储，所以下�
 | `storage.snapshots.store_file.enabled` | bool | `true` | 在宿主分区上查找 ext4 存储文件（[store-file.md](store-file.md)）。 |
 | `…store_file.path` | 字符串 | `""` | 宿主分区内的确切路径，优先检查。 |
 | `…store_file.glob` | 列表 | `[/omloader/store.img, /ventoy/*.dat]` | 宿主分区内的匹配模式；只有 ext4 卷标为 `OMLOADER` 的文件才算。 |
-| `…store_file.host_match.label` / `.uuid` | 字符串 | `VTOYDATA` / `""` | 哪个分区存放该文件（uuid 优先于卷标；不匹配则不搜索存储文件）。 |
+| `…store_file.host_match.label` / `.uuid` | 字符串 | `""` / `""` | 可选：限制哪个数据分区可存放该文件（空 = 数据分区：VTOYDATA，否则是存放 ISO 的分区；uuid 优先于卷标；不匹配则不搜索存储文件）。 |
 | `…store_file.size` | 大小 | `20G` | `omloader store create` 的默认大小。 |
 | `…store_file.prealloc` | `auto`\|`yes`\|`no` | `auto` | `auto` = exFAT/vfat 上完整分配（无稀疏文件），其他文件系统为稀疏。 |
 
@@ -267,7 +268,7 @@ VM 客户系统通过 `kexec` 启动，关机时无法卸载存储，所以下�
 ### 9.2 `sources.yaml`
 
 定义镜像从哪里来。内置：`lxc-images`（images.linuxcontainers.org 及清华、南大、USTC、CERNET 等镜像站）、`lxd-images`、`ubuntu-releases`、`ubuntu-daily`、`dockerhub`（实验性）。
-把你自己的副本放在 `<VTOYDATA>/omloader/sources.yaml`，它会合并到内置目录之上（后者优先；`enabled: false` 关闭某个源）。顶层只允许 `sources` 与 `default_source`。
+把你自己的副本放在 `<数据分区>/omloader/sources.yaml`，它会合并到内置目录之上（后者优先；`enabled: false` 关闭某个源）。顶层只允许 `sources` 与 `default_source`。
 完整格式、合并规则和已验证的镜像站列表见 [sources.md](sources.md)。
 
 ### 9.3 `image.yaml`（单个镜像的配置）
@@ -324,15 +325,15 @@ oci-metal-loader/
 **Ventoy 盘上**（由你创建）：
 
 ```
-Ventoy 数据分区（exFAT/NTFS/…；建议卷标 VTOYDATA） ── 在加载器里挂载到 /mnt/images
-├── omloader-0.1.0.iso            加载器（名称/路径随意，靠扫描找到）
-├── ventoy/ventoy.json            可选的 Ventoy 菜单配置（可从配置包里的 ventoy.json.example 合并）
-├── images/                       镜像根目录（images_root）
-│   ├── ubuntu-noble/             每个镜像一个目录
-│   │   ├── image.yaml
-│   │   └── base.raw              （lxd-vm）  |  base.squashfs（lxd-container）
-│   └── debian-bookworm/ …
-└── omloader/
+数据分区（exFAT/NTFS/…；优先卷标 VTOYDATA，否则是存放 ISO 的分区） ── 在加载器里挂载到 /mnt/images
+├── ventoy/ventoy.json            可选的 Ventoy 菜单配置（Ventoy 自己的文件；可从配置包里的 ventoy.json.example 合并）
+└── omloader/                     加载器的一切
+    ├── omloader-0.1.0.iso        加载器（名称/路径随意，靠扫描找到）
+    ├── images/                   镜像根目录（images_root）
+    │   ├── ubuntu-noble/         每个镜像一个目录
+    │   │   ├── image.yaml
+    │   │   └── base.raw          （lxd-vm）  |  base.squashfs（lxd-container）
+    │   └── debian-bookworm/ …
     ├── boot.yaml                 全局配置（自动启动、guest_defaults、网络……）
     ├── sources.yaml              你的源/镜像站（合并到内置目录之上）
     ├── console.conf              可选：font=NAME，指定 Linux 控制台字体
@@ -349,7 +350,7 @@ OMLOADER 分区（ext4/xfs/btrfs，可选） ── 挂载到 /mnt/snap
 ├── data/<镜像>/<卷>      持久数据卷（dir），或 <卷>.img（ext4-file）
 ├── cache/               下载缓存（blob、目录索引、tmp/*.part）
 ├── omloader/            可选的配置副本（boot.yaml、sources.yaml、console.conf）——这里也会被读取
-└── images/              没有 VTOYDATA 分区时的镜像后备目录
+└── omloader/images/     没有数据分区时的镜像目录（仅存储分区时）
 ```
 
 **live ISO 内部**（只读 squashfs 层 + 内存 overlay；只有上面两个分区里的内容会持久保存）：
@@ -364,7 +365,7 @@ OMLOADER 分区（ext4/xfs/btrfs，可选） ── 挂载到 /mnt/snap
 ISO：/boot/{vmlinuz,initrd.img,grub/grub.cfg,efiboot.img}  /live/{live.squashfs,omloader.squashfs}   卷标 OMLOADER_LIVE
 ```
 
-加载器启动决策读取配置的顺序（第一个存在且有效的文件）：`/mnt/images/omloader/boot.yaml`、`/mnt/images/omloader.yaml`、`/mnt/snap/omloader/boot.yaml`、`/mnt/snap/omloader.yaml`、`<ISO 所在分区>/omloader/boot.yaml`。
+加载器启动决策读取配置的顺序（第一个存在且有效的文件）：`/mnt/images/omloader/boot.yaml`、`/mnt/snap/omloader/boot.yaml`、`<ISO 所在分区>/omloader/boot.yaml`。
 缓存位置：`/mnt/snap/cache`（没有存储时只在内存里）。`sources.yaml` 的各层见 [sources.md](sources.md)。
 
 ## 11. 内核命令行参数（`omloader.*`）
@@ -382,6 +383,7 @@ Ventoy 不能传内核参数，请改用 `boot.yaml`（`boot.extra_cmdline_flags
 | `omloader.store=off` | 不挂载存储文件（维护用：离线检查/扩容）。 |
 | `omloader.font=NAME\|auto\|default` | Linux 控制台字体（[tui.md](tui.md)）。 |
 | `omloader.gfx=WxH\|off` | GRUB 视频模式（通过 `omloader_args`；Ventoy GRUB2 模式下无效）。 |
+| `omloader.data=LABEL=x\|UUID=x\|/dev/x` | 指定数据分区（默认：卷标 `VTOYDATA`，否则是存放 ISO 的分区）。 |
 | `omloader.live=/dev/X`、`omloader.isofile=/path.iso`、`omloader.isodev=LABEL=…\|UUID=…\|/dev/…` | 第一阶段：指定 live 介质 / ISO 文件位置。 |
 | `omloader.selftest=1`、`omloader.hook=1`、`omloader.marker=NAME` | 测试辅助（挂载检查后关机；从 `OMLSTAGE` 盘运行 `hook.sh`；测试客户系统的标记）。 |
 
@@ -454,10 +456,10 @@ Boot: omloader boot --image <image> [--snapshot current|base|<label>] [--ephemer
 
 - **选择 ISO 后黑屏 / 没有菜单。** 多半是 Secure Boot 没关：请关闭。试试 Ventoy 的另一种启动模式（normal ↔ GRUB2）。Ventoy 菜单只在 VGA 显示；加载器自己的 GRUB 与启动日志同时输出到串口（`console=ttyS0,115200`）。
   帧缓冲控制台会按分辨率挑选字体（`omloader.font=`、`console.conf`）。*真机表现未测试。*
-- **第一阶段提示找不到 live 介质 / 进入救援 shell。** 加载器找不到它的 ISO：请把 ISO 放在 exFAT、ext4、xfs 或 FAT32 上（不要 NTFS），位置 `/omloader.iso`、`/omloader/` 或 `/ISO/`，或用 `omloader.isofile=` 指定。
+- **第一阶段提示找不到 live 介质 / 进入救援 shell。** 加载器找不到它的 ISO：ISO 可放在 exFAT、NTFS、ext4、xfs 或 FAT32 上，位置 `/omloader.iso`、`/omloader/` 或 `/ISO/`，或用 `omloader.isofile=` 指定。
 - **虚拟机里启动后控制台分辨率变低（如 1920x1080 -> 1280x800）。** 虚拟机的显示驱动替换了固件帧缓冲。请选择 GRUB 菜单项「safe display」（`nomodeset`），或在虚拟机里固定视频模式；真机上由原生驱动选择模式。详见 [ventoy.md](ventoy.md)。
 - **Secure Boot。** 不支持（没有签名的 shim/内核）。请在固件设置里关闭。
-- **NTFS。** 加载器内核没有 `ntfs3`；NTFS 数据分区通过 ntfs-3g（FUSE）挂载。若 Windows 让卷处于休眠（快速启动）或脏状态，则以**只读**挂载：镜像可读，但其上的存储文件不可用（快照只在内存里）。请彻底关闭 Windows（`shutdown /s /t 0`）或运行 `chkdsk`。
+- **NTFS。** 加载器内核没有 `ntfs3`；NTFS 分区（包括存放 ISO 的分区）通过第一阶段自带的 ntfs-3g（FUSE）挂载。若 Windows 让卷处于休眠（快速启动）或脏状态，则以**只读**挂载：镜像可读，但其上的存储文件不可用（快照只在内存里）。请彻底关闭 Windows（`shutdown /s /t 0`）或运行 `chkdsk`。
 - **exFAT 与稀疏文件。** exFAT 不能创建稀疏文件，所以 `store create` 和 `ext4-file` 数据卷会立即占满全部大小（20G 以上会很慢）；vfat 文件限制 < 4 GiB。可以减小 `--size`，或改用 `OMLOADER` ext4 分区。
 - **关机后快照消失。** 没有找到存储（日志里 `SNAPOK=0`）：创建存储文件或 `OMLOADER` 分区（[第 3 节](#3-把-iso-放到-ventoy-盘)）。
 - **VM 客户系统：`update-grub`/ESP 报错。** 客户的 `/boot/efi` 刻意不挂载（`boot.vm_fix_esp_fstab`）：客户系统由 `kexec` 启动，从不使用 ESP；要写入 ESP 的工具无处可写。

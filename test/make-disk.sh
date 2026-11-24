@@ -1,6 +1,6 @@
 #!/bin/bash
 # Run ON THE REMOTE. Builds out/usb.raw (sparse, DISK_GB default 4): GPT,
-#  p1 exfat VTOYDATA: images/$NAME/{image.yaml,base.raw}   p2 ext4 OMLOADER: snapshots/
+#  p1 exfat VTOYDATA: omloader/images/$NAME/{image.yaml,base.raw}   p2 ext4 OMLOADER: snapshots/
 # Also copies out/oci-images/* (from make-fixture-oci.sh) into images/ when present; the VM fixture is
 # optional if only OCI images exist (NO_VM=1 forces that).
 # exfat populated rootless via exfat-fuse inside rootless podman; falls back to ext4 VTOYDATA.
@@ -10,11 +10,11 @@ NAME=${NAME:-omlfixture}; DISK_GB=${DISK_GB:-4}; P1_MB=${P1_MB:-2048}
 HAVE_VM=1; [ -f $O/fixture.raw ] && [ -z "${NO_VM:-}" ] || HAVE_VM=0
 HAVE_OCI=0; [ -d $O/oci-images ] && [ -n "$(ls -A $O/oci-images)" ] && HAVE_OCI=1
 [ $HAVE_VM = 1 ] || [ $HAVE_OCI = 1 ] || { echo "run make-fixture.sh and/or make-fixture-oci.sh first"; exit 1; }
-rm -rf $W/stage; mkdir -p $W/stage/images $W/stage2/snapshots
+rm -rf $W/stage; mkdir -p $W/stage/omloader/images $W/stage2/snapshots
 [ -z "${VTOY_EXTRA:-}" ] || cp -r "$VTOY_EXTRA"/. $W/stage/   # optional extra files at the VTOYDATA root (e.g. omloader/boot.yaml)
 EXTRA_MB=0
-if [ $HAVE_OCI = 1 ]; then cp -r $O/oci-images/* $W/stage/images/; EXTRA_MB=$(du -sm --apparent-size $O/oci-images | cut -f1); fi
-S=$W/stage/images/$NAME
+if [ $HAVE_OCI = 1 ]; then cp -r $O/oci-images/* $W/stage/omloader/images/; EXTRA_MB=$(du -sm --apparent-size $O/oci-images | cut -f1); fi
+S=$W/stage/omloader/images/$NAME
 if [ $HAVE_VM = 1 ]; then
 mkdir -p $S
 cp --sparse=always $O/fixture.raw $S/base.raw
@@ -36,10 +36,10 @@ TOTAL_MB=$((DISK_GB*1024)); P2_MB=$((TOTAL_MB-P1_MB-4))
 FS=exfat
 # Rootless exfat population is not possible on the host (no FUSE in userns, kernel mount needs root), so we
 # boot the loader ISO itself (its kernel has exfat) with omloader.hook=1: it mounts the blank exfat disk (label
-# VTOYDATA) plus an ext4 stage disk (label OMLSTAGE) and copies images/ across. This also exercises loader exfat rw.
+# VTOYDATA) plus an ext4 stage disk (label OMLSTAGE) and copies omloader/ (images/) across. This also exercises loader exfat rw.
 truncate -s ${P1_MB}M $P1
 mkfs.exfat -L VTOYDATA $P1 >/dev/null 2>&1 || mkfs.exfat -L VTOYDATA $P1 >/dev/null
-echo 'cp -r /mnt/stage/images /mnt/images/ && { [ ! -d /mnt/stage/omloader ] || cp -r /mnt/stage/omloader /mnt/images/; } && echo OMLOADER_HOOK_COPIED' > $W/stage/hook.sh
+echo 'cp -r /mnt/stage/omloader /mnt/images/ && echo OMLOADER_HOOK_COPIED' > $W/stage/hook.sh
 ST=$W/stage.img; rm -f $ST; VM_MB=0; [ $HAVE_VM = 1 ] && VM_MB=$(du -m --apparent-size $S/base.raw | cut -f1)
 truncate -s $((300+EXTRA_MB*13/10+VM_MB+(VM_MB>0?800:0)))M $ST
 mkfs.ext4 -q -L OMLSTAGE -d $W/stage $ST

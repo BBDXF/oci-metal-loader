@@ -31,7 +31,7 @@ hook() { # log  (hook body on stdin)
   printf 'snapshot:\n  retention:\n    keep_last: 1\n    keep_tagged: true\n' > $W/hk/omloader.yaml
   printf 'snapshot:\n  retention:\n    min_free_percent: 99\n' > $W/hk/guard.yaml
   { cat <<'HEAD'
-S="--root /mnt/snap/snapshots --images-root /mnt/images/images"
+S="--root /mnt/snap/snapshots --images-root /mnt/images/omloader/images"
 t() { n=$1; shift; echo "TAG:$n:BEGIN"; "$@" 2>&1; echo "TAG:$n:RC=$?"; echo "TAG:$n:END"; }
 omloader() { command omloader "$@"; }
 HEAD
@@ -87,7 +87,7 @@ eq "$(val g3 OMLOADER_DATA_EXT4)" "4" "g3: ext4 data volume counter 4 (not part 
 
 hook h3 <<'BODY'
 t guard_create omloader snapshot create omloci zz -c /mnt/stage/guard.yaml $S
-t guard_boot omloader boot --image omloci --snapshot S2 -c /mnt/stage/guard.yaml --images-root /mnt/images/images --snap-root /mnt/snap/snapshots
+t guard_boot omloader boot --image omloci --snapshot S2 -c /mnt/stage/guard.yaml --images-root /mnt/images/omloader/images --snap-root /mnt/snap/snapshots
 t after_guard omloader snapshot list omloci $S
 t del_base omloader snapshot delete omloci base $S
 t del_missing omloader snapshot delete omloci nope $S
@@ -163,7 +163,7 @@ t still_there sh -c 'ls /mnt/snap/snapshots/omloci | tr "\n" " "'
 t prune omloader snapshot prune omloci -c /mnt/stage/omloader.yaml $S
 t after_prune omloader snapshot list omloci $S
 t flatten omloader snapshot flatten omloci S2 --name omloci-flat $S
-t flat_dir sh -c 'ls /mnt/images/images/omloci-flat'
+t flat_dir sh -c 'ls /mnt/images/omloader/images/omloci-flat'
 t export omloader snapshot export omloci S2 --squashfs /mnt/snap/s2.sqfs $S
 t export_ls sh -c 'ls -l /mnt/snap/s2.sqfs; rm -f /mnt/snap/s2.sqfs'
 t verify omloader snapshot verify omloci $S
@@ -213,7 +213,7 @@ t verify omloader snapshot verify omlfixture $S
 t qcow omloader snapshot export omlfixture V1 --qcow2 /mnt/snap/x.qcow2 $S
 t qcow_info sh -c 'qemu-img info /mnt/snap/x.qcow2 | head -3; rm -f /mnt/snap/x.qcow2'
 t flatten omloader snapshot flatten omlfixture V1 --name omlfixture-flat $S
-t flat_ls sh -c 'ls -ls /mnt/images/images/omlfixture-flat'
+t flat_ls sh -c 'ls -ls /mnt/images/omloader/images/omlfixture-flat'
 BODY
 [ "$(rc hv2 del_v1)" != 0 ] && sect hv2 del_v1 | grep -q 'not supported' && sect hv2 del_v1 | grep -q flatten && pass "hv2: VM delete of a snapshot with a child (would merge) is refused with the flatten hint" || fail "hv2: del_v1: $(sect hv2 del_v1)"
 [ "$(rc hv2 del_base)" != 0 ] && pass "hv2: base cannot be deleted" || fail "hv2: del base"

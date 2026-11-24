@@ -47,7 +47,7 @@ $B sync
 # NTFS host via ntfs-3g (FUSE daemon, argv[0] "@ntfs-3g" so it survives the root switch): everything is flushed and the
 # store ext4 is read-only now, so let the daemon unmount cleanly (SIGTERM) to clear the NTFS dirty flag.
 for d in /proc/[0-9]*; do
-  [ "$($B cat $d/comm 2>/dev/null)" = ntfs-3g ] && $B kill -TERM "${d#/proc/}" 2>/dev/null
+  case "$($B cat $d/comm 2>/dev/null)" in ntfs-3g|@ntfs-3g) $B kill -TERM "${d#/proc/}" 2>/dev/null;; esac
 done
 exit 0
 `

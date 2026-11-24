@@ -73,7 +73,7 @@ VTs to UTF-8 (`ESC % G`, `kbd_mode -u`); `tui-launch.sh` re-applies it on tty1 a
 | 800x600 | TerminusBold16 (8x16) | 100x37 |
 
 Override: kernel argument `omloader.font=NAME` (a file in `/usr/share/consolefonts` without `.psf.gz`, `auto`, or `default` = keep the kernel font), or
-`font=NAME` in `<VTOYDATA|OMLOADER>/omloader/console.conf` (read after the data partitions are mounted, i.e. by `tui-launch.sh`). Boot messages
+`font=NAME` in `<data partition|OMLOADER>/omloader/console.conf` (read after the data partitions are mounted, i.e. by `tui-launch.sh`). Boot messages
 before this unit runs (kernel, stage 1) still use the kernel's built-in font. Local test of the size rule: `test/console-font-test.sh`; remote screenshot of the loader at a given resolution: `test/look-screenshot.sh 1920x1080` (virtio-vga + qemu `screendump`).
 
 **Resolution drop in VMs:** a VM's display driver (virtio_gpu, bochs) replaces GRUB's framebuffer ~3 s after boot with its own mode (often 1280x800). The default entry keeps native drivers (container guests need them); use the GRUB entry *safe display* (`nomodeset`) or a fixed video mode in the VM, see [ventoy.md](ventoy.md#console-resolution-tty1--vnc).
@@ -154,7 +154,7 @@ A lock (`/run/omloader/boot.lock`) stops a second console from booting at the sa
 
 * `autoboot.sh` (omloader-autoboot.service, before the gettys) decides the console UI once and writes `/run/omloader/ui`
   (`tui` or `shell`) and, when a boot config file was found, its path to `/run/omloader/uicfg`:
-  `omloader.ui=tui|shell` kernel flag > `boot.ui` of `<VTOYDATA|OMLOADER>/omloader/boot.yaml` (or `omloader.yaml`) > default `tui`.
+  `omloader.ui=tui|shell` kernel flag > `boot.ui` of `<data partition|OMLOADER>/omloader/boot.yaml` > default `tui`.
   `omloader.image=`, `omloader.hook=1`, `omloader.selftest=1` always force `shell` (the e2e suites are unaffected).
 * The existing autologin getties stay (tty1 and ttyS0). The login shell's `/etc/profile.d/omloader-banner.sh` sources
   `tui-launch.sh` on tty1 / ttyS* / hvc0 when `/run/omloader/ui` says `tui`: it runs `omloader tui` in the foreground of that

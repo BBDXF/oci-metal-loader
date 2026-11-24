@@ -1,6 +1,6 @@
 #!/bin/bash
 # Builds out/omloader-<version>-config.zip: a small user-facing package to unzip into the ROOT of the Ventoy data partition
-# (omloader/boot.yaml, omloader/sources.yaml, images/, ventoy/ventoy.json.example, schema/, examples/, README-FIRST.txt).
+# (omloader/boot.yaml, omloader/sources.yaml, omloader/images/, ventoy/ventoy.json.example, schema/, examples/, README-FIRST.txt).
 # Needs `zip` (falls back to python3 zipfile). Env: OML_VERSION, SOURCE_DATE_EPOCH (default: last commit time) for a deterministic zip.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

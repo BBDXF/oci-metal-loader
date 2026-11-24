@@ -9,8 +9,8 @@ arg() { local a; for a in $CMD; do case "$a" in "$1="*) echo "${a#*=}"; return;;
 say() { echo "$@"; echo "$@" > /dev/tty1 2>/dev/null; }
 
 # ---- boot config (no kernel parameters, e.g. under Ventoy): <data>/omloader/boot.yaml with boot.default_image ----
-# Without omloader.image=/hook/selftest on the kernel command line, look for boot.yaml (omloader.yaml format) on VTOYDATA,
-# OMLOADER or the partition holding the ISO. If boot.default_image is set: countdown boot.timeout s (ui=shell: here, any key = menu; ui=tui: the TUI shows the countdown, see /run/omloader/autoboot), then
+# Without omloader.image=/hook/selftest on the kernel command line, look for omloader/boot.yaml (omloader.yaml format) on the data partition
+# (VTOYDATA, else the partition holding the ISO; see mounts.sh), the OMLOADER partition or the ISO's host mount. If boot.default_image is set: countdown boot.timeout s (ui=shell: here, any key = menu; ui=tui: the TUI shows the countdown, see /run/omloader/autoboot), then
 # behave exactly as if omloader.image=<default_image> [omloader.snapshot=<default_snapshot>] [+ extra_cmdline_flags] was given.
 # image recorded by the TUI at its last boot (first line of <data>/omloader/last-boot); empty when absent
 last_boot_image() {
@@ -21,7 +21,7 @@ last_boot_image() {
 }
 bootcfg_apply() {
   local f DI TO SN FL ans
-  for f in /mnt/images/omloader/boot.yaml /mnt/images/omloader.yaml /mnt/snap/omloader/boot.yaml /mnt/snap/omloader.yaml \
+  for f in /mnt/images/omloader/boot.yaml /mnt/snap/omloader/boot.yaml \
            "${MEDIUM_HOST_MNT:-/nonexistent}/omloader/boot.yaml"; do
     [ -f "$f" ] || continue
     DI=$(omloader config get -c "$f" boot.default_image 2>/dev/null)
@@ -72,7 +72,7 @@ bootcfg_apply() {
 decide_ui() {
   local ui f v
   ui=$(arg omloader.ui)
-  for f in /mnt/images/omloader/boot.yaml /mnt/images/omloader.yaml /mnt/snap/omloader/boot.yaml /mnt/snap/omloader.yaml \
+  for f in /mnt/images/omloader/boot.yaml /mnt/snap/omloader/boot.yaml \
            "${MEDIUM_HOST_MNT:-/nonexistent}/omloader/boot.yaml"; do
     [ -f "$f" ] || continue
     omloader config validate -c "$f" >/dev/null 2>&1 || continue
@@ -128,9 +128,9 @@ fi
 IMG=$(arg omloader.image); SNAP=$(arg omloader.snapshot)
 if [ -n "$IMG" ]; then
   echo "OMLOADER_LOADER: auto boot image=$IMG snapshot=${SNAP:-default}"
-  set -- boot --image "$IMG" --images-root "${IMAGES_ROOT:-/mnt/images/images}" --snap-root /mnt/snap/snapshots
+  set -- boot --image "$IMG" --images-root "${IMAGES_ROOT:-/mnt/images/omloader/images}" --snap-root /mnt/snap/snapshots
   [ -n "$SNAP" ] && set -- "$@" --snapshot "$SNAP"
-  # the boot config file found by decide_ui (VTOYDATA/OMLOADER omloader/boot.yaml or omloader.yaml) is the global config: guest_defaults etc.
+  # the boot config file found by decide_ui (<data>/omloader/boot.yaml) is the global config: guest_defaults etc.
   [ -s /run/omloader/uicfg ] && set -- "$@" -c "$(cat /run/omloader/uicfg)"
   # no udev activity while loop/dm/kpartx devices are assembled and torn down (kexec path needs them closed)
   udevadm control --stop-exec-queue 2>/dev/null

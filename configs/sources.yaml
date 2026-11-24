@@ -1,5 +1,5 @@
 # omloader sources + mirrors catalog (built in; installed as /etc/omloader/sources.yaml in the live ISO).
-# A copy at <VTOYDATA>/omloader/sources.yaml (or <OMLOADER>/omloader/sources.yaml, or `omloader -c DIR/omloader.yaml` + DIR/sources.yaml,
+# A copy at <data partition>/omloader/sources.yaml (or <OMLOADER>/omloader/sources.yaml, or `omloader -c DIR/omloader.yaml` + DIR/sources.yaml,
 # or $OML_SOURCES) is merged on top of this file: add sources/mirrors, change a field, or switch one off with `enabled: false`.
 # Format and merge rules: docs/sources.md.  Only the keys `sources` and `default_source` are allowed here.
 #

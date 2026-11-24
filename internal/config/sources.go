@@ -26,7 +26,7 @@ func SourcesFiles(globalPath string) []string {
 	if m := mediumHostMnt(); m != "" { // the partition that holds the ISO file (Ventoy/iso-scan)
 		cand = append(cand, m+"/omloader/sources.yaml")
 	}
-	cand = append(cand, "/mnt/snap/omloader/sources.yaml", "/mnt/images/omloader/sources.yaml", "/mnt/images/sources.yaml")
+	cand = append(cand, "/mnt/snap/omloader/sources.yaml", "/mnt/images/omloader/sources.yaml")
 	if e := os.Getenv("OML_SOURCES"); e != "" {
 		cand = append(cand, e)
 	}

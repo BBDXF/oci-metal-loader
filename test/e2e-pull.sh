@@ -76,8 +76,8 @@ t srctest omloader source test $C
 t list omloader images list $C
 t pullct omloader pull lxc:omltest/ct --name pullct $C
 t pullvm omloader pull lxc:omltest/vm --vm --name pullvm $C
-t ctyaml cat /mnt/images/images/pullct/image.yaml
-t vmyaml cat /mnt/images/images/pullvm/image.yaml
+t ctyaml cat /mnt/images/omloader/images/pullct/image.yaml
+t vmyaml cat /mnt/images/omloader/images/pullvm/image.yaml
 t cachels omloader cache ls $C
 BODY
 sect p1 srctest | grep -q 'FAIL.*:'$DEAD && sect p1 srctest | grep -q "OK .*:$PORT" && pass "source test: dead primary FAIL, mirror OK (with timing)" || fail "source test output: $(sect p1 srctest | tr '\n' '|')"

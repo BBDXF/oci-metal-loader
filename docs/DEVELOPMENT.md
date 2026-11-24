@@ -52,8 +52,8 @@ scope. What is left is M5, polish and optimisations; real-hardware testing is po
 
 Out of scope by decision: Secure Boot, and an `omloader install` installer (omloader is deliberately bound to Ventoy: put the ISO on a Ventoy stick).
 
-Known limits of the Ventoy/store-file work: the loader kernel has no `ntfs3` driver (NTFS is mounted with ntfs-3g/FUSE after stage 1, so an ISO on an NTFS Ventoy partition is not found — use exFAT/ext4/xfs/FAT32);
-The NTFS dirty-volume fallback and VM + NTFS store are not verified end to end.
+Known limits of the Ventoy/store-file work: the loader kernel has no `ntfs3` driver: NTFS is mounted with ntfs-3g/FUSE, also in stage 1 (initramfs carries `ntfs-3g` as `@ntfs-3g` + `fuse.ko`), so an ISO on an NTFS Ventoy partition is found (`make e2e-ntfs`); layout: everything under `omloader/` of the data partition (`omloader.data=` > label `VTOYDATA` > the partition holding the ISO);
+VM + NTFS store is not verified end to end.
 
 ### Windows
 
@@ -75,7 +75,7 @@ If someone wants to pick it up later: the only realistic route to snapshots for 
     test/                QEMU/KVM end-to-end suites (e2e-*.sh), fixtures, smoke-local.sh (local/CI boot check), validate-schemas.py
     docs/                this file, INSTALL(.zh-CN).md, ventoy.md, store-file.md, sources.md, tui.md
     .github/workflows/   ci.yml (fast checks), iso.yml (manual ISO build), release.yml (tag -> GitHub Release)
-    build/config-pkg/    skeleton of the config zip (commented boot.yaml, images/ placeholder, ventoy.json.example, README-FIRST.txt); sources.yaml, schema/, examples/ are copied in at build time
+    build/config-pkg/    skeleton of the config zip (commented boot.yaml, omloader/images/ placeholder, ventoy.json.example, README-FIRST.txt); sources.yaml, schema/, examples/ are copied in at build time
     VERSION              fallback version when git has no tag (the real version comes from the git tag, see build/version.sh)
     bin/ out/ work/ cache/   build outputs and scratch space (git-ignored)
 
@@ -291,8 +291,8 @@ lxd-vm: with the other provisioning steps, before `kexec -e`, in the COW layer; 
 One global config section gives **every** image (lxd-container, lxd-vm, experimental oci) a console account at boot. Built-in defaults (`configs/defaults.yaml`):
 user `oci`, password `Oci123`, `sudo: true` (drop-in `/etc/sudoers.d/90-omloader-oci` = `oci ALL=(ALL:ALL) ALL`, password required; the `sudo` group is created/joined),
 **root enabled with the same password `Oci123`**, console autologin (tty1 + ttyS0) as `oci`. **The password is public by design** - change it.
-Where to override: `guest_defaults:` in the loader config file, i.e. `omloader/boot.yaml` (or `omloader.yaml`) on VTOYDATA, else on OMLOADER, else on the Ventoy/ISO partition
-(`<VTOYDATA>/omloader/boot.yaml`; the first valid file is the global config of `omloader boot`, the TUI and the pull commands), or `-c FILE` on the command line. To switch off globally:
+Where to override: `guest_defaults:` in the loader config file, i.e. `omloader/boot.yaml` on the data partition, else on OMLOADER, else on the Ventoy/ISO partition
+(`<data partition>/omloader/boot.yaml`; the first valid file is the global config of `omloader boot`, the TUI and the pull commands), or `-c FILE` on the command line. To switch off globally:
 `guest_defaults: {autologin: false, root_password: "", root_password_hash: "", users: []}`. Per image (`image.yaml`, the image always wins):
 - `runtime.users` set (even `users: []`) replaces the default user list; unset takes the defaults;
 - `runtime.root_password` / `root_password_hash` set replaces the default root password (`root_password_hash: '!'` locks root);

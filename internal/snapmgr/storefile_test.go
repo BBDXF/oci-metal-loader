@@ -196,7 +196,7 @@ func TestStoreFileConfigDefaultsAndValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	sf := r.Config.Storage.Snapshots.StoreFile
-	if !sf.Enabled || sf.HostMatch.Label != "VTOYDATA" || sf.Prealloc != "auto" || len(sf.Glob) != 2 || sf.Glob[1] != "/ventoy/*.dat" {
+	if !sf.Enabled || sf.HostMatch.Label != "" || sf.Prealloc != "auto" || len(sf.Glob) != 2 || sf.Glob[1] != "/ventoy/*.dat" {
 		t.Fatalf("%+v", sf)
 	}
 	p := filepath.Join(t.TempDir(), "c.yaml")

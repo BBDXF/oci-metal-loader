@@ -1,4 +1,4 @@
 {
-  "control": [ { "VTOY_DEFAULT_IMAGE": "/omloader.iso" }, { "VTOY_MENU_TIMEOUT": "5" } ],
-  "menu_alias": [ { "image": "/omloader.iso", "alias": "OCI Metal Loader" } ]
+  "control": [ { "VTOY_DEFAULT_IMAGE": "/omloader/omloader-<version>.iso" }, { "VTOY_MENU_TIMEOUT": "5" } ],
+  "menu_alias": [ { "image": "/omloader/omloader-<version>.iso", "alias": "OCI Metal Loader" } ]
 }

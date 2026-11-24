@@ -10,7 +10,7 @@ no server URLs in the Go code except the embedded copy of that file (`configs/so
 2. `/etc/omloader/sources.yaml` (installed in the live ISO by `build/mk-iso-inner.sh`)
 3. `<ISO host partition>/omloader/sources.yaml` (the partition the ISO file was found on, Ventoy)
 4. `/mnt/snap/omloader/sources.yaml` (OMLOADER partition)
-5. `/mnt/images/omloader/sources.yaml` or `/mnt/images/sources.yaml` (**VTOYDATA** — the place for your own copy)
+5. `/mnt/images/omloader/sources.yaml` (the **data partition** — the place for your own copy)
 6. `$OML_SOURCES`, then `sources.yaml` / `omloader/sources.yaml` next to the file given with `-c`
 7. finally `sources:` inside `omloader.yaml` / `boot.yaml` (the same keys; this wins over every sources file)
 
@@ -112,7 +112,7 @@ real servers; a full multi-GB pull of an Ubuntu cloud image was NOT run in the t
 
 ## Add your own source or mirror
 
-`<VTOYDATA>/omloader/sources.yaml`:
+`<data partition>/omloader/sources.yaml`:
 
 ```yaml
 default_source: lxc-images
@@ -145,7 +145,7 @@ static registry client **`crane`** (google/go-containerregistry, Apache-2.0, pin
 `omloader pull docker:IMAGE` shells out to it:
 
 ```
-omloader pull docker:nginx:alpine --mirror auto --experimental-oci --out /mnt/images/images        # name defaults to nginx-alpine
+omloader pull docker:nginx:alpine --mirror auto --experimental-oci --out /mnt/images/omloader/images        # name defaults to nginx-alpine
 omloader pull docker:jrei/systemd-debian:12 --mirror official --name debian-systemd --experimental-oci
 ```
 

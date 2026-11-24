@@ -1,7 +1,7 @@
 storage:
   images:
     label: [VTOYDATA, OMLOADER]
-    path: /images
+    path: /omloader/images
   snapshots:
     label: OMLOADER
     path: /snapshots
@@ -13,7 +13,7 @@ storage:
       enabled: true
       path: ""                       # exact file inside the host partition (checked first)
       glob: [/omloader/store.img, /ventoy/*.dat]   # Ventoy persistence-file convention
-      host_match: {label: VTOYDATA, uuid: ""}     # uuid wins over label
+      host_match: {label: "", uuid: ""}            # empty = the loader data partition (VTOYDATA, else the ISO partition); label/uuid restrict it
       size: 20G                      # default for `omloader store create`
       prealloc: auto                 # auto: yes on exfat/vfat (no sparse files), no elsewhere
 snapshot:

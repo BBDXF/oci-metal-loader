@@ -1,6 +1,6 @@
 #!/bin/bash
 # Run ON THE REMOTE. Builds out/store-$FS.raw (FS=exfat|ntfs): GPT with ONE partition, label VTOYDATA, holding
-# images/ (OCI fixture from out/oci-images, VM fixture out/fixture.raw unless NO_VM=1) and omloader/store.img, an ext4
+# omloader/images/ (OCI fixture from out/oci-images, VM fixture out/fixture.raw unless NO_VM=1) and omloader/store.img, an ext4
 # image (label OMLOADER) created by `omloader store create` INSIDE the loader (omloader.hook=1 stage disk).
 # NTFS: the loader formats the partition itself (mkntfs from ntfs-3g) and writes through ntfs-3g (Debian's 6.1 kernel has no ntfs3).
 # Env: FS (exfat) STORE_MB (1024) NO_VM=1 NAME (VM image name, omlfixture)
@@ -9,11 +9,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"; O=$ROOT/out; W=$ROOT/work; mkdir -p $O
 FS=${FS:-exfat}; STORE_MB=${STORE_MB:-1024}; NAME=${NAME:-omlfixture}
 HAVE_VM=1; [ -f $O/fixture.raw ] && [ -z "${NO_VM:-}" ] || HAVE_VM=0
 [ -d $O/oci-images ] && [ -n "$(ls -A $O/oci-images)" ] || { echo "run make-fixture-oci.sh first"; exit 1; }
-rm -rf $W/stage; mkdir -p $W/stage/images
-cp -r $O/oci-images/* $W/stage/images/
+rm -rf $W/stage; mkdir -p $W/stage/omloader/images
+cp -r $O/oci-images/* $W/stage/omloader/images/
 IMG_MB=$(du -sm --apparent-size $O/oci-images | cut -f1); VM_MB=0
 if [ $HAVE_VM = 1 ]; then
-  S=$W/stage/images/$NAME; mkdir -p $S; cp --sparse=always $O/fixture.raw $S/base.raw
+  S=$W/stage/omloader/images/$NAME; mkdir -p $S; cp --sparse=always $O/fixture.raw $S/base.raw
   VM_MB=$(du -m --apparent-size $S/base.raw | cut -f1)
   cat > $S/image.yaml <<EOT
 name: $NAME
@@ -39,8 +39,7 @@ esac
 cat > $W/stage/hook.sh <<EOT
 set -e
 $PREP
-cp -r /mnt/stage/images /mnt/images/
-mkdir -p /mnt/images/omloader
+cp -r /mnt/stage/omloader /mnt/images/
 omloader store create --path /mnt/images/omloader/store.img --size ${STORE_MB}M
 omloader store info --path /mnt/images/omloader/store.img
 sync

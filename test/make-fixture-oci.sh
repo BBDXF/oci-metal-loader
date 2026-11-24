@@ -1,7 +1,7 @@
 #!/bin/bash
 # Run ON THE REMOTE. Rootless: builds a debian:bookworm-slim + systemd container, exports it with podman,
 # and converts it with `omloader import` (own layer merge + mksquashfs) to out/oci-images/omloci/{base.squashfs,image.yaml}.
-# make-disk.sh copies out/oci-images/* into images/ on the VTOYDATA partition.
+# make-disk.sh copies out/oci-images/* into omloader/images/ on the VTOYDATA partition.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; O=$ROOT/out; W=$ROOT/work; mkdir -p $O $W
 NAME=${OCI_NAME:-omloci}

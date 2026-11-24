@@ -4,32 +4,33 @@
 (`make e2e-ventoy`; the test builds a rootless Ventoy-layout disk, see `test/make-ventoy-disk.sh`).
 
 ## Setup
-1. Install Ventoy as usual (Ventoy2Disk). The first (exFAT/NTFS/ext4/XFS/FAT32) partition holds the files.
-2. Copy `omloader.iso` to the Ventoy partition: `/omloader.iso` (any path works, see below).
+1. Install Ventoy as usual (Ventoy2Disk). The first (exFAT/NTFS/ext4/XFS/FAT32) partition holds the files; NTFS is fine (stage 1 reads it with ntfs-3g).
+2. Copy `omloader.iso` to the Ventoy partition: `/omloader/omloader-<version>.iso` (any path works, see below; the loader keeps everything in the one folder `omloader/`).
 3. Optional `ventoy/ventoy.json`:
    ```json
    {
-     "control": [ { "VTOY_DEFAULT_IMAGE": "/omloader.iso" }, { "VTOY_MENU_TIMEOUT": "5" } ],
-     "menu_alias": [ { "image": "/omloader.iso", "alias": "OCI Metal Loader" } ]
+     "control": [ { "VTOY_DEFAULT_IMAGE": "/omloader/omloader-<version>.iso" }, { "VTOY_MENU_TIMEOUT": "5" } ],
+     "menu_alias": [ { "image": "/omloader/omloader-<version>.iso", "alias": "OCI Metal Loader" } ]
    }
    ```
-4. Loader data: the loader looks for the labelled partitions `VTOYDATA` (images, e.g. `images/<name>/image.yaml`) and `OMLOADER` (ext4, snapshots)
-   exactly as without Ventoy. They may be separate partitions/disks; the Ventoy partition itself may be relabelled `VTOYDATA`.
+4. Loader data, all inside `omloader/` of the data partition: `omloader-<ver>.iso`, `boot.yaml`, `sources.yaml`, `images/<name>/image.yaml`, `store.img`.
+   The **data partition** is, in order: `omloader.data=LABEL=x|UUID=x|/dev/x` (kernel flag), the partition labelled `VTOYDATA`, otherwise **the partition holding the ISO** (whatever its label, e.g. `VHDX`; no relabelling needed).
+   An `OMLOADER` ext4 partition (snapshots) is looked up by label as without Ventoy. `ventoy/ventoy.json` is Ventoy's own file and the only loader-related thing outside `omloader/`.
 
 ## How the loader finds the ISO
 Ventoy cannot pass kernel parameters and (for an unknown distribution) does not inject a hook, so the kernel never sees the ISO as a CD-ROM.
 Stage 1 (`build/stage1-init`) therefore searches, in order: (a) `omloader.live=`/label `OMLOADER_LIVE`, (b) any block device
-holding `live/live.squashfs` (`/dev/sr*`, `/dev/mapper/*`, disks), (c) **iso-scan**: every partition (exfat, vfat, ext2/3/4, xfs)
-is mounted read-only and searched for `omloader.iso` at `/`, `/omloader/`, `/ISO/`, then for any `*.iso` within two directory levels whose volume label is
+holding `live/live.squashfs` (`/dev/sr*`, `/dev/mapper/*`, disks), (c) **iso-scan**: every partition (exfat, **ntfs**, vfat, ext2/3/4, xfs)
+is mounted read-only and searched for `omloader.iso` at `/`, `/omloader/` (also `omloader-<ver>.iso`), `/ISO/`, then for any `*.iso` within two directory levels whose volume label is
 `OMLOADER_LIVE`. `omloader.isofile=/path.iso` [`omloader.isodev=LABEL=…|UUID=…|/dev/…`] pins it (in GRUB2 mode `grub.cfg` passes `omloader.isofile=` itself
 when Ventoy exports `vt_chosen_path`). The ISO is loop-mounted; the host file system stays mounted (`/run/medium-host`, details in `/run/omloader/medium.env`) so the
 loop device stays valid. The serial/tty log says how: `OMLOADER_STAGE1: live medium /dev/nvme0n1p1 (iso-scan: dev=… fs=exfat file=/omloader.iso)`.
-If the host partition is labelled `VTOYDATA`/`OMLOADER` it is switched to read-write in stage 1 so `omloader-mounts` can use it as images/snapshot store without a conflicting second mount.
-Any other partition holding the ISO stays read-only. At shutdown `mounts.sh stop` unmounts the data partitions in the right order.
+If the host partition is the data partition (see 4.) or labelled `OMLOADER` it is switched to read-write in stage 1 so `omloader-mounts` can use it as images/snapshot store without a conflicting second mount.
+(NTFS cannot be remounted: stage 1 releases the ISO, mounts ntfs-3g read-write again and re-attaches the ISO; a dirty or hibernated volume — Windows Fast Startup — stays **read-only**, images remain usable.) A partition holding the ISO while a different `VTOYDATA`/`omloader.data=` partition exists stays read-only. At shutdown `mounts.sh stop` unmounts the data partitions in the right order.
 
 ## Default image without kernel parameters
 Fully unattended (Ventoy default entry + omloader countdown): see [INSTALL.md, Unattended boot](INSTALL.md#unattended-boot-boot-a-chosen-image-with-no-key-presses).
-Create `omloader/boot.yaml` on VTOYDATA (or `/omloader/boot.yaml` next to the ISO on the Ventoy partition; also `omloader.yaml` on VTOYDATA/OMLOADER is read):
+Create `omloader/boot.yaml` on the data partition (next to the ISO; also read from an OMLOADER partition):
 ```yaml
 boot:
   default_image: myimage        # empty/absent = just the shell
@@ -47,7 +48,7 @@ Without `omloader.image=` on the kernel command line `autoboot.sh` reads this fi
 - Menu: after Enter on the image Ventoy shows "Boot in normal mode / grub2 mode / memdisk"; with `VTOY_SECONDARY_BOOT_MENU: 0` it boots directly in normal mode. Memdisk mode is not supported (UEFI).
 - Ventoy's menu is graphical (VGA) only; the loader's own GRUB menu and the whole boot log are on the serial console and tty.
 - **Secure Boot** is not supported: disable it in the firmware.
-- Limits: the data partition that holds the ISO cannot be unmounted while the loader runs; **an ISO on an NTFS partition is not found by stage 1** (the loader kernel has no ntfs3 driver; ntfs-3g is FUSE and only exists in the full live system) — use exFAT/ext4/xfs/FAT32 for the Ventoy partition; ISO path with spaces is found by scan only (not passed via `omloader.isofile=`); `omloader-mounts` waits for USB data partitions only when an `omloader.*` flag is on the command line, so `boot.yaml` on a slow USB VTOYDATA may be missed (put it on the Ventoy partition, which stage 1 already mounted).
+- Limits: the data partition that holds the ISO cannot be unmounted while the loader runs; an ISO on an NTFS partition **is** found: Debian's 6.1 kernel has no `ntfs3`, so the initramfs carries `ntfs-3g` + `fuse.ko` (about +1 MB; the FUSE daemon is named `@ntfs-3g` so systemd keeps it alive across switch-root; `make e2e-ntfs`); ISO path with spaces is found by scan only (not passed via `omloader.isofile=`); `omloader-mounts` waits for USB data partitions only when an `omloader.*` flag is on the command line, so `boot.yaml` on a slow USB VTOYDATA may be missed (put it on the Ventoy partition, which stage 1 already mounted).
 
 ## Display
 In Ventoy's GRUB2 mode `grub.cfg` does not touch the video mode (no `gfxmode`/`gfxterm`, no resolution submenu): Ventoy drives the display. The Linux console font is still sized to the framebuffer by `omloader-console.service` (see `docs/tui.md`, *Console font and resolution*).

@@ -46,7 +46,7 @@ hook() { # log ; body on stdin
   { cat <<'HEAD'
 export DM_DISABLE_UDEV=1
 C="-c /mnt/stage/omloader.yaml"
-S="--root /mnt/snap/snapshots --images-root /mnt/images/images"
+S="--root /mnt/snap/snapshots --images-root /mnt/images/omloader/images"
 t() { n=$1; shift; echo "TAG:$n:BEGIN"; s=$(date +%s); "$@" 2>&1; echo "TAG:$n:RC=$?"; echo "TAG:$n:SECS=$(( $(date +%s)-s ))"; echo "TAG:$n:END"; }
 for i in $(seq 1 60); do ip route | grep -q '^default' && break; sleep 1; done
 HEAD
@@ -105,12 +105,12 @@ report() { SUMMARY+=("$(printf '%-34s pull=%-6s size=%-10s boot=%-4s (%ss) power
 VMCL=${REAL_VM_CMDLINE:-}; [ "$VMCL" = - ] && VMCL=
 if [ -n "${REAL_REUSE:-}" ] && [ -z "${REUSE+x}" ]; then
   echo "== reusing the store $D (no pull)"
-  { for i in $REAL_IMAGES; do n=$(nm $i); echo "sed -i '/^ *hostname: /d' /mnt/images/images/$n/image.yaml"; echo "t size-$n du -sh --apparent-size /mnt/images/images/$n"; done; } > $W/pull.body; for i in $REAL_IMAGES; do n=$(nm $i); echo "TAG:pull-$n:BEGIN"; echo "TAG:pull-$n:RC=0"; echo "TAG:pull-$n:SECS=0"; done > /dev/null
+  { for i in $REAL_IMAGES; do n=$(nm $i); echo "sed -i '/^ *hostname: /d' /mnt/images/omloader/images/$n/image.yaml"; echo "t size-$n du -sh --apparent-size /mnt/images/omloader/images/$n"; done; } > $W/pull.body; for i in $REAL_IMAGES; do n=$(nm $i); echo "TAG:pull-$n:BEGIN"; echo "TAG:pull-$n:RC=0"; echo "TAG:pull-$n:SECS=0"; done > /dev/null
   HOOK_TIMEOUT=300 hook rp < $W/pull.body
   for i in $REAL_IMAGES; do n=$(nm $i); printf 'TAG:pull-%s:BEGIN\nTAG:pull-%s:RC=0\nTAG:pull-%s:SECS=0\nTAG:pull-%s:END\n' $n $n $n $n >> $W/rp.clean; done
 else
 echo "== pulling from $URL: $REAL_IMAGES"
-{ for i in $REAL_IMAGES; do n=$(nm $i); echo "t pull-$n omloader pull $(pullspec $i) --name $n \$C"; echo "t size-$n du -sh --apparent-size /mnt/images/images/$n; t ls-$n ls -la /mnt/images/images/$n; t yaml-$n cat /mnt/images/images/$n/image.yaml"; done; echo "t df df -h /mnt/snap /mnt/images"; } > $W/pull.body
+{ for i in $REAL_IMAGES; do n=$(nm $i); echo "t pull-$n omloader pull $(pullspec $i) --name $n \$C"; echo "t size-$n du -sh --apparent-size /mnt/images/omloader/images/$n; t ls-$n ls -la /mnt/images/omloader/images/$n; t yaml-$n cat /mnt/images/omloader/images/$n/image.yaml"; done; echo "t df df -h /mnt/snap /mnt/images"; } > $W/pull.body
 HOOK_TIMEOUT=$PULL_TIMEOUT hook rp < $W/pull.body
 fi
 grep -E 'TAG:pull-.*:(RC|SECS)|warning|error' $W/rp.clean | cut -c1-200 | head -40
@@ -121,12 +121,12 @@ for i in $REAL_IMAGES; do
   else fail "pull $i rc=$r: $(sect rp pull-$n | tail -4 | tr '\n' '|' | cut -c1-300)"; report "$i" "FAIL" - - - - -; fi
 done
 if [ -n "$VMCL" ]; then   # optional extra kernel.cmdline for the VM images
-  { for i in $REAL_IMAGES; do case $i in vm:*) n=$(nm $i); echo "grep -q -- '$VMCL' /mnt/images/images/$n/image.yaml || sed -i 's|^\\( *cmdline: .*\\)\$|\\1 $VMCL|' /mnt/images/images/$n/image.yaml; grep cmdline /mnt/images/images/$n/image.yaml";; esac; done; } > $W/patch.body
+  { for i in $REAL_IMAGES; do case $i in vm:*) n=$(nm $i); echo "grep -q -- '$VMCL' /mnt/images/omloader/images/$n/image.yaml || sed -i 's|^\\( *cmdline: .*\\)\$|\\1 $VMCL|' /mnt/images/omloader/images/$n/image.yaml; grep cmdline /mnt/images/omloader/images/$n/image.yaml";; esac; done; } > $W/patch.body
   hook rpatch < $W/patch.body; grep -a 'cmdline' $W/rpatch.clean | head -4
 fi
 VMS=$(for i in $REAL_IMAGES; do case $i in vm:*) nm $i;; esac; done)
 if [ -n "$VMS" ] && [ -z "${REAL_NOBASECHECK:-}" ]; then   # the default-account provisioning must only write to the COW layer, never to base.raw
-  { for n in $VMS; do echo "t sha-$n sha256sum /mnt/images/images/$n/base.raw"; done; } > $W/sha.body
+  { for n in $VMS; do echo "t sha-$n sha256sum /mnt/images/omloader/images/$n/base.raw"; done; } > $W/sha.body
   HOOK_TIMEOUT=900 hook rsha1 < $W/sha.body
 fi
 for i in "${PULLED[@]}"; do
@@ -163,8 +163,8 @@ if [ -n "${REAL_OCI:-}" ]; then
   if command -v skopeo >/dev/null && skopeo copy --override-os linux --override-arch amd64 docker://$REAL_OCI oci-archive:$W/hk-oci.tar:img >/dev/null 2>$W/skopeo.err; then
     rm -rf $W/hkx; mkdir -p $W/hkx; mv $W/hk-oci.tar $W/hkx/oci.tar
     HK_EXTRA=$W/hkx HOOKSZ=$(( $(stat -c %s $W/hkx/oci.tar)/1048576 + 64 ))M hook ro <<'BODY'
-t imp omloader import oci-archive --experimental-oci /mnt/stage/oci.tar --name oci-real --out /mnt/images/images --autologin --tmp /mnt/snap
-t yaml cat /mnt/images/images/oci-real/image.yaml
+t imp omloader import oci-archive --experimental-oci /mnt/stage/oci.tar --name oci-real --out /mnt/images/omloader/images --autologin --tmp /mnt/snap
+t yaml cat /mnt/images/omloader/images/oci-real/image.yaml
 BODY
     if [ "$(rc ro imp)" = 0 ]; then
       EXPERIMENTAL_OCI=1 bootimg b-oci oci-real ""

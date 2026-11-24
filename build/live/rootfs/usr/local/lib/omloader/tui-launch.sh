@@ -16,7 +16,7 @@ omloader_tui_main() {
       /usr/local/lib/omloader/console-font.sh apply
       if [ "$(cat /run/omloader/font 2>/dev/null)" != default ] && [ -s /run/omloader/font ]; then export LC_CTYPE=C.UTF-8; fi;;
   esac
-  local args=(tui --images-root "${IMAGES_ROOT:-/mnt/images/images}" --snap-root /mnt/snap/snapshots)
+  local args=(tui --images-root "${IMAGES_ROOT:-/mnt/images/omloader/images}" --snap-root /mnt/snap/snapshots)
   [ -s /run/omloader/uicfg ] && args+=(-c "$(cat /run/omloader/uicfg)")
   omloader "${args[@]}"
   local rc=$?
