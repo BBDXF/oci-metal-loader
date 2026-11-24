@@ -19,8 +19,11 @@ die() { echo "OMLOADER_STAGE1: FATAL: $*"; echo "dropping to a rescue shell (pow
 
 mkdir -p /run/medium /run/live /run/extra /run/rw
 has_live() { [ -f /run/medium/live/live.squashfs ] && [ -f /run/medium/live/omloader.squashfs ]; }
-try_dev() { # $1 = block device
-  mount -o ro "$1" /run/medium 2>/dev/null || return 1
+try_dev() { # $1 = block device. Typed mount only: an untyped `mount` probes every filesystem driver on every disk/partition, which floods the
+  # console with exFAT-fs "failed to read boot sector" errors on machines with other disks (and is slow, on every retry).
+  local t; t=$(blkid -o value -s TYPE "$1" 2>/dev/null)
+  case "$t" in iso9660|udf|vfat|ext2|ext3|ext4) ;; *) return 1;; esac
+  mount -t "$t" -o ro "$1" /run/medium 2>/dev/null || return 1
   has_live && return 0
   umount /run/medium 2>/dev/null; return 1
 }

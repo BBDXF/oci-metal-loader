@@ -63,14 +63,19 @@ t kernel sh -c 'uname -r; ls /lib/modules; ls /lib/firmware | wc -l; cat /etc/de
 t mounts sh -c 'grep -E " /mnt/(snap|images) " /proc/mounts | cut -d" " -f1-3'
 HOOK
 rm -f $W/hk.img; truncate -s 16M $W/hk.img; mkfs.ext4 -q -L OMLSTAGE -d $W/hk $W/hk.img
+# junk disk: 3 partitions (random data, no recognizable fs) -> the loader must not probe exfat on it (no "exFAT-fs" console noise)
+J=$W/junk.raw; rm -f $J; truncate -s 64M $J
+printf 'label: gpt\nstart=2048, size=16MiB, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7\nsize=16MiB, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4\nsize=16MiB, type=0657FD6D-A4AB-43C4-84E5-0933C84B4F4F\n' | sfdisk -q $J
+for o in 1 17 33; do head -c 16M /dev/urandom | dd of=$J bs=1M seek=$o conv=notrunc status=none; done
 T0=$(date +%s)
-DISK=$D DISK2=$W/hk.img EXTRA=omloader.hook=1 LOG=$W/live-hook.log $T/run-kvm.sh > /dev/null
+DISK=$D DISK2=$W/hk.img DISK3=$J EXTRA=omloader.hook=1 LOG=$W/live-hook.log $T/run-kvm.sh > /dev/null
 tr -d '\r' < $W/live-hook.log | sed 's/\x1b\[[0-9;]*[mK]//g' > $W/live-hook.clean
 echo "--- hook run took $(( $(date +%s) - T0 ))s; excerpt:"; grep -E 'TAG:.*:RC=|OMLOADER_(LOADER|STAGE1)|HOOK_RC' $W/live-hook.clean | cut -c1-150 | head -30
 sect() { sed -n "/TAG:$1:BEGIN/,/TAG:$1:END/p" $W/live-hook.clean; }
 rc() { sect $1 | grep -o 'RC=[0-9]*' | tail -1 | cut -d= -f2; }
 echo "--- route:"; sect route | head -8; echo "--- resolv:"; sect resolv | head -12; echo "--- dns/tls/internet:"; sect dns; sect tls; sect internet
 
+! grep -q 'exFAT-fs' $W/live-hook.clean && pass "no exFAT-fs probe noise on the console with an extra junk (non-exfat) disk attached" || fail "exFAT-fs lines on console: $(grep -m3 'exFAT-fs' $W/live-hook.clean | tr '\n' '|')"
 grep -q 'OMLOADER_STAGE1: live medium' $W/live-hook.clean && pass "stage 1 found the live medium and switched into the Debian live system" || fail "stage 1"
 grep -q 'OMLOADER_LOADER: starting (kernel' $W/live-hook.clean && pass "systemd service omloader-mounts ran" || fail "omloader-mounts"
 sect mounts | grep -q '/mnt/snap ext4' && sect mounts | grep -q '/mnt/images exfat' && pass "OMLOADER (ext4) and VTOYDATA (exfat) partitions mounted by label" || fail "partition mounts: $(sect mounts | tr '\n' ' ')"

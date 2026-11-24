@@ -6,7 +6,7 @@
 #      SERIALSOCK=unix-socket path (serial console as a socket for input; the log file still gets the output)
 #      VGA=virtio (virtio-vga instead of the default std VGA, like the libvirt domain of test/manual-run.sh; RES=WxH sets its xres/yres)
 #      MONITOR=unix-socket path (qemu monitor, e.g. for system_powerdown)
-#      DISK=path DISK2=path(optional extra virtio disk) BUS=nvme|virtio|usb ISO=path INTERACTIVE=1 (serial on stdio)
+#      DISK=path DISK2=path(optional extra virtio disk) DISK3=path(second optional) BUS=nvme|virtio|usb ISO=path INTERACTIVE=1 (serial on stdio)
 # How cmdline args reach the kernel: the ISO's grub.cfg `source`s /boot/grub/extra.cfg if present.
 # We copy the ISO per run and inject extra.cfg (setting omloader_args) with xorriso (no rebuild).
 set -uo pipefail
@@ -30,6 +30,7 @@ case $BUS in
   usb)    DEV="-device qemu-xhci -device usb-storage,drive=usb";;
 esac
 [ -n "${DISK2:-}" ] && DEV="$DEV -drive if=none,id=d2,file=$DISK2,format=raw -device virtio-blk-pci,drive=d2"
+[ -n "${DISK3:-}" ] && DEV="$DEV -drive if=none,id=d3,file=$DISK3,format=raw -device virtio-blk-pci,drive=d3"
 MON=none; SERCH="-serial file:$LOG"; [ -n "${SERIALSOCK:-}" ] && { rm -f $SERIALSOCK; SERCH="-chardev socket,id=s0,path=$SERIALSOCK,server=on,wait=off,logfile=$LOG -serial chardev:s0"; }
 [ -n "${MONITOR:-}" ] && MON="unix:$MONITOR,server,nowait"
 if [ -n "${INTERACTIVE:-}" ]; then SER="-nographic -serial mon:stdio"; else SER="-display none -monitor $MON $SERCH"; : > $LOG; fi
