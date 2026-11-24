@@ -10,7 +10,7 @@ redistributes the ISO must comply with those licenses (source offer / pointer to
 * Generate the exact list for a build: `make licenses` → `out/licenses.tsv` (`package<TAB>version<TAB>license ids from the copyright files`).
 * **Non-free firmware**: the `firmware-*` packages come from Debian's `non-free-firmware` component (installed so real hardware has
   working NICs/Wi-Fi/etc.). They are redistributable binary blobs under their own (non-DFSG-free) licenses, see
-  `/usr/share/doc/firmware-*/copyright`. If you need a fully free ISO, remove `firmware-amd-graphics firmware-intel-graphics firmware-bnx2 firmware-bnx2x firmware-misc-nonfree firmware-realtek firmware-iwlwifi`
+  `/usr/share/doc/firmware-*/copyright`. If you need a fully free ISO, remove `firmware-amd-graphics firmware-intel-graphics firmware-bnx2 firmware-bnx2x firmware-misc-nonfree firmware-realtek`
   (and the `non-free-firmware` component) from `build/Containerfile`.
 * Linux kernel (`linux-image-amd64`): GPL-2.0 with the usual syscall exception; GRUB (`grub-efi-amd64-bin`): GPL-3.0+;
   systemd: LGPL-2.1+; busybox: GPL-2.0.
@@ -23,7 +23,7 @@ redistributes the ISO must comply with those licenses (source offer / pointer to
 | disks / filesystems | util-linux, e2fsprogs, exfatprogs, xfsprogs, squashfs-tools, lvm2, dmsetup, kpartx, parted, gdisk, fdisk, cryptsetup |
 | boot / VM tooling | kexec-tools, qemu-utils, busybox-static, xz-utils (lxd.tar.xz metadata) |
 | networking / TLS | iproute2, iputils-ping, ca-certificates, curl, iwd, wireless-regdb |
-| kernel + firmware | linux-image-amd64, firmware-linux-free, firmware-amd-graphics, firmware-intel-graphics, firmware-bnx2, firmware-bnx2x, firmware-misc-nonfree, firmware-realtek, firmware-iwlwifi |
+| kernel + firmware | linux-image-amd64, firmware-linux-free, firmware-amd-graphics, firmware-intel-graphics, firmware-bnx2, firmware-bnx2x, firmware-misc-nonfree, firmware-realtek, |
 | shell comfort | less, nano, vim-tiny, procps, pciutils, usbutils |
 | ISO build only (builder image, not in the ISO) | grub-efi-amd64-bin, grub-common, xorriso, mtools, dosfstools, cpio, xz-utils |
 

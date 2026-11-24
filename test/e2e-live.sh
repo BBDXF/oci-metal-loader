@@ -60,6 +60,7 @@ t xz sh -c 'xz --version | head -1; echo hi | xz | xz -d'
 t internet sh -c 'curl -sSI -m 20 https://deb.debian.org 2>&1 | head -1'
 t tools sh -c 'for b in kexec dmsetup kpartx mksquashfs mkfs.ext4 mkfs.exfat qemu-img iwctl parted sgdisk cryptsetup curl nano busybox; do command -v \$b >/dev/null && echo ok:\$b || echo MISSING:\$b; done'
 t kernel sh -c 'uname -r; ls /lib/modules; ls /lib/firmware | wc -l; cat /etc/debian_version; systemctl is-system-running'
+t fw sh -c 'mkdir -p /mnt/images/omloader/firmware && echo fw > /mnt/images/omloader/firmware/omloader-test.fw && /usr/local/lib/omloader/firmware.sh; cat /lib/firmware/omloader-test.fw; ls /lib/firmware | wc -l'
 t mounts sh -c 'grep -E " /mnt/(snap|images) " /proc/mounts | cut -d" " -f1-3'
 HOOK
 rm -f $W/hk.img; truncate -s 16M $W/hk.img; mkfs.ext4 -q -L OMLSTAGE -d $W/hk $W/hk.img
@@ -79,6 +80,7 @@ echo "--- route:"; sect route | head -8; echo "--- resolv:"; sect resolv | head 
 grep -q 'OMLOADER_STAGE1: live medium' $W/live-hook.clean && pass "stage 1 found the live medium and switched into the Debian live system" || fail "stage 1"
 grep -q 'OMLOADER_LOADER: starting (kernel' $W/live-hook.clean && pass "systemd service omloader-mounts ran" || fail "omloader-mounts"
 sect mounts | grep -q '/mnt/snap ext4' && sect mounts | grep -q '/mnt/images exfat' && pass "OMLOADER (ext4) and VTOYDATA (exfat) partitions mounted by label" || fail "partition mounts: $(sect mounts | tr '\n' ' ')"
+sect fw | grep -q 'OMLOADER_LOADER: user firmware: 1 files from /mnt/images/omloader/firmware' && sect fw | grep -qx fw && pass "user firmware: omloader/firmware/ overlaid on /lib/firmware" || fail "user firmware: $(sect fw | tr '\n' ' ')"
 sect route | grep -q '^default via 10.0.2.2' && pass "ip route: default via 10.0.2.2 (DHCP lease from QEMU user net)" || fail "no default route"
 sect lease | grep -qE '^[0-9]+$' && pass "systemd-networkd holds a DHCP lease" || fail "no lease file"
 sect resolv | grep -q 'stub-resolv.conf' && sect resolv | grep -q '10.0.2.3' && pass "resolver: /etc/resolv.conf -> systemd-resolved stub, upstream DNS 10.0.2.3 (QEMU)" || fail "resolver config"

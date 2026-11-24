@@ -113,6 +113,7 @@ fi
 [ $SNAPOK = 1 ] && mkdir -p /mnt/snap/snapshots 2>/dev/null
 echo "OMLOADER_LOADER: snap=${SNAPDEV:-none}(mounted=$SNAPOK${STOREFILE:+ store-file=$STOREFILE}${STOREERR:+ store-error=$STOREERR}) images=${IMGDEV:-none} images_root=$IMAGES_ROOT"
 [ -d "$IMAGES_ROOT" ] && echo "OMLOADER_LOADER: images: $(ls $IMAGES_ROOT | tr '\n' ' ')"
+/usr/local/lib/omloader/firmware.sh /mnt/images/omloader/firmware || true
 cat > /run/omloader/env <<ENV
 IMAGES_ROOT=$IMAGES_ROOT
 SNAPDEV=$SNAPDEV

@@ -351,6 +351,8 @@ OMLOADER 分区（ext4/xfs/btrfs，可选） ── 挂载到 /mnt/snap
 ├── cache/               下载缓存（blob、目录索引、tmp/*.part）
 ├── omloader/            可选的配置副本（boot.yaml、sources.yaml、console.conf）——这里也会被读取
 └── omloader/images/     没有数据分区时的镜像目录（仅存储分区时）
+
+（数据分区）omloader/firmware/  可选的额外固件，路径同 /lib/firmware（见 FAQ）
 ```
 
 **live ISO 内部**（只读 squashfs 层 + 内存 overlay；只有上面两个分区里的内容会持久保存）：
@@ -466,7 +468,7 @@ Boot: omloader boot --image <image> [--snapshot current|base|<label>] [--ephemer
 - **VM 客户系统：`update-grub`/ESP 报错。** 客户的 `/boot/efi` 刻意不挂载（`boot.vm_fix_esp_fstab`）：客户系统由 `kexec` 启动，从不使用 ESP；要写入 ESP 的工具无处可写。
 - **VM 镜像无法启动 / “no ext4/xfs root partition”。** 支持：UEFI/GPT 磁盘，ext4 或 xfs 根分区且内核与 initrd 在 `/boot` 下（设置 `kernel.path`/`kernel.initrd`、`kernel.root_partition`）；不支持 LVM/LUKS 根；仅在 Debian 风格（initramfs-tools）客户系统上验证过。
 - **拉取很慢或失败。** 使用镜像站：`omloader source test`、`omloader pull … --mirror auto`、`mirror_policy.region_preset: cn`，或设置 `network.proxy`。详见 [sources.md](sources.md)。`--offline` 只用缓存。
-- **网络起不来。** 仅对有线 `en*`/`eth*` 配置了 DHCP；检查 `networkctl`、`omloader net status`。Wi-Fi 未配置。
+- **网络起不来。** 仅对有线 `en*`/`eth*` 配置了 DHCP；检查 `networkctl`、`omloader net status`。Wi-Fi 未配置，ISO 不内置 Wi-Fi 固件：把固件文件放到数据分区 `omloader/firmware/`（路径同 /lib/firmware，如 `iwlwifi-cc-a0-77.ucode`、`rtw88/*.bin`；来源：Debian 的 firmware-iwlwifi/firmware-atheros 等包 `apt download` + `dpkg -x`，或 https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git），启动时会叠加到 /lib/firmware 并重载缺固件的驱动；对 GPU 固件无效（早期启动需要，已内置）；之后用 shell 里的 `iwctl` 手动连接。
 - **想改/去掉默认登录。** 见[第 6 节](#6-默认账号与安全)。
 - **`Docker/OCI images are experimental and have been disabled here`。** Docker/OCI 支持是实验性的、默认开启；有设置把它关了（`experimental.oci_images: false`、`OML_EXPERIMENTAL=off` 或 `omloader.experimental=off`）。去掉该设置，或用 `--experimental-oci` 强制开启。
 - **日志在哪？** 串口控制台与 `journalctl`；`OMLOADER_LOADER:` 和 `OMLOADER_STAGE1:` 行汇总了检测结果。
