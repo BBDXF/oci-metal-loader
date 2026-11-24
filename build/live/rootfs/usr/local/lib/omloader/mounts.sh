@@ -63,8 +63,8 @@ SNAPOK=0; STOREFILE=; STOREERR=; IMGRW=0
 if [ -n "$SNAPDEV" ]; then
   ST=$(blkid -o value -s TYPE "$SNAPDEV"); mount -t "$ST" -o rw "$SNAPDEV" /mnt/snap && SNAPOK=1
 fi
-# host partition (images; also the store file's host). NTFS: the in-kernel ntfs3 if the kernel has it (Debian bookworm's
-# 6.1 does not), else ntfs-3g (FUSE). A dirty/hibernated (Windows fast startup) volume refuses rw: it is then mounted
+# host partition (images; also the store file's host). NTFS: the in-kernel ntfs3 if the kernel has it (Debian 13's 6.12 does), else ntfs-3g
+# (FUSE). A dirty/hibernated (Windows fast startup) volume refuses rw: it is then mounted
 # read-only (images stay usable, a store file on it is not).
 IMAGES_ROOT=/mnt/snap/omloader/images
 if [ -n "$IMGDEV" ]; then

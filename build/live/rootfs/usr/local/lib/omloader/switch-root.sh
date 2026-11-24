@@ -34,7 +34,10 @@ done
 mountpoint -q "$NR/run" || mount -t tmpfs -o mode=755 tmpfs "$NR/run"   # fresh /run for the new init (systemd moves /proc /sys /dev itself)
 echo "OMLOADER_LOADER: switch-root $NR ${INIT[*]} (loader kernel $(uname -r))"
 sync
-if systemctl switch-root "$NR" "$SWINIT"; then
+# systemd >= 255 (Debian 13) refuses switch-root outside an initrd, in both client and PID 1 (cached at boot): flag the
+# live system as "initrd" and re-exec PID 1 so it re-reads it; the client honours $SYSTEMD_IN_INITRD.
+: > /etc/initrd-release && systemctl daemon-reexec && sleep 1
+if SYSTEMD_IN_INITRD=1 systemctl switch-root "$NR" "$SWINIT"; then
   sleep 30   # PID 1 now kills everything and execs the new init; reaching the next line means it did not happen
   echo "OMLOADER_LOADER: systemctl switch-root was accepted but the system did not switch"
 else

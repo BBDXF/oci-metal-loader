@@ -85,7 +85,7 @@ sect resolv | grep -q 'stub-resolv.conf' && sect resolv | grep -q '10.0.2.3' && 
 if sect dns | grep -q NODNS; then echo "NOTE: host DNS did not resolve deb.debian.org (no internet from the test host?)"; else pass "DNS lookup of deb.debian.org works through the stub"; fi
 sect cabundle | grep -q BUNDLE_OK && pass "system CA bundle present ($(sect cabundle | grep -o 'BUNDLE_OK [0-9]*'))" || fail "no CA bundle"
 [ "$(rc omloader)" != "" ] && sect omloader | grep -q 'usage: omloader snapshot' && pass "omloader binary runs inside the live system" || fail "omloader binary"
-sect version | grep -q '^base: Debian 12\.[0-9]* bookworm, kernel 6\.1\..*, built 20' && sect version | grep -q 'OMLOADER_VERSION=' && sect version | grep -q 'KEXEC_TOOLS=' && pass "omloader version --long shows the Debian base info (/etc/omloader-release)" || fail "omloader version --long: no base info"
+sect version | grep -q '^base: Debian 13\.[0-9]* trixie, kernel 6\.12\..*, built 20' && sect version | grep -q 'OMLOADER_VERSION=' && sect version | grep -q 'KEXEC_TOOLS=' && pass "omloader version --long shows the Debian base info (/etc/omloader-release)" || fail "omloader version --long: no base info"
 [ "$(rc omloader_cfg)" = 0 ] && pass "omloader config validate (embedded defaults)" || fail "omloader config validate"
 sect extra_ca | grep -qE '1 added' && pass "update-ca-certificates added the extra test CA" || fail "extra CA: $(sect extra_ca | tr '\n' ' ')"
 sect tls | grep -q OMLOADER_TLS_OK && pass "TLS handshake + HTTP GET to the local https endpoint using the system CA store (extra_ca)" || fail "TLS: $(sect tls | tr '\n' ' ')"

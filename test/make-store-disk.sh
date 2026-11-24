@@ -2,7 +2,7 @@
 # Run ON THE REMOTE. Builds out/store-$FS.raw (FS=exfat|ntfs): GPT with ONE partition, label VTOYDATA, holding
 # omloader/images/ (OCI fixture from out/oci-images, VM fixture out/fixture.raw unless NO_VM=1) and omloader/store.img, an ext4
 # image (label OMLOADER) created by `omloader store create` INSIDE the loader (omloader.hook=1 stage disk).
-# NTFS: the loader formats the partition itself (mkntfs from ntfs-3g) and writes through ntfs-3g (Debian's 6.1 kernel has no ntfs3).
+# NTFS: the loader formats the partition itself (mkntfs from ntfs-3g) and writes through ntfs-3g (ntfs-3g is used regardless of the 6.12 kernel's ntfs3).
 # Env: FS (exfat) STORE_MB (1024) NO_VM=1 NAME (VM image name, omlfixture)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; O=$ROOT/out; W=$ROOT/work; mkdir -p $O $W

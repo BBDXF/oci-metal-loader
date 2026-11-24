@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run ON THE REMOTE. Rootless: builds a debian:bookworm-slim + systemd container, exports it with podman,
+# Run ON THE REMOTE. Rootless: builds a debian:trixie-slim + systemd container, exports it with podman,
 # and converts it with `omloader import` (own layer merge + mksquashfs) to out/oci-images/omloci/{base.squashfs,image.yaml}.
 # make-disk.sh copies out/oci-images/* into omloader/images/ on the VTOYDATA partition.
 set -euo pipefail
@@ -7,11 +7,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"; O=$ROOT/out; W=$ROOT/work; mkdir -p $O
 NAME=${OCI_NAME:-omloci}
 MIRROR=${DEBIAN_MIRROR:-http://deb.debian.org/debian}
 TAG=${OCI_TAG:-omloader-fixture-oci-$(basename $ROOT)}   # per-checkout tag: several test dirs share one podman store
-BASE=docker.io/library/debian:bookworm-slim
+BASE=docker.io/library/debian:trixie-slim
 # remote can't reach Docker Hub: pull via a mirror and tag locally (see build/README.md)
 if ! podman image exists $BASE; then
-  podman pull docker.m.daocloud.io/library/debian:bookworm-slim && podman tag docker.m.daocloud.io/library/debian:bookworm-slim $BASE \
-    || { echo "WARNING: bookworm-slim unavailable, falling back to debian:bookworm"; BASE=docker.io/library/debian:bookworm; }
+  podman pull docker.m.daocloud.io/library/debian:trixie-slim && podman tag docker.m.daocloud.io/library/debian:trixie-slim $BASE \
+    || { echo "WARNING: trixie-slim unavailable, falling back to debian:trixie"; BASE=docker.io/library/debian:trixie; }
 fi
 podman build -q --build-arg BASE=$BASE --build-arg DEBIAN_MIRROR=$MIRROR -t $TAG -f $ROOT/test/fixture-oci/Containerfile $ROOT/test/fixture-oci
 rm -f $W/oci.tar; podman save --format oci-archive -o $W/oci.tar localhost/$TAG

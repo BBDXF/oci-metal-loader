@@ -41,7 +41,7 @@ iso_try() { # $1 = ISO file, $2 = 1 -> no volume label check (explicit name)
   umount /run/medium 2>/dev/null; losetup -d "$lo" 2>/dev/null; return 1
 }
 resolve_dev() { case "$1" in LABEL=*) blkid -L "${1#LABEL=}";; UUID=*) blkid -U "${1#UUID=}";; *) echo "$1";; esac 2>/dev/null; }
-# NTFS: the loader kernel (Debian 6.1) has no ntfs3, so stage 1 carries ntfs-3g (FUSE: fuse.ko + /dev/fuse). It is installed as
+# NTFS: the loader kernel (Debian 13, 6.12) is not relied on for ntfs3, so stage 1 carries ntfs-3g (FUSE: fuse.ko + /dev/fuse). It is installed as
 # "@ntfs-3g": the '@' argv[0] convention makes systemd leave the daemon alone at switch-root / shutdown (it keeps serving the
 # ISO's host partition for the whole session; mounts.sh bind-mounts it as /mnt/images, mounts.sh stop ends it cleanly).
 hostmnt() { # $1 = fs type, $2 = mount options (ro|rw), $3 = device; mounted on $HOST

@@ -29,7 +29,7 @@ addlibs() { ldd "$1" 2>/dev/null | grep -o '/[^ ]*' | while read -r l; do
 addbin() { local p; p=$(command -v "$1" 2>/dev/null) || { echo "skip $1"; return 0; }
   p=$(readlink -f "$p"); rm -f "$R/usr/bin/$1"; cp -L "$p" "$R/usr/bin/$1"; addlibs "$p"; }
 for b in mount umount blkid losetup kmod; do addbin $b; done
-# ntfs-3g (FUSE) for an ISO on an NTFS partition (Debian 6.1 has no ntfs3): installed as "@ntfs-3g" (see stage1-init)
+# ntfs-3g (FUSE) for an ISO on an NTFS partition (stage 1 uses ntfs-3g even though Debian 13's 6.12 kernel has ntfs3: one code path, tested): installed as "@ntfs-3g" (see stage1-init)
 p=$(readlink -f "$(command -v ntfs-3g)"); cp -L "$p" "$R/usr/bin/@ntfs-3g"; addlibs "$p"; ln -sf /proc/mounts $R/etc/mtab
 ln -sf kmod $R/usr/bin/modprobe; ln -sf kmod $R/usr/bin/depmod; ln -sf kmod $R/usr/bin/insmod
 cp -L /lib64/ld-linux-x86-64.so.2 $R/usr/lib64/ 2>/dev/null || { mkdir -p $R/usr/lib64; cp -L /lib64/ld-linux-x86-64.so.2 $R/usr/lib64/; }

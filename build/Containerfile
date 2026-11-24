@@ -1,8 +1,8 @@
 # Two targets from one package set (shared layer cache):
-#   live    - the Debian bookworm live userspace; exported (podman export) and squashed to live.squashfs
+#   live    - the Debian trixie live userspace; exported (podman export) and squashed to live.squashfs
 #   builder - live + ISO tooling (grub, xorriso, ...); runs build/mk-iso-inner.sh (stage-1 initramfs + ISO)
 # The live base is always the latest packages of one Debian stable release; change DEBIAN_RELEASE to move to the next one.
-ARG DEBIAN_RELEASE=bookworm
+ARG DEBIAN_RELEASE=trixie
 FROM debian:${DEBIAN_RELEASE} AS live
 ARG DEBIAN_RELEASE
 ARG DEBIAN_MIRROR=http://deb.debian.org/debian
@@ -31,7 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends kbd \
       ./usr/share/consolefonts/Uni3-Terminus28x14.psf.gz ./usr/share/consolefonts/Uni3-Terminus32x16.psf.gz \
  && rm -f /tmp/console-setup-linux_*.deb \
  && mkdir -p /usr/share/doc/console-setup-linux \
- && printf 'Terminus console fonts (Uni3-Terminus*.psf.gz) extracted from the Debian package console-setup-linux (source: console-setup, Terminus font by Dimitar Toshkov Zhekov, SIL Open Font License 1.1). See the package copyright in Debian bookworm.\n' > /usr/share/doc/console-setup-linux/copyright \
+ && printf 'Terminus console fonts (Uni3-Terminus*.psf.gz) extracted from the Debian package console-setup-linux (source: console-setup, Terminus font by Dimitar Toshkov Zhekov, SIL Open Font License 1.1). See the package copyright in Debian trixie.\n' > /usr/share/doc/console-setup-linux/copyright \
  && rm -rf /var/lib/apt/lists/* /var/cache/apt/* /var/log/* /usr/share/man /usr/share/info /usr/share/lintian /usr/share/locale \
  && find /usr/share/doc -type f ! -name copyright -delete && find /usr/share/doc -type d -empty -delete
 # crane (google/go-containerregistry, Apache-2.0): static registry client used by `omloader pull docker:IMAGE` (experimental OCI support); ~12 MB.

@@ -1,12 +1,12 @@
 # Third-party software in the omloader ISO
 
-The ISO (`out/omloader.iso`, never committed) redistributes **Debian GNU/Linux 12 "bookworm"** packages. omloader itself is
+The ISO (`out/omloader.iso`, never committed) redistributes **Debian GNU/Linux 13 "trixie"** packages. omloader itself is
 GPL-3.0-or-later (see `../LICENSE`); the Debian packages keep their own licenses (mostly GPL-2.0+/LGPL/MIT/BSD). Anyone who
 redistributes the ISO must comply with those licenses (source offer / pointer to the Debian source packages, license texts).
 
 * Every package ships its license text in the image: `/usr/share/doc/<package>/copyright` is kept (all other docs, man pages and
   locales are stripped to save space).
-* Corresponding source for all Debian packages: <https://snapshot.debian.org/> / `apt-get source <package>` on bookworm.
+* Corresponding source for all Debian packages: <https://snapshot.debian.org/> / `apt-get source <package>` on trixie.
 * Generate the exact list for a build: `make licenses` → `out/licenses.tsv` (`package<TAB>version<TAB>license ids from the copyright files`).
 * **Non-free firmware**: the `firmware-*` packages come from Debian's `non-free-firmware` component (installed so real hardware has
   working NICs/Wi-Fi/etc.). They are redistributable binary blobs under their own (non-DFSG-free) licenses, see

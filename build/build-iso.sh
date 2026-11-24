@@ -17,7 +17,7 @@ command -v mksquashfs >/dev/null || { echo "mksquashfs not found (apt install sq
 ENGINE=${CONTAINER_ENGINE:-$(command -v podman >/dev/null && echo podman || echo docker)}
 command -v "$ENGINE" >/dev/null || { echo "container engine '$ENGINE' not found"; exit 1; }
 MIRROR=${DEBIAN_MIRROR:-http://deb.debian.org/debian}
-REL=${DEBIAN_RELEASE:-bookworm}   # Debian stable release of the live base (always its latest packages)
+REL=${DEBIAN_RELEASE:-trixie}   # Debian stable release of the live base (always its latest packages)
 VER=$("$ROOT/build/version.sh")
 SDE=${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" log -1 --format=%ct 2>/dev/null || date +%s)}
 export SOURCE_DATE_EPOCH=$SDE

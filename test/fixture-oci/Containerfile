@@ -1,4 +1,4 @@
-ARG BASE=docker.io/library/debian:bookworm-slim
+ARG BASE=docker.io/library/debian:trixie-slim
 FROM ${BASE}
 ARG DEBIAN_MIRROR=http://deb.debian.org/debian
 ENV DEBIAN_FRONTEND=noninteractive

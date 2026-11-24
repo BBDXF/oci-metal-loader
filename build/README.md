@@ -4,7 +4,7 @@
     make iso            # = make iso-local: static binary -> bin/omloader, then build/build-iso.sh
     # -> out/omloader-<version>.iso, out/omloader.iso (same file), out/SHA256SUMS
 Needs `podman` or `docker` (`CONTAINER_ENGINE=docker make iso`), `mksquashfs` (squashfs-tools >= 4.4, zstd) on the host, and network access to the Debian mirror
-(`DEBIAN_MIRROR`, default `http://deb.debian.org/debian`; e.g. `DEBIAN_MIRROR=http://mirrors.ustc.edu.cn/debian make iso`) and to Docker Hub (`debian:bookworm`).
+(`DEBIAN_MIRROR`, default `http://deb.debian.org/debian`; e.g. `DEBIAN_MIRROR=http://mirrors.ustc.edu.cn/debian make iso`) and to Docker Hub (`debian:trixie`).
 No root/`--privileged` is needed: rootless podman works; the builder container only runs `grub-mkstandalone`, `mtools` and `xorriso` on plain files (docker: output ownership is fixed with a final `chown`).
 `SOURCE_DATE_EPOCH` (default: last commit time) is passed to mksquashfs/xorriso to keep timestamps stable (the Debian package set itself is whatever the mirror serves, so the ISO is not bit-for-bit reproducible).
 The version comes from `build/version.sh`: `$OML_VERSION`, a CI tag, `git describe --tags --dirty`, else `VERSION` + `-dev`; it is embedded with `-ldflags -X main.version=...` (`omloader version`, TUI header, ISO file name).
@@ -27,12 +27,12 @@ Artifacts on the remote: `~/omloader-test/out/{omloader.iso,fixture.raw,usb.raw,
 
 ## Loader (Debian live system)
 Pipeline (`build/build-iso.sh`; podman or docker; needs `mksquashfs` with zstd on the host):
-1. `Containerfile` target `live` = debian:bookworm + the package set in `build/THIRD-PARTY.md` (`--no-install-recommends`; non-free-firmware enabled; docs/man/locales/apt lists stripped,
+1. `Containerfile` target `live` = debian:trixie + the package set in `build/THIRD-PARTY.md` (`--no-install-recommends`; non-free-firmware enabled; docs/man/locales/apt lists stripped,
    `copyright` files kept; `/boot/initrd.img-*` removed). `podman export` -> `mksquashfs - live.squashfs -tar -comp zstd` (cached in `cache/live-<imageid>.squashfs`, so a rebuild only
    re-squashes when the package set changed; `make clean-remote` keeps `cache/`; `make clean` removes it).
 2. `build/live/rootfs/` + `bin/omloader` -> `omloader.squashfs` (small, rebuilt every time): systemd units, scripts, network config, getty autologin, masks for slow units (apt timers, fstrim, e2scrub, getty-static, ...).
 3. Target `builder` = live + grub/xorriso/mtools: `mk-iso-inner.sh` builds the stage-1 initramfs (busybox, util-linux mount/blkid/losetup, kmod, ~40 boot-critical modules; `stage1-init`), standalone GRUB EFI, and the hybrid UEFI ISO (volume label `OMLOADER_LIVE`, `-iso-level 3`).
-- If Docker Hub is unreachable from the build host, pull `debian:bookworm` from a mirror and tag it locally (`podman pull <mirror>/library/debian:bookworm && podman tag <mirror>/library/debian:bookworm docker.io/library/debian:bookworm`).
+- If Docker Hub is unreachable from the build host, pull `debian:trixie` from a mirror and tag it locally (`podman pull <mirror>/library/debian:trixie && podman tag <mirror>/library/debian:trixie docker.io/library/debian:trixie`).
 - Stage 1 (`stage1-init`): load modules, find the medium (`omloader.live=` override, label `OMLOADER_LIVE`, else scan all block devices for `live/live.squashfs`), loop-mount both squashfs, overlay (`lowerdir=omloader.squashfs:live.squashfs`, tmpfs upper), move /dev /proc /sys /run, `switch_root` to `/sbin/init` (systemd). On failure it drops to a rescue shell.
 - `omloader-mounts.service` (`mounts.sh`): waits <=15 s for fs label `OMLOADER` (ext4 -> `/mnt/snap`) and the data partition (`omloader.data=`, else label `VTOYDATA`, else the partition holding the ISO per `/run/omloader/medium.env` -> `/mnt/images`, images at `/mnt/images/omloader/images`; fallback `/mnt/snap/omloader/images`) **only** when an `omloader.*` flag asks for an automatic action (a plain shell is never delayed); writes `/run/omloader/env`.
 - `omloader-autoboot.service` (`autoboot.sh`): `omloader.hook=1` (run `/mnt/stage/hook.sh`, power off), `omloader.selftest=1`, `omloader.image=<n>` [`omloader.snapshot=<s>`] -> `omloader boot ...`. The udev exec queue is stopped while loop/dm/kpartx devices are assembled so nothing holds them open before `kexec -e`
@@ -46,12 +46,12 @@ Pipeline (`build/build-iso.sh`; podman or docker; needs `mksquashfs` with zstd o
 - `make e2e-live` (`test/e2e-live.sh`): DHCP lease/route, resolver, CA bundle, extra CA via `update-ca-certificates` + TLS to a local https server (QEMU user-net 10.0.2.2), tool set, selftest flag, boot-to-shell time, ISO size.
 
 ## Fixture / disk
-Fixture rootfs: `podman export` of bookworm+kernel → `mkfs.ext4 -d tar` → sfdisk/dd (label `OMLROOT`, kernel cmdline `root=LABEL=OMLROOT`, resolved by blkid in an initramfs hook). Its `/sbin/init` prints `OMLOADER_GUEST_OK`, `OMLOADER_COUNTER=N`, bumps `/var/lib/omloader-test/counter`, powers off.
+Fixture rootfs: `podman export` of trixie+kernel → `mkfs.ext4 -d tar` → sfdisk/dd (label `OMLROOT`, kernel cmdline `root=LABEL=OMLROOT`, resolved by blkid in an initramfs hook). Its `/sbin/init` prints `OMLOADER_GUEST_OK`, `OMLOADER_COUNTER=N`, bumps `/var/lib/omloader-test/counter`, powers off.
 Disk: p1 exfat `VTOYDATA` (populated with exfat-fuse in rootless podman, ext4 fallback recorded in `out/usb.vtoydata-fs`), p2 ext4 `OMLOADER`.
 - `DEBIAN_MIRROR` (default `http://deb.debian.org/debian`).
 
 ## M3 (container boot; OCI fixture = experimental, on by default; off via omloader.experimental=off)
-`make e2e-oci` -> `test/e2e-oci.sh`: ISO, `test/make-fixture-oci.sh` (podman build of `test/fixture-oci/Containerfile` on debian:bookworm-slim + systemd,
+`make e2e-oci` -> `test/e2e-oci.sh`: ISO, `test/make-fixture-oci.sh` (podman build of `test/fixture-oci/Containerfile` on debian:trixie-slim + systemd,
 `podman save --format oci-archive`, `omloader import oci-archive` -> `out/oci-images/omloci`), `NO_VM=1 test/make-disk.sh` (disk includes `out/oci-images/*`,
 and the VM fixture if present), then boots current, `base`, current again. `autoboot.sh` does the `systemctl switch-root` handoff (see top-level README).
 bookworm-slim is pulled like bookworm (see the mirror note above); falls back to bookworm.

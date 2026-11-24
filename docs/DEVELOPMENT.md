@@ -33,7 +33,7 @@ Gating: `experimental.oci_images` defaults to `true`. To switch off: `experiment
 | M1 | VM boot: dm-snapshot + kexec, guest-side reassembly | ✅ done (QEMU/OVMF-tested) |
 | M2 | snapshot management: list/create/revert/delete/gc/prune/verify/flatten/export, space guard, container data volumes | ✅ done |
 | M3 | container boot: squashfs + overlayfs, firstboot adapter, `systemctl switch-root` handoff | ✅ done (the OCI part is now experimental, off by default) |
-| Live loader | Debian bookworm live system (systemd, networkd, resolved, tools, firmware), 254 MiB ISO | ✅ done |
+| Live loader | Debian trixie live system (systemd, networkd, resolved, tools, firmware), 294 MiB ISO | ✅ done |
 | M4 | online pull for LXD: simplestreams client, mirrors/proxy, cache/offline mode, LXD VM import (qcow2 → raw) | ✅ done (QEMU-tested: `make e2e-pull`) |
 | Usability | container console login (tty1 + ttyS0 autologin, users/passwords/sudo/ssh keys, busybox debug-shell fallback) and clean shutdown of the OMLOADER/VTOYDATA partitions | ✅ done for containers (VM: see limitations) |
 | Ventoy | `omloader.iso` boots through Ventoy 1.1.17 (normal + GRUB2 mode, UEFI): stage-1 iso-scan, `boot.yaml` default image with countdown, see [docs/ventoy.md](ventoy.md) | ✅ done (QEMU-tested: `make e2e-ventoy`) |
@@ -52,7 +52,7 @@ scope. What is left is M5, polish and optimisations; real-hardware testing is po
 
 Out of scope by decision: Secure Boot, and an `omloader install` installer (omloader is deliberately bound to Ventoy: put the ISO on a Ventoy stick).
 
-Known limits of the Ventoy/store-file work: the loader kernel has no `ntfs3` driver: NTFS is mounted with ntfs-3g/FUSE, also in stage 1 (initramfs carries `ntfs-3g` as `@ntfs-3g` + `fuse.ko`), so an ISO on an NTFS Ventoy partition is found (`make e2e-ntfs`); layout: everything under `omloader/` of the data partition (`omloader.data=` > label `VTOYDATA` > the partition holding the ISO);
+Known limits of the Ventoy/store-file work: the loader does not rely on the kernel `ntfs3` driver: NTFS is mounted with ntfs-3g/FUSE, also in stage 1 (initramfs carries `ntfs-3g` as `@ntfs-3g` + `fuse.ko`), so an ISO on an NTFS Ventoy partition is found (`make e2e-ntfs`); layout: everything under `omloader/` of the data partition (`omloader.data=` > label `VTOYDATA` > the partition holding the ISO);
 VM + NTFS store is not verified end to end.
 
 ### Windows
@@ -96,7 +96,7 @@ with `omloader-<version>.iso`, `omloader-<version>-linux-amd64.tar.gz`, `omloade
 
 ### Updating the Debian base
 
-Every build uses the latest packages of one Debian stable release (`DEBIAN_RELEASE`, default `bookworm`, in `build/Containerfile`; override with the env var of the same name for `build/build-iso.sh`). The build records the result in `/etc/omloader-release` and `packages.txt` (also at the ISO root and as the Release asset `omloader-<ver>-packages.txt`). `make update-base` compares the last build's base (`out/omloader-release`) with the current point release and kernel and says whether a rebuild is advised. Rebuild on a kernel security fix or a new Debian point release, and always before a tag (bump `VERSION`, `make iso`, run `make e2e-live`); the Release notes point to the base info.
+Every build uses the latest packages of one Debian stable release (`DEBIAN_RELEASE`, default `trixie`, in `build/Containerfile`; override with the env var of the same name for `build/build-iso.sh`). The build records the result in `/etc/omloader-release` and `packages.txt` (also at the ISO root and as the Release asset `omloader-<ver>-packages.txt`). `make update-base` compares the last build's base (`out/omloader-release`) with the current point release and kernel and says whether a rebuild is advised. Rebuild on a kernel security fix or a new Debian point release, and always before a tag (bump `VERSION`, `make iso`, run `make e2e-live`); the Release notes point to the base info.
 
 ## Contributing
 
@@ -135,14 +135,14 @@ and the key reference in [INSTALL.md](INSTALL.md)/[INSTALL.zh-CN.md](INSTALL.zh-
 ## Architecture of the loader ISO
 
     UEFI -> GRUB -> kernel + stage-1 initramfs (busybox + modules)          build/stage1-init
-              -> live medium (label OMLOADER_LIVE): live/live.squashfs (Debian bookworm userspace, zstd)
+              -> live medium (label OMLOADER_LIVE): live/live.squashfs (Debian trixie userspace, zstd)
                                                     live/omloader.squashfs (omloader binary, units, scripts)
               -> overlay (squashfs layers + tmpfs upper) -> switch_root -> systemd (PID 1)
     systemd: omloader-mounts.service   (OMLOADER ext4 -> /mnt/snap, VTOYDATA -> /mnt/images, <=15 s wait if omloader.* flags)
              omloader-autoboot.service (omloader.hook / selftest / image= : `omloader boot` -> kexec (VM) or systemctl switch-root (container))
              systemd-networkd (DHCP on en*/eth*) + systemd-resolved, serial-getty/getty autologin root + banner  (iwd installed, not configured yet)
 
-The loader is a real minimal Debian 12 system (systemd, udev, kmod, e2fsprogs, exfatprogs, xfsprogs, lvm2/dmsetup/kpartx, cryptsetup, parted/gdisk,
+The loader is a real minimal Debian 13 system (systemd, udev, kmod, e2fsprogs, exfatprogs, xfsprogs, lvm2/dmsetup/kpartx, cryptsetup, parted/gdisk,
 kexec-tools, qemu-utils, iproute2, curl + ca-certificates, iwd + wireless-regdb, kernel + firmware), so networking/TLS/mirrors (M4), Wi-Fi, a TUI and
 diagnostics have a proper userspace. Kernel command line flags (all optional): `omloader.image=NAME`, `omloader.snapshot=S`, `omloader.poweroff_on_fail=1`,
 `omloader.selftest=1`, `omloader.hook=1` (test helper: runs `hook.sh` from an `OMLSTAGE` ext4 disk, then powers off), `omloader.live=/dev/X` (stage 1 medium override).

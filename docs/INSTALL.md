@@ -16,7 +16,7 @@ Contents: [1 Requirements](#1-requirements) · [2 Download and verify](#2-downlo
 |---|---|
 | Machine | x86_64 PC with **UEFI**. Legacy BIOS/CSM boot is not supported. |
 | **Secure Boot** | **Must be turned off** in the firmware. The GRUB and the kernel on the ISO are not signed for Secure Boot. |
-| USB stick/disk | Any size that holds the ISO (~260 MiB) plus your images. LXD VM images are 1–10 GiB each (raw), containers 100–500 MiB; snapshots and data need extra room (a 32 GiB stick is a comfortable start). |
+| USB stick/disk | Any size that holds the ISO (~295 MiB) plus your images. LXD VM images are 1–10 GiB each (raw), containers 100–500 MiB; snapshots and data need extra room (a 32 GiB stick is a comfortable start). |
 | [Ventoy](https://github.com/ventoy/Ventoy) | Install it on the stick first (tested: 1.1.17). omloader is deliberately bound to Ventoy; there is no separate installer. |
 | RAM | The loader runs from RAM (tmpfs overlay over the squashfs). The test VMs used 2 GiB; plan **4 GiB or more**, more when flattening big images. *(untested on hardware)* |
 | Network (optional) | Wired DHCP only (`en*`/`eth*`). Wi-Fi tools are installed but nothing configures them. Needed only to pull images; you can copy images to the stick instead. |
@@ -50,7 +50,7 @@ Build it yourself instead: `make iso` (podman or docker; [build/README.md](../bu
 
 **One folder:** everything lives in `omloader/` at the root of the data partition: `omloader/omloader-<ver>.iso`, `boot.yaml`, `sources.yaml`, `images/`, `store.img`. Only `ventoy/ventoy.json` stays outside (it is Ventoy's own).
 **Which partition is the data partition?** 1. the one named by the kernel flag `omloader.data=LABEL=x|UUID=x|/dev/x`, 2. the partition labelled `VTOYDATA`, 3. otherwise **the partition that holds the ISO file**, whatever its label (e.g. `VHDX`). No relabelling is needed. (On an `OMLOADER` store without a data partition the images folder is `omloader/images/` there.)
-**NTFS** works everywhere, including the partition holding the ISO: stage 1 carries ntfs-3g (FUSE) because Debian's 6.1 kernel has no `ntfs3`. If Windows left the volume hibernated (Fast Startup) or dirty, it is mounted **read-only** (images stay usable, a store file on it does not).
+**NTFS** works everywhere, including the partition holding the ISO: stage 1 carries ntfs-3g (FUSE) (the trixie 6.12 kernel has an `ntfs3` module, but the loader uses ntfs-3g (FUSE) everywhere). If Windows left the volume hibernated (Fast Startup) or dirty, it is mounted **read-only** (images stay usable, a store file on it does not).
 
 ## 4. First boot
 
@@ -462,7 +462,7 @@ Store file commands: see [store-file.md](store-file.md). `omloader version` prin
 - **"live medium not found" / rescue shell in stage 1.** The loader could not find its ISO: the ISO may be on exFAT, NTFS, ext4, xfs or FAT32, at `/omloader.iso`, `/omloader/` or `/ISO/`, or pin it with `omloader.isofile=`.
 - **The console resolution drops after boot in a VM (e.g. 1920x1080 -> 1280x800).** The VM's display driver replaced the firmware framebuffer. Choose the GRUB entry "safe display" (`nomodeset`), or set a fixed video mode in the VM; on real hardware the native driver picks the mode. Details: [ventoy.md](ventoy.md#console-resolution-tty1--vnc).
 - **Secure Boot.** Not supported (no signed shim/kernel). Disable it in the firmware setup.
-- **NTFS.** The loader kernel has no `ntfs3`; NTFS partitions (also the one holding the ISO) are mounted with ntfs-3g (FUSE, built into stage 1). If Windows left the volume hibernated (Fast Startup) or dirty, it is mounted **read-only**: images are readable, but a store file on it is not usable (snapshots stay in RAM). Fully shut Windows down (`shutdown /s /t 0`) or run `chkdsk`.
+- **NTFS.** The loader does not use the kernel `ntfs3` (the trixie kernel has the module); NTFS partitions (also the one holding the ISO) are mounted with ntfs-3g (FUSE, built into stage 1). If Windows left the volume hibernated (Fast Startup) or dirty, it is mounted **read-only**: images are readable, but a store file on it is not usable (snapshots stay in RAM). Fully shut Windows down (`shutdown /s /t 0`) or run `chkdsk`.
 - **exFAT and sparse files.** exFAT cannot create sparse files, so `store create` and `ext4-file` data volumes allocate their whole size immediately (slow for 20G+); vfat files are limited to < 4 GiB. Pick a smaller `--size`, or use an `OMLOADER` ext4 partition.
 - **Snapshots vanish at poweroff.** No store was found (`SNAPOK=0` in the log): create a store file or an `OMLOADER` partition ([section 3](#3-put-the-iso-on-a-ventoy-stick)).
 - **VM guest: `update-grub`/ESP errors.** The guest's `/boot/efi` is deliberately not mounted (`boot.vm_fix_esp_fstab`): the guest is started by `kexec` and never uses the ESP; tools that write there have nothing to write to.

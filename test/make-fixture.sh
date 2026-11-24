@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run ON THE REMOTE. Builds out/fixture.raw (GPT, 1 ext4 partition label OMLROOT, Debian bookworm
+# Run ON THE REMOTE. Builds out/fixture.raw (GPT, 1 ext4 partition label OMLROOT, Debian trixie
 # + kernel + initramfs w/ dm-snapshot; /sbin/init prints OMLOADER_GUEST_OK, bumps counter, powers off)
 # plus out/fixture-vmlinuz, out/fixture-initrd.img for direct qemu boot. Fully rootless.
 set -euo pipefail

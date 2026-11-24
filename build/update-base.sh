@@ -4,7 +4,7 @@
 # Needs podman or docker + network. Nothing is built or changed.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-REL=${DEBIAN_RELEASE:-bookworm}
+REL=${DEBIAN_RELEASE:-trixie}
 ENGINE=${CONTAINER_ENGINE:-$(command -v podman >/dev/null && echo podman || echo docker)}
 F=${1:-}
 [ -n "$F" ] || { for c in "$ROOT/out/omloader-release" /etc/omloader-release; do [ -r "$c" ] && F=$c && break; done; }

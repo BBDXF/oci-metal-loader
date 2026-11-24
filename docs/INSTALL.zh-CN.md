@@ -15,7 +15,7 @@
 |---|---|
 | 机器 | 支持 **UEFI** 的 x86_64 电脑。不支持传统 BIOS/CSM 启动。 |
 | **Secure Boot（安全启动）** | **必须在固件里关闭。** ISO 里的 GRUB 和内核没有 Secure Boot 签名。 |
-| U 盘/移动硬盘 | 能放下 ISO（约 260 MiB）加上你的镜像即可。LXD VM 镜像每个 1–10 GiB（raw），容器镜像 100–500 MiB；快照和数据还需要额外空间（建议从 32 GiB 起步）。 |
+| U 盘/移动硬盘 | 能放下 ISO（约 295 MiB）加上你的镜像即可。LXD VM 镜像每个 1–10 GiB（raw），容器镜像 100–500 MiB；快照和数据还需要额外空间（建议从 32 GiB 起步）。 |
 | [Ventoy](https://github.com/ventoy/Ventoy) | 先在盘上安装（测试版本 1.1.17）。omloader 刻意绑定 Ventoy，没有单独的安装器。 |
 | 内存 | 加载器运行在内存里（squashfs 之上的 tmpfs overlay）。测试虚拟机用 2 GiB；建议 **4 GiB 或更多**，展平（flatten）大镜像时需要更多。*(真机未测试)* |
 | 网络（可选） | 仅支持有线 DHCP（`en*`/`eth*`）。已安装 Wi-Fi 工具但没有配置。只有在线拉取镜像才需要网络，也可以直接把镜像拷到盘里。 |
@@ -48,7 +48,7 @@
 
 **唯一的文件夹：** 一切都在数据分区根目录的 `omloader/` 里：`omloader/omloader-<版本>.iso`、`boot.yaml`、`sources.yaml`、`images/`、`store.img`。只有 `ventoy/ventoy.json` 在外面（它是 Ventoy 自己的文件）。
 **哪个分区是数据分区？** 1. 内核参数 `omloader.data=LABEL=x|UUID=x|/dev/x` 指定的分区；2. 卷标为 `VTOYDATA` 的分区；3. 否则就是**存放 ISO 文件的那个分区**，不管卷标是什么（例如 `VHDX`），无需改名。
-**NTFS** 处处可用，包括存放 ISO 的分区：第一阶段自带 ntfs-3g（FUSE），因为 Debian 6.1 内核没有 `ntfs3`。若 Windows 让卷处于休眠（快速启动）或脏状态，则以**只读**挂载（镜像可用，其上的存储文件不可用）。
+**NTFS** 处处可用，包括存放 ISO 的分区：第一阶段自带 ntfs-3g（FUSE），因为加载器所用的 Debian trixie 6.12 内核不使用 `ntfs3`（一律走 ntfs-3g）。若 Windows 让卷处于休眠（快速启动）或脏状态，则以**只读**挂载（镜像可用，其上的存储文件不可用）。
 
 ## 4. 首次启动
 
@@ -459,7 +459,7 @@ Boot: omloader boot --image <image> [--snapshot current|base|<label>] [--ephemer
 - **第一阶段提示找不到 live 介质 / 进入救援 shell。** 加载器找不到它的 ISO：ISO 可放在 exFAT、NTFS、ext4、xfs 或 FAT32 上，位置 `/omloader.iso`、`/omloader/` 或 `/ISO/`，或用 `omloader.isofile=` 指定。
 - **虚拟机里启动后控制台分辨率变低（如 1920x1080 -> 1280x800）。** 虚拟机的显示驱动替换了固件帧缓冲。请选择 GRUB 菜单项「safe display」（`nomodeset`），或在虚拟机里固定视频模式；真机上由原生驱动选择模式。详见 [ventoy.md](ventoy.md)。
 - **Secure Boot。** 不支持（没有签名的 shim/内核）。请在固件设置里关闭。
-- **NTFS。** 加载器内核没有 `ntfs3`；NTFS 分区（包括存放 ISO 的分区）通过第一阶段自带的 ntfs-3g（FUSE）挂载。若 Windows 让卷处于休眠（快速启动）或脏状态，则以**只读**挂载：镜像可读，但其上的存储文件不可用（快照只在内存里）。请彻底关闭 Windows（`shutdown /s /t 0`）或运行 `chkdsk`。
+- **NTFS。** 加载器不依赖内核 `ntfs3`；NTFS 分区（包括存放 ISO 的分区）通过第一阶段自带的 ntfs-3g（FUSE）挂载。若 Windows 让卷处于休眠（快速启动）或脏状态，则以**只读**挂载：镜像可读，但其上的存储文件不可用（快照只在内存里）。请彻底关闭 Windows（`shutdown /s /t 0`）或运行 `chkdsk`。
 - **exFAT 与稀疏文件。** exFAT 不能创建稀疏文件，所以 `store create` 和 `ext4-file` 数据卷会立即占满全部大小（20G 以上会很慢）；vfat 文件限制 < 4 GiB。可以减小 `--size`，或改用 `OMLOADER` ext4 分区。
 - **关机后快照消失。** 没有找到存储（日志里 `SNAPOK=0`）：创建存储文件或 `OMLOADER` 分区（[第 3 节](#3-把-iso-放到-ventoy-盘)）。
 - **VM 客户系统：`update-grub`/ESP 报错。** 客户的 `/boot/efi` 刻意不挂载（`boot.vm_fix_esp_fstab`）：客户系统由 `kexec` 启动，从不使用 ESP；要写入 ESP 的工具无处可写。

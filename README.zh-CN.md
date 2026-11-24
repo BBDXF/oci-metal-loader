@@ -83,7 +83,7 @@ TUI 里 **按 Enter 立即启动**（镜像或 `current`）；在旧快照或 `b
 | `type` | 是什么 | 内核 | 快照 | 主要限制 |
 |---|---|---|---|---|
 | `lxd-vm` | LXD **VM 镜像**：整盘镜像（导入时把 `disk.qcow2` 转成 `base.raw`）。"VM"只是格式的名字，不涉及虚拟化。 | 镜像自带（`kexec`） | `dm-snapshot` 的 COW 文件 | 需要 UEFI + GPT，根文件系统为 ext4 或 xfs，`/boot` 里要有内核和 initrd；不支持 LVM/LUKS 根；客户机的 initramfs 必须能被加载器扩展（目前只在 Debian/initramfs-tools 的客户机上验证过）；没有独立数据卷；只提供默认账号（`oci`/`Oci123`、sudo、root、自动登录——公开密码，见下文），没有干净卸载 |
-| `lxd-container` | LXD **容器镜像**：`rootfs.squashfs`（加 `metadata.yaml`） | 加载器的内核（Debian 6.1），模块以只读绑定方式提供给客户机 | `overlayfs` 的可写层 | 需要带 init 的 Linux 根；硬件支持取决于加载器内核；启动时配置默认控制台账号（自动登录支持 systemd 和 busybox-init 客户机，其他的只有 busybox 调试 shell）；数据卷支持 `dir` / `ext4-file` |
+| `lxd-container` | LXD **容器镜像**：`rootfs.squashfs`（加 `metadata.yaml`） | 加载器的内核（Debian 6.12），模块以只读绑定方式提供给客户机 | `overlayfs` 的可写层 | 需要带 init 的 Linux 根；硬件支持取决于加载器内核；启动时配置默认控制台账号（自动登录支持 systemd 和 busybox-init 客户机，其他的只有 busybox 调试 shell）；数据卷支持 `dir` / `ext4-file` |
 | `oci` | Docker/OCI 镜像——**实验性功能，默认开启**（关闭：`experimental.oci_images: false`） | 加载器的内核 | `overlayfs` | 需要带 systemd 或 shell 的镜像；不支持端口映射；代理支持不均衡；应用镜像通常没有 init 和登录 |
 
 所有类型的共同点：基础镜像只读并带校验和；启动快照不会修改它（以一次性层启动）；只支持 Linux 客户机（Windows 请用 Ventoy）；只支持 x86_64 UEFI。

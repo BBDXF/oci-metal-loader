@@ -16,7 +16,7 @@ kver=$(ls /lib/modules 2>/dev/null | head -1)
   echo "KERNEL_PACKAGE=$kpkg"
   echo "KEXEC_TOOLS=$(ver kexec-tools)"
   echo "QEMU_UTILS=$(ver qemu-utils)"
-  echo "BASE_IMAGE=${BASE_IMAGE:-debian:bookworm}"
+  echo "BASE_IMAGE=${BASE_IMAGE:-debian:trixie}"
   echo "DEBIAN_MIRROR=${DEBIAN_MIRROR:-}"
 } > "$D/base-release"
 dpkg-query -W -f='${Package}\t${Version}\n' | sort > "$D/packages.txt"
