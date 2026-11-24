@@ -253,6 +253,9 @@ var nameRe = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
 func badField(s string) bool { return strings.ContainsAny(s, ":\n\r\x00") }
 
 func validateRuntime(pfx string, rt Runtime, add func(string, string, ...any), enum func(string, string, ...string)) {
+	if rt.Shell != "" {
+		enum(pfx+".shell", rt.Shell, "auto", "image", "busybox")
+	}
 	if rt.DebugShell != "" {
 		enum(pfx+".debug_shell", rt.DebugShell, "auto", "always", "never")
 	}

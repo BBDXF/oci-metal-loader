@@ -34,7 +34,8 @@ type Options struct {
 	SwitchFile    string             // /run/omloader-switch
 	ModulesSrc    string             // /lib/modules/<release> of the loader kernel
 	KernelRelease string             // default uname -r
-	Busybox       string             // static busybox copied into the guest (default: first of PATH)
+	Busybox       string             // static busybox of the loader, bind-mounted into the guest at /.omloader/busybox (default: first of PATH)
+	Shell         string             // runtime.shell override for this boot only: auto | image | busybox (omloader.shell=, boot --shell, TUI)
 	DataRoot      string             // data volumes root (default <dirname snap-root>/data)
 	SpaceFn       snapmgr.StatfsFunc // statfs override (tests)
 	ResolvConf    string             // source for guest /etc/resolv.conf (default /etc/resolv.conf)

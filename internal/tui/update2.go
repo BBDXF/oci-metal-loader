@@ -91,6 +91,10 @@ func (m *Model) pullKey(k Key, act string) {
 	case act == "back" || k.Name == "left" || k.Name == "bs":
 		m.gotoTab(ScrImages)
 	case act == "select":
+		if m.ssel < len(m.sources) && m.sources[m.ssel].Type == "oci-registry" {
+			m.dockerForm(m.sources[m.ssel]) // Docker Hub (experimental): no catalog, ask for the image reference
+			return
+		}
 		if m.ssel < len(m.sources) {
 			s := m.sources[m.ssel]
 			if !s.Usable && m.Svc.Offline() {
@@ -169,6 +173,37 @@ func (m *Model) applyFilter() {
 		}
 	}
 	m.ctop = keepVisible(m.csel, 0, m.catVis(m.H-1))
+}
+
+// DockerPuller is optionally implemented by a Service: `omloader pull docker:IMAGE` (experimental OCI support, crane).
+type DockerPuller interface {
+	PullDocker(ctx context.Context, source, image, name string, w io.Writer) error
+}
+
+// dockerForm asks for a Docker image reference (nginx:alpine, jrei/systemd-debian:12) and pulls it through the source's mirrors.
+func (m *Model) dockerForm(s SourceInfo) {
+	dp, ok := m.Svc.(DockerPuller)
+	if !ok {
+		m.message(L.Info, false, "Docker pull is not available here.")
+		return
+	}
+	src := m.SourceRef(s)
+	m.form("Pull Docker image (experimental)", []string{"source: " + src, "Needs experimental OCI support (experimental.oci_images / omloader.experimental=oci)."},
+		[]string{"Image (e.g. nginx:alpine)", L.PullName + " (optional)"}, []string{"", ""}, func(v []string) {
+			image, name := strings.TrimSpace(v[0]), strings.TrimSpace(v[1])
+			if image == "" {
+				m.warn("No image given.")
+				return
+			}
+			m.startOp("pull docker:"+image, func(ctx context.Context, w io.Writer) error {
+				return dp.PullDocker(ctx, src, image, name, w)
+			}, func(err error) {
+				m.RefreshImages()
+				if err == nil {
+					m.sayf("pulled docker:%s", image)
+				}
+			})
+		})
 }
 
 func (m *Model) pullForm(it CatalogItem) {

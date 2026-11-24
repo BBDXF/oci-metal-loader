@@ -152,6 +152,7 @@ $B mountpoint -q /proc || $B mount -t proc proc /proc
 $B mountpoint -q /sys || $B mount -t sysfs sysfs /sys
 $B mountpoint -q /dev || $B mount -t devtmpfs dev /dev
 $B mkdir -p /dev/pts /run /tmp
+$B mountpoint -q /tmp || $B mount -t tmpfs tmpfs /tmp
 $B mountpoint -q /dev/pts || $B mount -t devpts devpts /dev/pts
 $B mountpoint -q /run || $B mount -t tmpfs tmpfs /run
 [ -n "$PATH" ] || export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -240,8 +241,8 @@ func uiConfigHash(rt config.Runtime, keepHost bool) string {
 	v := struct {
 		V  int
 		RT config.Runtime
-	}{4, config.Runtime{Hostname: host, Autologin: rt.Autologin, AutologinUser: rt.AutologinUser, Users: rt.Users, RootPasswordHash: rt.RootPasswordHash,
-		RootPassword: rt.RootPassword, DebugShell: rt.DebugShell, ShutdownSync: rt.ShutdownSync}}
+	}{5, config.Runtime{Hostname: host, Autologin: rt.Autologin, AutologinUser: rt.AutologinUser, Users: rt.Users, RootPasswordHash: rt.RootPasswordHash,
+		RootPassword: rt.RootPassword, Shell: rt.ShellMode(), ShutdownSync: rt.ShutdownSync}}
 	b, _ := json.Marshal(v)
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])
@@ -281,8 +282,10 @@ func adaptBase(in AdaptInput, warn io.Writer, sysd bool) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		if err := copyFile(in.Busybox, filepath.Join(dir, "busybox"), 0o755); err != nil {
-			fmt.Fprintf(warn, "warning: cannot install busybox into guest: %v\n", err)
+		// only an empty placeholder lands in the snapshot layer; the loader's static busybox is bind-mounted over it at every
+		// boot (Options.bindBusybox), so the binary is never part of a snapshot
+		if err := os.WriteFile(filepath.Join(dir, "busybox"), nil, 0o755); err != nil {
+			fmt.Fprintf(warn, "warning: cannot prepare the busybox mount point in the guest: %v\n", err)
 		} else {
 			hasBB = true
 		}
@@ -370,8 +373,30 @@ func WriteWrapperEnv(root string, rt config.Runtime) error {
 	if rt.WorkingDir != "" {
 		fmt.Fprintf(&b, "cd %s 2>/dev/null || true\n", shQuote(rt.WorkingDir))
 	}
-	if rt.DebugShell == "always" {
-		b.WriteString("[ -x /.omloader/dbgshell ] && ( while :; do /.omloader/dbgshell </dev/console >/dev/console 2>&1; $B sleep 1; done ) &\n")
+	// entrypoint-only image that still ships an init/getty (e.g. nginx:alpine): adaptUI queued no console shell because the
+	// guest "has" a login, but the wrapper runs no init, so the console would be dead: provide the shell here
+	if !guestExists(root, guestHelperDir+"/dbgshell") && rt.ShellMode() != "image" || !guestExists(root, guestHelperDir+"/dbgshell") && imageShell(root) != "" {
+		sh, kind := imageShell(root), ""
+		if sh != "" && rt.ShellMode() != "busybox" {
+			kind = "image shell " + sh
+		} else if guestExists(root, guestHelperDir+"/busybox") && rt.ShellMode() != "image" {
+			sh, kind = "/.omloader/busybox sh", "busybox"
+		} else {
+			sh = ""
+		}
+		if sh != "" {
+			if err := guestWrite(root, guestHelperDir+"/shrc", []byte(debugShrc(kind)), 0o644); err != nil {
+				return err
+			}
+			if err := guestWrite(root, guestHelperDir+"/dbgshell", []byte(debugLauncher(sh)), 0o755); err != nil {
+				return err
+			}
+		}
+	}
+	if guestExists(root, guestHelperDir+"/dbgshell") { // adaptUI writes it when a console shell is wanted (runtime.shell)
+		for _, tty := range []string{"/dev/console", "/dev/tty1"} {
+			fmt.Fprintf(&b, "[ -c %s ] && ( while :; do /.omloader/dbgshell <%s >%s 2>&1; $B sleep 1; done ) &\n", tty, tty, tty)
+		}
 	}
 	return guestWrite(root, guestHelperDir+"/env", []byte(b.String()), 0o644)
 }

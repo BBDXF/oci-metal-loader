@@ -97,17 +97,25 @@ RestartSec=1
 WantedBy=multi-user.target
 `
 
-const debugLauncher = `#!/.omloader/busybox sh
-ENV=/.omloader/shrc
-export ENV
-exec /.omloader/busybox sh
-`
+// debugLauncher starts the console shell: the image's own (shell = e.g. /bin/sh) or the injected busybox ("/.omloader/busybox sh").
+func debugLauncher(shell string) string {
+	return "#!/.omloader/busybox sh\nENV=/.omloader/shrc\nexport ENV\nexec " + shell + "\n"
+}
 
-const debugShrc = `# omloader debug shell: this image has no usable getty/login
-echo "OMLOADER_DEBUG_SHELL tty=$(/.omloader/busybox tty 2>/dev/null) user=$(/.omloader/busybox id -un 2>/dev/null) (busybox; no getty/login in this image, runtime.debug_shell)"
-export PATH=/.omloader:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-alias ls='/.omloader/busybox ls'
+// debugShrc: the console shell sees the whole guest (all processes, no namespaces). /.omloader/bin (busybox applet symlinks on a
+// tmpfs) is only a PATH fallback behind the image's own directories.
+func debugShrc(kind string) string {
+	return `# omloader console shell (` + kind + `)
+echo "OMLOADER_DEBUG_SHELL tty=$(/.omloader/busybox tty 2>/dev/null) user=$(/.omloader/busybox id -un 2>/dev/null) (` + kind + `; runtime.shell, omloader.shell=, boot --shell)"
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/.omloader/bin
+export PS1='omloader# '
 `
+}
+
+// imageShell is the image's own interactive shell, "" when it has none.
+func imageShell(root string) string {
+	return firstExisting(root, "/bin/bash", "/usr/bin/bash", "/bin/sh", "/usr/bin/sh", "/bin/ash")
+}
 
 func firstExisting(root string, c ...string) string {
 	for _, p := range c {
@@ -231,16 +239,26 @@ func adaptUI(in AdaptInput, warn io.Writer, sysd, hasBB bool) error {
 		}
 	}
 
-	// debug shell fallback
+	// console shell (runtime.shell: auto | image | busybox; omloader.shell= / boot --shell override for one boot):
+	//   busybox  always the injected static busybox      image  only the image's own shell, never busybox
+	//   auto     the image's own shell when it has one, else busybox
+	// It is started when it is forced, when the guest has no usable getty/login, or when there is no init at all (entrypoint-only images).
 	usable := consoleUsable(root)
-	mode := rt.DebugShell
-	if mode == "" {
-		mode = "auto"
+	mode := rt.ShellMode()
+	shellCmd, kind := "", ""
+	switch ib := imageShell(root); {
+	case mode == "busybox" && hasBB:
+		shellCmd, kind = "/.omloader/busybox sh", "busybox"
+	case mode != "busybox" && ib != "":
+		shellCmd, kind = ib, "image shell "+ib
+	case mode == "auto" && hasBB:
+		shellCmd, kind = "/.omloader/busybox sh", "busybox"
 	}
-	debug := hasBB && (mode == "always" || (mode == "auto" && !usable))
-	if !hasBB && mode != "never" && (mode == "always" || !usable) {
-		fmt.Fprintln(warn, "warning: guest has no usable getty/login and the loader has no static busybox: no debug shell")
+	wanted := mode == "busybox" || !usable || flavour == "none"
+	if wanted && shellCmd == "" {
+		fmt.Fprintf(warn, "warning: runtime.shell=%s: no console shell available (the image has no shell and busybox is not allowed or missing)\n", mode)
 	}
+	debug := wanted && shellCmd != ""
 	const unit = "/etc/systemd/system/omloader-debug-shell.service"
 	const want = "/etc/systemd/system/multi-user.target.wants/omloader-debug-shell.service"
 	guestRemove(root, unit)
@@ -251,12 +269,12 @@ func adaptUI(in AdaptInput, warn io.Writer, sysd, hasBB bool) error {
 	dropInittab(root, inittabDebugSysv)
 	if debug {
 		if !usable {
-			fmt.Fprintln(warn, "warning: guest has no usable getty/login: starting a busybox debug shell on /dev/console")
+			fmt.Fprintf(warn, "warning: guest has no usable getty/login: starting a console shell (%s)\n", kind)
 		}
-		if err := W(guestHelperDir+"/shrc", debugShrc, 0o644); err != nil {
+		if err := W(guestHelperDir+"/shrc", debugShrc(kind), 0o644); err != nil {
 			return err
 		}
-		if err := W(guestHelperDir+"/dbgshell", debugLauncher, 0o755); err != nil {
+		if err := W(guestHelperDir+"/dbgshell", debugLauncher(shellCmd), 0o755); err != nil {
 			return err
 		}
 		switch flavour {
@@ -411,6 +429,26 @@ func applySystemdAutologin(root string, rt config.Runtime, user string, sysd boo
 				if err := W(d, "[Service]\nExecStart=\nExecStart=-"+agetty+" --autologin "+user+" --noclear %I $TERM\n", 0o644); err != nil {
 					return err
 				}
+			}
+			// Images without udev (jrei/systemd-debian): serial-getty@ttyS0 BindsTo=dev-ttyS0.device, which never appears, so the
+			// serial console would wait 90 s and then get no login. Replace it with a unit that has no device dependency.
+			if firstExisting(root, "/lib/systemd/systemd-udevd", "/usr/lib/systemd/systemd-udevd") == "" {
+				unit := "[Unit]\nDescription=omloader serial console login (image has no udev)\nAfter=systemd-user-sessions.service getty-pre.target\nBefore=getty.target\nConditionPathExists=/dev/ttyS0\n\n" +
+					"[Service]\nExecStart=-" + agetty + " --autologin " + user + " --noclear --keep-baud 115200,57600,38400,9600 ttyS0 $TERM\n" +
+					"Type=idle\nRestart=always\nRestartSec=1\nUtmpIdentifier=ttyS0\nTTYPath=/dev/ttyS0\nTTYReset=yes\nTTYVHangup=yes\nStandardInput=tty\nStandardOutput=tty\nIgnoreSIGPIPE=no\nSendSIGHUP=yes\n\n[Install]\nWantedBy=getty.target\n"
+				const up = "/etc/systemd/system/omloader-serial-getty.service"
+				if err := W(up, unit, 0o644); err != nil {
+					return err
+				}
+				if err := guestSymlink(root, "/etc/systemd/system/getty.target.wants/omloader-serial-getty.service", up); err != nil {
+					return err
+				}
+				if err := guestSymlink(root, "/etc/systemd/system/serial-getty@ttyS0.service", "/dev/null"); err != nil {
+					return err
+				}
+			} else {
+				guestRemove(root, "/etc/systemd/system/omloader-serial-getty.service")
+				guestRemove(root, "/etc/systemd/system/getty.target.wants/omloader-serial-getty.service")
 			}
 		}
 	} else {

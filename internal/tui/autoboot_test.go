@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"context"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -122,5 +124,47 @@ func TestAutoBootCancelledElsewhere(t *testing.T) {
 	m.Update(R('x'))
 	if !s.cancelled {
 		t.Fatal("cancel must be recorded")
+	}
+}
+
+type dockerSvc struct {
+	*fakeSvc
+	pulled string
+}
+
+func (d *dockerSvc) Sources() ([]SourceInfo, error) {
+	return []SourceInfo{{Name: "dockerhub", Type: "oci-registry", URL: "registry-1.docker.io", Usable: true, Mirror: "official", MirrorIDs: []string{"official", "auto", "1ms"}}}, nil
+}
+func (d *dockerSvc) PullDocker(ctx context.Context, source, image, name string, w io.Writer) error {
+	d.pulled = source + "|" + image + "|" + name
+	io.WriteString(w, "pull: ok\n")
+	return nil
+}
+
+func TestPullDockerForm(t *testing.T) {
+	s := &dockerSvc{fakeSvc: newFake()}
+	m := New(s, Theme{ASCII: true})
+	m.Init()
+	m.Update(R('2'))
+	m.Update(N("enter"))
+	mustHave(t, m, "Pull Docker image (experimental)", "Image (e.g. nginx:alpine)")
+	keys(m, "nginx:alpine\n\n")
+	waitOp(t, m)
+	if s.pulled != "dockerhub|nginx:alpine|" {
+		t.Fatalf("pulled %q", s.pulled)
+	}
+}
+
+func TestBootWithBusyboxShell(t *testing.T) {
+	m, _ := newModel(t, true)
+	m.Update(R(' ')) // image menu
+	mustHave(t, m, "Boot with the busybox shell (this boot only)")
+	for i := 0; i < 4; i++ {
+		m.Update(N("down"))
+	}
+	m.Update(N("enter"))
+	r := m.Result()
+	if !m.Done() || r.Kind != ResBoot || r.Boot.Shell != "busybox" || r.Boot.Snapshot != "current" || r.Boot.Ephemeral {
+		t.Fatalf("%+v done=%v", r, m.Done())
 	}
 }

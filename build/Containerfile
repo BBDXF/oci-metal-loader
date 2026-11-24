@@ -34,6 +34,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends kbd \
  && printf 'Terminus console fonts (Uni3-Terminus*.psf.gz) extracted from the Debian package console-setup-linux (source: console-setup, Terminus font by Dimitar Toshkov Zhekov, SIL Open Font License 1.1). See the package copyright in Debian bookworm.\n' > /usr/share/doc/console-setup-linux/copyright \
  && rm -rf /var/lib/apt/lists/* /var/cache/apt/* /var/log/* /usr/share/man /usr/share/info /usr/share/lintian /usr/share/locale \
  && find /usr/share/doc -type f ! -name copyright -delete && find /usr/share/doc -type d -empty -delete
+# crane (google/go-containerregistry, Apache-2.0): static registry client used by `omloader pull docker:IMAGE` (experimental OCI support); ~12 MB.
+# Pinned release + sha256 of the release tarball (bump both together: https://github.com/google/go-containerregistry/releases).
+ARG CRANE_VERSION=v0.22.1
+ARG CRANE_SHA256=0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0
+RUN curl -fsSL -o /tmp/crane.tgz "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
+ && echo "${CRANE_SHA256}  /tmp/crane.tgz" | sha256sum -c - \
+ && tar -xzf /tmp/crane.tgz -C /usr/local/bin crane \
+ && mkdir -p /usr/share/doc/crane && tar -xzf /tmp/crane.tgz -O LICENSE > /usr/share/doc/crane/copyright \
+ && rm -f /tmp/crane.tgz && /usr/local/bin/crane version
+
 # base description for /etc/omloader-release and packages.txt (see build/gen-base-info.sh; finished by mk-iso-inner.sh)
 COPY gen-base-info.sh /tmp/gen-base-info.sh
 RUN BASE_IMAGE=debian:$DEBIAN_RELEASE DEBIAN_MIRROR=$DEBIAN_MIRROR sh /tmp/gen-base-info.sh && rm -f /tmp/gen-base-info.sh

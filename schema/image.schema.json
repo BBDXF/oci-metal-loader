@@ -116,6 +116,14 @@
         "root_password": {
           "type": "string"
         },
+        "shell": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "image",
+            "busybox"
+          ]
+        },
         "debug_shell": {
           "type": "string",
           "enum": [

@@ -296,7 +296,7 @@ VM 客户系统通过 `kexec` 启动，关机时无法卸载存储，所以下�
 | `runtime.autologin` / `runtime.autologin_user` | bool / 字符串 | `guest_defaults` | 控制台自动登录；设置其中任一项则两者都取自镜像（用户为空 = root）。 |
 | `runtime.users[]` | 列表 | `guest_defaults.users` | 账号（`name`、`password`\|`password_hash`、`groups`、`shell`、`sudo`、`ssh_authorized_keys`）。只要设置（哪怕 `[]`）就替换默认列表。 |
 | `runtime.root_password` / `runtime.root_password_hash` | 字符串 | `guest_defaults` | 替换默认的 root 密码对。 |
-| `runtime.debug_shell` | `auto`\|`always`\|`never` | `auto` | 容器：客户系统没有 login/getty 时在控制台给 busybox shell。 |
+| `runtime.shell` | `auto`\|`image`\|`busybox` | `auto` | 容器：客户系统没有 login/getty 或没有 init 时的控制台 shell：`auto` = 镜像自带 shell（有就用），否则把加载器的静态 busybox 绑定挂载进去（不会进入快照）；`image` = 从不用 busybox；`busybox` = 强制。`debug_shell: always\|never` 是旧写法。单次启动覆盖：内核参数 `omloader.shell=`、`omloader boot --shell`、TUI 菜单「Boot with the busybox shell」。shell 能看到整个客户系统（所有进程，无命名空间）；busybox 小工具只是 PATH 的后备，选项比 GNU 工具少。 |
 | `runtime.shutdown_sync` | bool | `true` | 容器：安装关机钩子，关机时把加载器分区以只读重新挂载。 |
 | `data[]` | 列表 | – | 持久数据卷（仅容器）：`name`、`mount`（客户系统内绝对路径）、`backend`、`path`、`size`、`snapshot`、`shared`。 |
 | `data[].backend` | `dir`\|`ext4-file`\|… | – | **已实现：`dir`**（绑定挂载 `<data-root>/<镜像>/<名称>`，默认 data root 为 `/mnt/snap/data`）**和 `ext4-file`**（`<path>` 或 `<data-root>/<镜像>/<名称>.img`，按 `size` 创建，默认 1G）。`partition`、`disk`、`network` 被接受但会警告并跳过。 |
@@ -377,6 +377,7 @@ Ventoy 不能传内核参数，请改用 `boot.yaml`（`boot.extra_cmdline_flags
 | `omloader.snapshot=S` | 配合 `omloader.image`：`current`（默认）、`base` 或快照标签。 |
 | `omloader.ui=tui\|shell` | 没有自动启动时的控制台界面（优先于 `boot.ui`）。 |
 | `omloader.poweroff_on_fail=1` | 自动启动失败时关机。 |
+| `omloader.shell=auto\|image\|busybox` | 容器/OCI 启动的控制台 shell 策略（覆盖 `runtime.shell`）。 |
 | `omloader.experimental=oci` | 启用实验性 OCI 支持（等同 `OML_EXPERIMENTAL=oci`）。 |
 | `omloader.store=off` | 不挂载存储文件（维护用：离线检查/扩容）。 |
 | `omloader.font=NAME\|auto\|default` | Linux 控制台字体（[tui.md](tui.md)）。 |
@@ -417,6 +418,7 @@ usage:
   omloader import lxd PATH --name N --out IMAGES_ROOT [--force] [--autologin] [--data SPEC]...
   omloader images list [--source S] [--mirror M] [--type container|vm] [--os X] [--release R] [--variant V] [--arch amd64] [--offline] [-c omloader.yaml]
   omloader pull lxc:<os>/<release>[/<variant>] [--vm|--container] [--arch amd64] [--name N] [--out IMAGES_ROOT] [--source S] [--mirror M] [--variant V]
+  omloader pull docker:<image[:tag]> [--mirror auto|ID|official] [--name N] [--out IMAGES_ROOT] [--experimental-oci]   # experimental; uses the bundled crane (sources.md)
             [-c omloader.yaml] [--offline] [--force] [--no-probe] [--tmp DIR]
   omloader import lxd-vm PATH --name N --out IMAGES_ROOT [--no-probe]   (disk.qcow2 | dir with disk.qcow2 [+lxd.tar.xz])
   omloader source list|test [NAME] [--mirror M] [-c omloader.yaml] [--offline]   (M: official | auto | a server id from sources.yaml; docs/sources.md)

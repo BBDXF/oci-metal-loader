@@ -123,6 +123,7 @@ type Service interface {
 type BootRequest struct {
 	Image, Snapshot string
 	Ephemeral       bool
+	Shell           string // "busybox": boot with the injected busybox console shell for this boot only (omloader boot --shell)
 	Flags           string // auto-boot only: boot.extra_cmdline_flags (poweroff_on_fail=1, experimental=oci)
 }
 

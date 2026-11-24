@@ -16,6 +16,12 @@ func (m *Model) bootNow(image, snapshot string, eph bool) {
 	m.res, m.done = Result{Kind: ResBoot, Boot: BootRequest{Image: image, Snapshot: snapshot, Ephemeral: eph}}, true
 }
 
+// bootBB boots like bootNow but forces the busybox console shell for this one boot (omloader boot --shell busybox).
+func (m *Model) bootBB(image, snapshot string) {
+	m.bootNow(image, snapshot, false)
+	m.res.Boot.Shell = "busybox"
+}
+
 // dryRun streams `omloader boot --dry-run` for the given target.
 func (m *Model) dryRun(image, snapshot string, eph bool) {
 	m.startOp("boot preview (dry-run): "+image, func(ctx context.Context, w io.Writer) error {
@@ -179,7 +185,7 @@ func (m *Model) imageMenu() {
 		return
 	}
 	img := m.images[m.isel].Name
-	items := []string{L.MenuBootCurrent, L.MenuBootThrow, L.MenuOpenTree, L.MenuPreview, L.Cancel}
+	items := []string{L.MenuBootCurrent, L.MenuBootThrow, L.MenuOpenTree, L.MenuPreview, L.MenuBootBB, L.Cancel}
 	m.menu(img, items, func(i int) {
 		switch i {
 		case 0:
@@ -190,6 +196,8 @@ func (m *Model) imageMenu() {
 			m.OpenImage(img)
 		case 3:
 			m.dryRun(img, "current", false)
+		case 4:
+			m.bootBB(img, "current")
 		}
 	})
 }
@@ -225,6 +233,7 @@ func (m *Model) rowMenu(row TreeRow) {
 	}
 	add(L.MenuPrune, m.pruneMenu)
 	add(L.MenuVerify, m.verifyMenu)
+	add(L.MenuBootBB, func() { m.bootBB(m.image, "current") })
 	add(L.MenuDetails, func() { m.message(L.MenuDetails, false, m.detailsText(row)...) })
 	var items []string
 	for _, a := range acts {

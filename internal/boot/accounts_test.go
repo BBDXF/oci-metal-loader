@@ -287,3 +287,73 @@ func TestAdaptBusyboxAutologin(t *testing.T) {
 		t.Errorf("autologin not reverted: %q", it)
 	}
 }
+
+func TestConsoleShellPolicy(t *testing.T) {
+	mk := func(files ...string) string {
+		r := t.TempDir()
+		for _, p := range files {
+			os.MkdirAll(filepath.Dir(filepath.Join(r, p)), 0o755)
+			os.WriteFile(filepath.Join(r, p), []byte("x"), 0o755)
+		}
+		return r
+	}
+	launcher := func(r string) string { return rf(r, ".omloader/dbgshell") }
+	// entrypoint-only image WITHOUT a shell (distroless style): auto injects busybox, image has nothing to offer
+	r := mk("docker-entrypoint.sh")
+	Adapt(AdaptInput{Root: r, Image: "c", Busybox: "/bin/true", Runtime: config.Runtime{Network: "none"}})
+	if !strings.Contains(launcher(r), "exec /.omloader/busybox sh") {
+		t.Errorf("auto, no image shell: busybox expected:\n%s", launcher(r))
+	}
+	if st, err := os.Stat(filepath.Join(r, ".omloader/busybox")); err != nil || st.Size() != 0 {
+		t.Error("only an empty placeholder may land in the layer (the binary is bind-mounted at boot)")
+	}
+	// the same with shell: image -> no shell, warning
+	r = mk("docker-entrypoint.sh")
+	var w strings.Builder
+	Adapt(AdaptInput{Root: r, Image: "c", Busybox: "/bin/true", Runtime: config.Runtime{Network: "none", Shell: "image"}, Warn: &w})
+	if launcher(r) != "" || !strings.Contains(w.String(), "no console shell available") {
+		t.Errorf("shell: image without an image shell: %q %s", launcher(r), w.String())
+	}
+	// entrypoint-only image WITH a shell (nginx:alpine): auto uses the image's own shell, busybox forces busybox
+	r = mk("bin/sh", "docker-entrypoint.sh")
+	Adapt(AdaptInput{Root: r, Image: "c", Busybox: "/bin/true", Runtime: config.Runtime{Network: "none"}})
+	if !strings.Contains(launcher(r), "exec /bin/sh\n") {
+		t.Errorf("auto with an image shell:\n%s", launcher(r))
+	}
+	r = mk("bin/sh", "docker-entrypoint.sh")
+	Adapt(AdaptInput{Root: r, Image: "c", Busybox: "/bin/true", Runtime: config.Runtime{Network: "none", Shell: "busybox"}})
+	if !strings.Contains(launcher(r), "exec /.omloader/busybox sh") {
+		t.Errorf("shell: busybox must force busybox:\n%s", launcher(r))
+	}
+	// the wrapper starts the shell on /dev/console and tty1
+	if err := WriteWrapperEnv(r, config.Runtime{}); err != nil {
+		t.Fatal(err)
+	}
+	env := rf(r, ".omloader/env")
+	if !strings.Contains(env, "/.omloader/dbgshell </dev/console") || !strings.Contains(env, "/dev/tty1") {
+		t.Errorf("wrapper env:\n%s", env)
+	}
+	// legacy debug_shell: always == shell: busybox
+	if (config.Runtime{DebugShell: "always"}).ShellMode() != "busybox" || (config.Runtime{DebugShell: "never", Shell: "auto"}).ShellMode() != "auto" {
+		t.Error("ShellMode mapping")
+	}
+}
+
+func TestSerialGettyWithoutUdev(t *testing.T) {
+	r := t.TempDir()
+	for _, p := range []string{"lib/systemd/systemd", "lib/systemd/system/getty@.service", "lib/systemd/system/getty.target", "sbin/agetty", "bin/login"} {
+		os.MkdirAll(filepath.Dir(filepath.Join(r, p)), 0o755)
+		os.WriteFile(filepath.Join(r, p), []byte("x"), 0o755)
+	}
+	Adapt(AdaptInput{Root: r, Image: "c", Busybox: "/bin/true", Runtime: config.Runtime{Network: "none", Autologin: boolp(true)}})
+	u := rf(r, "etc/systemd/system/omloader-serial-getty.service")
+	if !strings.Contains(u, "--autologin root") || !strings.Contains(u, "ttyS0") || strings.Contains(u, "dev-") {
+		t.Errorf("serial getty unit for udev-less images:\n%s", u)
+	}
+	if l, _ := os.Readlink(filepath.Join(r, "etc/systemd/system/serial-getty@ttyS0.service")); l != "/dev/null" {
+		t.Error("the device-bound serial-getty@ttyS0 must be masked")
+	}
+	if _, err := os.Lstat(filepath.Join(r, "etc/systemd/system/multi-user.target.wants/getty.target")); err != nil {
+		t.Error("getty.target must be pulled in (empty multi-user.target.wants in minimal images)")
+	}
+}

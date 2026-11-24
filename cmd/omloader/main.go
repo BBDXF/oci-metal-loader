@@ -23,7 +23,7 @@ const usage = `usage:
   omloader config get [-c omloader.yaml] KEY   (print one resolved value, e.g. boot.default_image; for scripts)
   omloader boot --image NAME [--snapshot current|base|LABEL] [--ephemeral] [-c global.yaml]
             [--images-root DIR] [--snap-root DIR] [--dry-run] [--no-kexec] [--exec-cmd-log FILE]
-            [--force] [--ro] [--no-inject] [--data-root DIR]
+            [--force] [--ro] [--no-inject] [--data-root DIR] [--shell auto|image|busybox]
   omloader tui [-c omloader.yaml] [--images-root DIR] [--snap-root DIR] [--data-root DIR] [--ascii]   (interactive terminal UI; docs/tui.md)
   omloader guest-assemble --plan /omloader/plan.json   (runs inside the guest initramfs)
   omloader snapshot <op> ...   (run 'omloader snapshot' for the operations)
@@ -125,8 +125,15 @@ func runBoot(args []string, out, errw io.Writer) int {
 	dataRoot := fs.String("data-root", "", "data volumes root (default <snap-root>/../data)")
 	expOCI := fs.Bool("experimental-oci", false, "enable experimental Docker/OCI image support")
 	noInj := fs.Bool("no-inject", false, "do not append the guest-assemble initrd")
+	shell := fs.String("shell", "", "console shell for this boot: auto | image | busybox (overrides runtime.shell; default: the omloader.shell= kernel flag)")
 	if pos, err := parse(fs, args); err != nil || len(pos) > 0 {
 		return 1
+	}
+	if *shell == "" {
+		*shell = kernelArg("omloader.shell")
+	}
+	if *shell != "" && *shell != "auto" && *shell != "image" && *shell != "busybox" {
+		return fail(fmt.Errorf("--shell must be auto, image or busybox"))
 	}
 	if *image == "" || strings.ContainsAny(*image, "/\\") || *image == ".." {
 		return fail(fmt.Errorf("--image NAME required (no path separators)"))
@@ -150,7 +157,7 @@ func runBoot(args []string, out, errw io.Writer) int {
 		return fail(err)
 	}
 	o := boot.Options{Image: *image, Snapshot: *snap, ImagesRoot: *ir, SnapRoot: *sr,
-		DryRun: *dry, NoKexec: *nok, Ephemeral: *eph, RO: *ro, NoInject: *noInj, DataRoot: *dataRoot, Global: *cfg, Out: out, Warn: errw}
+		Shell: *shell, DryRun: *dry, NoKexec: *nok, Ephemeral: *eph, RO: *ro, NoInject: *noInj, DataRoot: *dataRoot, Global: *cfg, Out: out, Warn: errw}
 	plan, err := boot.BuildPlan(o, res, dir)
 	if err != nil {
 		return fail(err)
@@ -273,4 +280,18 @@ func runVersion(args []string, out, errw io.Writer) int {
 		}
 	}
 	return 0
+}
+
+// kernelArg returns the value of NAME=value on the kernel command line ("" when absent).
+func kernelArg(name string) string {
+	b, err := os.ReadFile("/proc/cmdline")
+	if err != nil {
+		return ""
+	}
+	for _, a := range strings.Fields(string(b)) {
+		if v, ok := strings.CutPrefix(a, name+"="); ok {
+			return v
+		}
+	}
+	return ""
 }

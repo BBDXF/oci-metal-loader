@@ -140,11 +140,21 @@ sources:
 
 ## Docker Hub (experimental)
 
-OCI images stay experimental (`experimental.oci_images`) and omloader has **no registry client**: `dockerhub` and its proxies are only
-used by `omloader source test dockerhub [--mirror auto]` (reachability/latency) and `omloader source ref IMAGE` (prints the image
-reference rewritten for the chosen proxy). Fetch the image on a machine with skopeo and import it:
+OCI images stay experimental (off by default: `experimental.oci_images: true`, `omloader.experimental=oci` or `--experimental-oci`). The loader ISO bundles the
+static registry client **`crane`** (google/go-containerregistry, Apache-2.0, pinned + sha256-checked in `build/Containerfile`, about 12 MB) and
+`omloader pull docker:IMAGE` shells out to it:
 
 ```
+omloader pull docker:nginx:alpine --mirror auto --experimental-oci --out /mnt/images/images        # name defaults to nginx-alpine
+omloader pull docker:jrei/systemd-debian:12 --mirror official --name debian-systemd --experimental-oci
+```
+
+`--mirror auto` probes the servers (`omloader source test dockerhub`) and tries them fastest first; a server that fails (HTTP 403/denied, as some
+proxies do for blobs or whole namespaces) is skipped and the next one is used. `--mirror ID|official` starts with that server, then the others.
+The archive is cached in `<cache>/oci/` (`--offline` imports from there without the network), then imported like `omloader import oci-archive`.
+In the TUI, Enter on the `dockerhub` source in the Pull tab asks for the image reference and runs the same pull. Without `crane` (a dev machine) the command
+says how to install it; `omloader source ref IMAGE` still prints the proxy-rewritten reference for skopeo/crane/podman. Checked 2026-11-24 from a CN-less
+network: official and xuanyuan served every image; `1ms` answered manifests but blobs with 403; `daocloud` denied `jrei/*`.
 skopeo copy docker://$(omloader source ref nginx:1 --mirror auto) oci-archive:nginx.tar:nginx
 omloader import oci-archive nginx.tar --name nginx --out IMAGES_ROOT --experimental-oci
 ```

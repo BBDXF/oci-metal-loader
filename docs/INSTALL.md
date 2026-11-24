@@ -300,7 +300,7 @@ Located at `<images>/<name>/image.yaml`; written by `pull`/`import`, hand-editab
 | `runtime.autologin` / `runtime.autologin_user` | bool / string | `guest_defaults` | Console autologin; if you set either, both come from the image (empty user = root). |
 | `runtime.users[]` | list | `guest_defaults.users` | Accounts (`name`, `password`\|`password_hash`, `groups`, `shell`, `sudo`, `ssh_authorized_keys`). Setting it (even `[]`) replaces the default list. |
 | `runtime.root_password` / `runtime.root_password_hash` | string | `guest_defaults` | Replaces the default root password pair. |
-| `runtime.debug_shell` | `auto`\|`always`\|`never` | `auto` | Containers: busybox shell on the console when the guest has no login/getty. |
+| `runtime.shell` | `auto`\|`image`\|`busybox` | `auto` | Containers: console shell when the guest has no login/getty or no init: `auto` = the image's own shell if it has one, else the loader's static busybox is bind-mounted (never stored in a snapshot); `image` = never busybox; `busybox` = force it. `debug_shell: always\|never` is the old spelling. Override for one boot: `omloader.shell=` kernel flag, `omloader boot --shell`, TUI menu *Boot with the busybox shell*. The shell sees the whole guest (all processes, no namespaces); busybox applets are only a PATH fallback and have fewer options than GNU tools. |
 | `runtime.shutdown_sync` | bool | `true` | Containers: install hooks that remount the loader partitions read-only at poweroff. |
 | `data[]` | list | – | Persistent data volumes (containers only): `name`, `mount` (absolute path in guest), `backend`, `path`, `size`, `snapshot`, `shared`. |
 | `data[].backend` | `dir`\|`ext4-file`\|… | – | **Implemented: `dir`** (bind mount of `<data-root>/<image>/<name>`, default data root `/mnt/snap/data`) **and `ext4-file`** (`<path>` or `<data-root>/<image>/<name>.img`, created at `size`, default 1G). `partition`, `disk`, `network` are accepted but skipped with a warning. |
@@ -381,6 +381,7 @@ Ventoy cannot pass kernel parameters; use `boot.yaml` (`boot.extra_cmdline_flags
 | `omloader.snapshot=S` | With `omloader.image`: `current` (default), `base` or a snapshot label. |
 | `omloader.ui=tui\|shell` | Console UI when nothing boots automatically (wins over `boot.ui`). |
 | `omloader.poweroff_on_fail=1` | Power off if the automatic boot fails. |
+| `omloader.shell=auto\|image\|busybox` | Console shell policy of container/OCI boots (overrides `runtime.shell`). |
 | `omloader.experimental=oci` | Enable the experimental OCI support (same as `OML_EXPERIMENTAL=oci`). |
 | `omloader.store=off` | Do not attach a store file (maintenance: offline check/grow). |
 | `omloader.font=NAME\|auto\|default` | Linux console font ([tui.md](tui.md)). |
@@ -421,6 +422,7 @@ usage:
   omloader import lxd PATH --name N --out IMAGES_ROOT [--force] [--autologin] [--data SPEC]...
   omloader images list [--source S] [--mirror M] [--type container|vm] [--os X] [--release R] [--variant V] [--arch amd64] [--offline] [-c omloader.yaml]
   omloader pull lxc:<os>/<release>[/<variant>] [--vm|--container] [--arch amd64] [--name N] [--out IMAGES_ROOT] [--source S] [--mirror M] [--variant V]
+  omloader pull docker:<image[:tag]> [--mirror auto|ID|official] [--name N] [--out IMAGES_ROOT] [--experimental-oci]   # experimental; uses the bundled crane (sources.md)
             [-c omloader.yaml] [--offline] [--force] [--no-probe] [--tmp DIR]
   omloader import lxd-vm PATH --name N --out IMAGES_ROOT [--no-probe]   (disk.qcow2 | dir with disk.qcow2 [+lxd.tar.xz])
   omloader source list|test [NAME] [--mirror M] [-c omloader.yaml] [--offline]   (M: official | auto | a server id from sources.yaml; docs/sources.md)

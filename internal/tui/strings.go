@@ -51,6 +51,7 @@ type Strings struct {
 	InfoTitle, OpSuccessText, RetWhat, PosFmt, HelpHere                                                             string
 	ASCIINote                                                                                                       string
 	TooSmall                                                                                                        string
+	MenuBootBB                                                                                                      string
 	AutoBootBanner, AutoBootCancelled                                                                               string
 }
 
@@ -125,7 +126,7 @@ func English() Strings {
 		StorePath: "Store file path", StoreWizard: "Store file wizard", StoreGuard: "Space guard", StoreGuardOK: "ok", StoreGuardLow: "BELOW min_free_percent: create/boot are refused",
 		StoreDirty: "NOT clean (run `omloader store check`)", StoreClean: "clean",
 
-		AutoBootBanner: "Booting %s (%s) in %d s -- press any key to cancel", AutoBootCancelled: "Auto-boot cancelled.",
+		MenuBootBB: "Boot with the busybox shell (this boot only)", AutoBootBanner: "Booting %s (%s) in %d s -- press any key to cancel", AutoBootCancelled: "Auto-boot cancelled.",
 		NetTitle: "Network", SettingsTitle: "Settings (read-only, resolved config with source layer)",
 		HelpTitle:  "Help",
 		HelpScroll: "Up/Down/PgUp/PgDn: scroll    Esc / q / ?: close",

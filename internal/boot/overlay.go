@@ -111,6 +111,9 @@ func ExecuteOverlay(o Options, res *config.Resolved, p *Plan, r Runner) (*Switch
 	rtc := config.EffectiveRuntime(res.Config.GuestDefaults, img.Runtime)
 	hostName, keepHost := config.ResolveHostname(res.Config.GuestDefaults, img.Runtime, o.Image)
 	rtc.Hostname = hostName
+	if o.Shell != "" {
+		rtc.Shell = o.Shell
+	}
 	warn, out := o.Warn, o.Out
 	if warn == nil {
 		warn = io.Discard
@@ -195,6 +198,9 @@ func ExecuteOverlay(o Options, res *config.Resolved, p *Plan, r Runner) (*Switch
 		if applied {
 			fmt.Fprintln(out, "OMLOADER: firstboot adapter applied")
 		}
+		if err := o.bindBusybox(r, warn); err != nil {
+			return fail(err)
+		}
 		if err := o.bindData(r, img.Data, warn); err != nil {
 			return fail(err)
 		}
@@ -214,6 +220,44 @@ func ExecuteOverlay(o Options, res *config.Resolved, p *Plan, r Runner) (*Switch
 	(&snapmgr.Store{Root: o.SnapRoot, Image: o.Image}).MarkInUse(p.Target)
 	fmt.Fprintf(out, "OMLOADER: overlay root ready at %s (layers=%d), init=%s\n", o.NewRoot, len(p.Layers), strings.Join(spec.Init, " "))
 	return spec, nil
+}
+
+// bindBusybox makes the loader's static busybox available in the guest without ever storing it in a snapshot layer: the binary
+// is bind-mounted (read-only) over the empty /.omloader/busybox placeholder of the adapted image, and its applets are symlinked in a
+// tmpfs at /.omloader/bin (PATH fallback of the console shell). Both mounts live in the new root and survive switch_root.
+func (o Options) bindBusybox(r Runner, warn io.Writer) error {
+	if o.Busybox == "" || !guestExists(o.NewRoot, guestHelperDir+"/busybox") {
+		return nil
+	}
+	dst, err := walkInRoot(o.NewRoot, guestHelperDir+"/busybox", false)
+	if err != nil {
+		return err
+	}
+	if err := runCmd(r, "mount", "--bind", o.Busybox, dst); err != nil {
+		return err
+	}
+	if err := runCmd(r, "mount", "-o", "remount,bind,ro", dst); err != nil {
+		fmt.Fprintf(warn, "warning: busybox stays writable: %v\n", err)
+	}
+	bin, err := walkInRoot(o.NewRoot, guestHelperDir+"/bin", true)
+	if err != nil {
+		return err
+	}
+	if err := runCmd(r, "mount", "-t", "tmpfs", "-o", "size=1m,mode=755", "tmpfs", bin); err != nil {
+		fmt.Fprintf(warn, "warning: no tmpfs for the busybox applet links: %v\n", err)
+		return nil
+	}
+	list, err := exec.Command(o.Busybox, "--list").Output()
+	if err != nil {
+		fmt.Fprintf(warn, "warning: busybox --list failed: %v\n", err)
+		return nil
+	}
+	for _, name := range strings.Fields(string(list)) {
+		if name != "busybox" && !strings.ContainsAny(name, "/.") {
+			os.Symlink(guestHelperDir+"/busybox", filepath.Join(bin, name))
+		}
+	}
+	return nil
 }
 
 // bindModules bind-mounts the loader's module tree read-only into the guest so it can modprobe after the

@@ -34,3 +34,4 @@ The stage-1 initramfs contains busybox, util-linux (`mount`, `umount`, `blkid`, 
 * `gopkg.in/yaml.v3` — MIT / Apache-2.0 (config parsing).
 * The terminal UI (`internal/tui`, see `../docs/tui.md`) is written against the Go standard library only: no extra third-party
   code or licenses were added for it.
+* `crane` (google/go-containerregistry, Apache-2.0): static registry client for the experimental `omloader pull docker:IMAGE`; downloaded at build time (release tarball, sha256 pinned in `build/Containerfile`), license text in `/usr/share/doc/crane/copyright`. Adds about 12 MB to the live system.

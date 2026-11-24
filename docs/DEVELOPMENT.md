@@ -318,16 +318,20 @@ Written offline into the node's upper (symlink-safe: every path is resolved insi
           shell: /bin/bash               # default /bin/bash if present, else /bin/sh
           sudo: true                     # /etc/sudoers.d/90-omloader-alice (0440): NOPASSWD if no password is configured, else password required
           ssh_authorized_keys: ["ssh-ed25519 AAAA... alice@host"]   # ~/.ssh/authorized_keys 0600 (rewritten from the config)
-      debug_shell: auto          # auto | always | never (see below)
+      shell: auto                # auto | image | busybox: console shell when there is no getty/login or no init (see below); debug_shell is the old spelling
       shutdown_sync: true        # default true
 
 Accounts: `/etc/passwd`, `/etc/shadow`, `/etc/group`, `/etc/gshadow` are edited in place (modes/owners kept; uid/gid allocated from 1000, a same-named private group is created,
 `/etc/skel` is copied, home directory and keys are chowned by numeric id). Existing users keep uid/gid/home and only get the changed fields.
 Autologin uses the guest's own `agetty` (`--autologin <user>`); a `getty.target.wants/getty@tty1.service` link is added so tty1 always has a getty; ttyS0 is spawned by systemd's getty generator
 because the loader passes `console=tty0 console=ttyS0,115200` (the guest shares the loader kernel command line).
-**Debug shell fallback**: if the guest has no usable getty+login (no `agetty|getty` and `login`; a guest `busybox` counts for both) `debug_shell: auto` starts the omloader static busybox
-(`/.omloader/dbgshell`) as a respawning shell on `/dev/console`: a `omloader-debug-shell.service` for systemd, a `::respawn:` line for busybox init, a `respawn` line for sysvinit;
-with the entrypoint wrapper (no init) only `debug_shell: always` runs it in the background. The shell prints `OMLOADER_DEBUG_SHELL ...`.
+**Console shell (`runtime.shell`: auto | image | busybox)**: used when the guest has no usable getty+login (a guest `busybox` counts for both), or no init at all (entrypoint-only images such as `nginx:alpine`).
+`auto` runs the image's own shell (`/bin/bash`, `/bin/sh`, `/bin/ash`) when it has one, otherwise the loader's static busybox; `image` never uses busybox; `busybox` forces it. The loader's busybox is
+**bind-mounted** (read-only) over an empty `/.omloader/busybox` placeholder at every boot and its applets are symlinked in a tmpfs at `/.omloader/bin`, so no binary lands in a snapshot layer;
+`/.omloader/bin` is only a PATH fallback for the console shell. For one boot the setting can be overridden with the `omloader.shell=` kernel flag, `omloader boot --shell` or the TUI menu entry *Boot with the busybox shell*.
+The shell is `/.omloader/dbgshell` as a respawning job: a `omloader-debug-shell.service` for systemd, a `::respawn:` line for busybox init, a `respawn` line for sysvinit, and with the entrypoint wrapper (no init)
+a background loop on `/dev/console` and `/dev/tty1` (the wrapper mounts /proc, /sys, /dev, /run, /tmp itself). It sees the whole guest (all processes, no namespaces) and prints `OMLOADER_DEBUG_SHELL ...`.
+Images without udev (e.g. `jrei/systemd-debian`) get an own `omloader-serial-getty.service` for ttyS0 (the stock `serial-getty@ttyS0` waits for a device unit that never appears) and `getty.target` is pulled into `multi-user.target`.
 **Clean shutdown**: before `switch-root`, `autoboot.sh` bind-mounts the OMLOADER and VTOYDATA partitions at `/.omloader/snap` and `/.omloader/images` inside the new root and records
 `<name> <device> <fstype>` in `/.omloader/devs`. The adapter installs `/.omloader/sync.sh` (`sync`, `mount -o remount,ro`, `sync` per partition; if systemd-shutdown already detached the bind
 mounts it mounts the device again, which shares the same superblock, and remounts that read-only) and runs it: systemd = `/usr/lib/systemd/system-shutdown/omloader-sync.sh`

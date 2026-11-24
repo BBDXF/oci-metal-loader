@@ -120,7 +120,11 @@ func tuiBoot(s *realSvc, req tui.BootRequest, out, errw io.Writer) int {
 	}
 	udev := func(q string) { exec := &boot.ExecRunner{}; exec.Run("udevadm", "control", q) }
 	udev("--stop-exec-queue")
-	rc := runBoot(s.bootArgs(req.Image, req.Snapshot, req.Ephemeral), out, errw)
+	args := s.bootArgs(req.Image, req.Snapshot, req.Ephemeral)
+	if req.Shell != "" {
+		args = append(args, "--shell", req.Shell)
+	}
+	rc := runBoot(args, out, errw)
 	if rc != 0 {
 		udev("--start-exec-queue")
 	}
@@ -556,6 +560,31 @@ func (s *realSvc) Pull(ctx context.Context, source string, it tui.CatalogItem, n
 	}
 	return nil
 }
+
+// PullDocker implements tui.DockerPuller (experimental OCI support).
+func (s *realSvc) PullDocker(ctx context.Context, source, image, name string, w io.Writer) error {
+	setOpCtx(ctx)
+	source, mirror := splitSource(source)
+	a := []string{"docker:" + image, "--source", source, "--out", s.imagesRoot}
+	if name != "" {
+		a = append(a, "--name", name)
+	}
+	if mirror != "" {
+		a = append(a, "--mirror", mirror)
+	}
+	if s.cfgPath != "" {
+		a = append(a, "-c", s.cfgPath)
+	}
+	if rc := runPull(a, w, w); rc != 0 {
+		if ctx.Err() != nil {
+			return fmt.Errorf("cancelled")
+		}
+		return fmt.Errorf("pull failed (rc=%d)", rc)
+	}
+	return nil
+}
+
+var _ tui.DockerPuller = (*realSvc)(nil)
 
 func (s *realSvc) PullBytes() int64 {
 	c, err := s.cfg()

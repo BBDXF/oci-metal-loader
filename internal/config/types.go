@@ -222,7 +222,10 @@ type Runtime struct {
 	Users            []User `yaml:"users" json:"users"`
 	RootPasswordHash string `yaml:"root_password_hash" json:"root_password_hash"`
 	RootPassword     string `yaml:"root_password" json:"root_password"` // plain text: hashed (SHA-512 crypt) by the loader; prefer root_password_hash
-	// DebugShell: auto (busybox shell on the console when the guest has no getty/login), always, never.
+	// Shell chooses the console shell omloader provides when the guest has no getty/login (or no init at all, e.g. nginx:alpine):
+	// auto (default: the image's own shell when it has one, else an injected static busybox), image (never inject busybox) or busybox (force it).
+	Shell string `yaml:"shell" json:"shell"`
+	// DebugShell is the old spelling: auto, always (= shell: busybox), never (= shell: image). `shell` wins when both are set.
 	DebugShell string `yaml:"debug_shell" json:"debug_shell"`
 	// ShutdownSync (default true) installs the hooks that remount the loader partitions read-only at poweroff.
 	ShutdownSync *bool `yaml:"shutdown_sync" json:"shutdown_sync"`
@@ -277,6 +280,19 @@ func EnvOCI() bool {
 
 // OCIEnabled is true when the config key or the environment opts in to OCI images.
 func (c *Config) OCIEnabled() bool { return c.Experimental.OCIImages || EnvOCI() }
+
+// ShellMode is the effective console shell policy: auto | image | busybox.
+func (rt Runtime) ShellMode() string {
+	switch {
+	case rt.Shell != "":
+		return rt.Shell
+	case rt.DebugShell == "always":
+		return "busybox"
+	case rt.DebugShell == "never":
+		return "image"
+	}
+	return "auto"
+}
 
 // GuestDefaults are the accounts and console autologin that every image (lxd-container, lxd-vm, experimental oci) gets at boot
 // unless the image sets its own (merge rules: EffectiveRuntime). The password is public by design.
