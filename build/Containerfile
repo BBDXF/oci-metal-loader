@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       util-linux e2fsprogs exfatprogs ntfs-3g xfsprogs squashfs-tools lvm2 dmsetup kpartx kexec-tools qemu-utils xz-utils \
       parted gdisk fdisk cryptsetup \
       iproute2 iputils-ping ca-certificates curl iwd wireless-regdb \
-      linux-image-amd64 firmware-linux-free firmware-misc-nonfree firmware-realtek firmware-iwlwifi \
+      linux-image-amd64 firmware-linux-free firmware-amd-graphics firmware-intel-graphics firmware-bnx2 firmware-bnx2x firmware-misc-nonfree firmware-realtek firmware-iwlwifi \
       less nano vim-tiny busybox-static procps pciutils usbutils \
  && rm -f /boot/initrd.img-* \
  && rm -rf /var/lib/apt/lists/* /var/cache/apt/* /var/log/* /usr/share/man /usr/share/info /usr/share/lintian /usr/share/locale \
