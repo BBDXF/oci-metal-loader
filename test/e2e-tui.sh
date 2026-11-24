@@ -35,8 +35,8 @@ sources:
 cache:
   path: /mnt/snap/cache
 EOT
-VTOY_EXTRA=$W/tui-extra NO_VM=1 DISK_GB=${DISK_GB:-6} $T/make-disk.sh
-cp --sparse=always $O/usb.raw $D; export DISK=$D
+OUT=$D VTOY_EXTRA=$W/tui-extra NO_VM=1 DISK_GB=${DISK_GB:-6} $T/make-disk.sh   # own disk file: out/usb.raw belongs to e2e-ventoy
+export DISK=$D
 python3 -m http.server $PORT --bind 127.0.0.1 --directory $O/lxdsrv/www > $W/tui-http.log 2>&1 &
 SRVPID=$!
 sleep 1

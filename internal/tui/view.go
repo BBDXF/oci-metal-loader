@@ -92,6 +92,10 @@ func (m *Model) View() *Canvas {
 		}
 		c.Put(1, m.H-2, trunc(m.status, m.W-2), st)
 	}
+	if m.autoOn {
+		c.Fill(0, m.H-2, m.W, 1, StSel)
+		c.Put(1, m.H-2, trunc(fmt.Sprintf(L.AutoBootBanner, m.auto.Image, m.auto.Snapshot, m.autoLeft()), m.W-2), StSel)
+	}
 	c.Fill(0, m.H-1, m.W, 1, StKeys)
 	c.Put(0, m.H-1, " "+trunc(m.hint(), m.W-2), StKeys)
 	if m.dlg != nil {

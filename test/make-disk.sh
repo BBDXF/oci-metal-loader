@@ -51,7 +51,7 @@ else
 fi
 rm -f $ST
 truncate -s ${P2_MB}M $P2; mkfs.ext4 -q -L OMLOADER -d $W/stage2 $P2
-D=$O/usb.raw; rm -f $D; truncate -s ${DISK_GB}G $D
+D=${OUT:-$O/usb.raw}; rm -f $D; truncate -s ${DISK_GB}G $D
 printf 'label: gpt\nstart=2048, size=%sMiB, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7, name=VTOYDATA\ntype=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name=OMLOADER\n' $P1_MB | sfdisk -q $D
 dd if=$P1 of=$D bs=1M seek=1 conv=notrunc,sparse status=none
 dd if=$P2 of=$D bs=512 seek=$((2048+P1_MB*2048)) conv=notrunc,sparse status=none

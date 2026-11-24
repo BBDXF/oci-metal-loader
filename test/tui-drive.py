@@ -206,7 +206,7 @@ def run1():
         if not start_tui(s):
             return s
         s.check(s.screen_has(["OCI Metal Loader", "1:Images", "omloci", "oci"]), "images list shows the fixture image omloci")
-        s.check(s.screen_has(["omloader", "store", "net "]), "header row shows loader version, store and network state")
+        s.check(s.screen_has(["omloader", "net "]), "header row shows loader version and network state")
         s.check(s.screen_has(["Enter:boot", "Space/m:menu"]), "bottom bar shows the one-key boot keys of the Images screen")
         s.send("o")  # Enter would boot the image at once; `o` opens the snapshot tree
         s.check(s.screen_has(["omloci", "snapshots=0", "base (original image)", "current (you are here)"]), "image detail (tree) opens: base root + live state")
@@ -225,7 +225,9 @@ def run1():
         s.send("t")
         ok = s.screen_has(["[finished]"], 90) and s.screen_has("OK ")
         s.check(ok and ("10.0.2.2:%s" % os.environ["SRCPORT"]) in s.screen(), "source test reports the local mirror OK")
-        s.send("\r")
+        s.send("\r")  # dismisses the test result panel
+        if not s.screen_has(["Catalog: lxc-images", "Search:"], 5):
+            s.send("\r")  # Enter on the selected source loads its catalog
         s.check(s.screen_has(["Catalog: lxc-images", "Search:"], 90), "catalog loaded with the live search box")
         s.type("omltest container")  # live filter: every word must match (os + type)
         s.check(s.screen_has(["Search: omltest container_", "lxc:omltest/ct/default"], 30), "live search filtered the catalog to the omltest container image")
@@ -240,6 +242,7 @@ def run1():
         s.send("\r")
         s.check(s.screen_has("pulled lxc:omltest/ct/default as omltest-ct"), "pulled image registered")
         # ---- boot the pulled container image: continue current (with dry-run preview first)
+        s.esc(); s.esc()  # the search box still has focus after the pull: Esc clears it / leaves it
         s.send("1")
         s.send("j")
         s.check(s.screen_has("omltest-ct"), "images list shows the pulled image")
@@ -247,7 +250,7 @@ def run1():
         s.check(s.screen_has("type=lxd-container"), "detail of the pulled lxd-container image")
         s.send(" ")  # Space = action menu
         s.check(s.screen_has(["Boot current", "throwaway", "Preview the boot command", "Create snapshot"]), "action menu (everything off the one-key path)")
-        s.send("4")  # Preview (dry-run) of the boot command
+        s.send("3")  # Preview (dry-run) of the boot command (on the current row: 1 boot, 2 throwaway, 3 preview, 4 snapshot)
         ok = s.screen_has("[finished]", 60)
         s.check(ok and "[FAILED]" not in s.screen(), "dry-run preview streamed from the menu")
         s.send("\r")

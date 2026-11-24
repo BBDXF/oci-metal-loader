@@ -13,6 +13,10 @@ func (m *Model) Update(k Key) {
 	if m.done {
 		return
 	}
+	if m.autoOn { // any key cancels the countdown (and is consumed)
+		m.autoCancel()
+		return
+	}
 	if m.help {
 		m.helpKey(k)
 		return

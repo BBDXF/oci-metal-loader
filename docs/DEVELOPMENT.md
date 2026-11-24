@@ -426,6 +426,22 @@ Default list: containers ubuntu/noble, debian/bookworm, alpine/3.21; VMs ubuntu/
 Real-image findings: LXD VM images mount `LABEL=UEFI` at `/boot/efi`; this needed a loader fix, see "VM guests and the ESP" below (no workaround any more). Alpine containers
 expect `eth0` (the loader kernel names NICs `en*`) and have no acpid, so ACPI power-off is forced.
 
+## Test tiers
+
+Remote KVM harness (set `OML_REMOTE=user@host`, `OML_REMOTE_PASS` or ssh keys; optional `OML_RDIR` = your own work dir on the host). `make help` lists every target with a one-line description; every e2e target prints `DURATION <script>: N s`.
+
+| Tier | When | Command | Suites | Approx. time |
+|---|---|---|---|---|
+| 1 unit | every change | `make test` | gofmt, vet, `go test ./...` (TUI frames, config, snapshots, pull) | seconds |
+| 2 quick | boot/ISO/base changes, before pushing | `make e2e-quick` | `e2e-live` (ISO boots to TUI/shell, network, CA/TLS, tools, `version --long`) | ~1 min |
+| per module | the area you touched | `make e2e-tui` / `e2e-autoboot` / `e2e-ventoy` / `e2e-snap` / `e2e-store` / `e2e-pull` | one suite | tui ~1.5 min, autoboot ~4 min, ventoy ~10 min, others: not re-measured |
+| 3 full (release gate) | before a tag | `make e2e-full` | live, snap, tui, ventoy, autoboot, store, pull, real (ubuntu container + ubuntu VM only) | sequential sum, roughly 1 h+ (snap/store/pull/real not re-measured) |
+
+`e2e-full` runs `test/run-suites.sh` on the host: suites one after another, a failure does not stop the run, summary table with seconds per suite at the end.
+**Dropped from the full gate (overlap), still available on their own:** `e2e` (VM fixture, 3 boots; covered by the VM parts of e2e-snap/e2e-store/e2e-pull), `e2e-oci` (OCI fixture boots; covered by e2e-snap and e2e-store A), `e2e-ui` (console login/users/sudo, busybox fallback, clean fs after poweroff; the clean-fs check is also in e2e-store), and the other `e2e-real` images (debian/alpine; only `ct:ubuntu/noble vm:ubuntu/noble` stay).
+Parallel runs (distinct `OML_RDIR` per suite, e.g. `make -j`) are possible on a big host but not wired up: each directory needs its own ISO/fixture build, so the gain is small for the quick suites.
+Measured on the 12-core / 46 GB test host (qemu with KVM, 2 vCPU guests): e2e-live 56 s, e2e-tui 73 s, e2e-autoboot 223 s, e2e-ventoy 595 s (dominated by Ventoy: ~28 s OVMF/menu wait per boot plus the exFAT population VM for `ventoy.raw`, 6 Ventoy boots).
+
 ## Tests (optional remote KVM harness)
 `make e2e-snap` (`test/e2e-snap.sh`): snapshot management on the OCI fixture (continue-current (no new layer per boot)/create/list/stacking/delete with overlay merge/revert + --keep/ephemeral boots and gc/prune/verify/export/space guard/overlay flatten + boot of the flattened image/data volumes surviving revert)
 and on the VM fixture (continue-current/create/list/verify/dm delete-merge refusal/revert/ephemeral base boot/qcow2 export/dm flatten + boot of the flattened VM). Snapshot commands that need root run in the loader through the `omloader.hook=1` stage disk.

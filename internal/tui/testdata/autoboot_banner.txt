@@ -1,0 +1,24 @@
+ OCI Metal Loader  [1:Images] 2:Pull  3:Storage  4:Network  5:Settings    ASCII
+ omloader v9.9  |  store 3.0 GiB free / 8.0 GiB (store-file)  |  net 10.0.0.5
+NAME            TYPE          SIZE      BASE     SNAPS LIVE ON      LAST USED
+alpine          lxd-container 3.0 MiB   ok       3     b            01-03 11:00
+deb             lxd-vm        2.0 GiB   -        0     base         -
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ Booting alpine (current) in 7 s -- press any key to cancel
+ Enter:boot  o:snapshots  Space/m:menu  e:ephemeral  r:refresh  S:shell  ?:help

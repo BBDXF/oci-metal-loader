@@ -58,7 +58,7 @@ NTFS 注意：存放 **ISO 本身**的 Ventoy 分区不能是 NTFS（加载器�
   boot:
     default_image: ubuntu-noble   # 留空/不写 = 显示 TUI；`last` = TUI 上次启动的镜像
     default_snapshot: current     # current | base | 快照标签（标签/base = 一次性启动）
-    timeout: 5                    # 秒；按任意键取消倒计时并打开 TUI
+    timeout: 10                   # 秒；按任意键取消倒计时并打开 TUI
   ```
   控制台（tty1 和串口）每秒显示 `Booting 'ubuntu-noble' (current) in N s -- press any key for the menu`。按键会打开 TUI（`boot.ui: shell` 时为 shell）；否则按预选的镜像+快照启动，效果与 `omloader boot` 相同。
 - 在 TUI 里按 `S`（或 `q` 退出）进入 root shell（自动登录）。`poweroff` / `reboot` 照常使用，加载器会干净地卸载分区。
@@ -81,11 +81,11 @@ NTFS 注意：存放 **ISO 本身**的 Ventoy 分区不能是 NTFS（加载器�
    boot:
      default_image: ubuntu-noble   # 或 `last` = TUI 上次启动的镜像（需要 remember_last，默认开启）
      default_snapshot: current     # current | base | 快照标签（标签/base = 一次性启动）
-     timeout: 5                    # 秒
+     timeout: 10                   # 秒
    ```
    加载器起来后会打印 `Booting 'ubuntu-noble' (current) in N s -- press any key for the menu`，然后启动该镜像。
 
-**取消：** 在 Ventoy 菜单倒计时内按任意键（如方向键）即可停止并手动选择；在 omloader 倒计时内按**任意键**（键盘或串口控制台）则改为打开 TUI。
+**取消：** 在 Ventoy 菜单倒计时内按任意键（如方向键）即可停止并手动选择；omloader 的倒计时现在显示在 TUI 内（底部横幅 `Booting … in N s`，首帧画出后才开始计时，且不短于 5 秒；不会等待查看者，VNC 连接得比这更晚就可能错过）；按**任意键**（键盘、VNC 或串口控制台）取消并留在 TUI；`boot.ui: shell` 时仍由 shell 在 tty1/串口打印倒计时。
 **不经 Ventoy** 时（或在 GRUB 条目上按 `e` 编辑），可用内核参数：`omloader.image=ubuntu-noble omloader.snapshot=current` 立即启动、没有倒计时（优先于 `boot.yaml`）；更多参数见 `boot.extra_cmdline_flags`（[第 11 节](#11-内核命令行参数omloader)）。
 **故障排查：** *Ventoy 显示菜单并一直等待* → `VTOY_DEFAULT_IMAGE` 与 ISO 路径/文件名不符（或 `ventoy.json` 不在第一分区的 `ventoy/` 下）。*Ventoy 询问启动模式* → 选 *normal*（或 *GRUB2*）一次；memdisk 模式对该 ISO 无效，见 [ventoy.md](ventoy.md)。*进入了 TUI 而不是镜像* → 找不到/无效的 `boot.yaml`（`omloader config validate -c boot.yaml`）、`default_image` 为空、`last` 尚无记录，或按过键。快照要持久保存需要存储（第 3 节）。*（仅在 QEMU 中验证，真机未测试。）*
 
@@ -214,7 +214,7 @@ VM 客户系统通过 `kexec` 启动，关机时无法卸载存储，所以下�
 | 键 | 类型 | 默认值 | 含义 |
 |---|---|---|---|
 | `boot.default_image` | 字符串 | `""` | 内核命令行没有 `omloader.image=` 时，倒计时 `timeout` 秒后自动启动的镜像。空 = TUI/shell；`last` = TUI 上次启动的镜像。 |
-| `boot.timeout` | 整数 ≥ 0 | `5` | 倒计时秒数（按任意键取消并打开 TUI）。 |
+| `boot.timeout` | 整数 ≥ 0 | `10` | 倒计时秒数，在 TUI 内以横幅显示（按任意键取消；TUI 的倒计时不会短于 5 秒）。 |
 | `boot.remember_last` | 布尔 | `true` | TUI 把上次启动的镜像/快照记录到 `<数据分区>/omloader/last-boot`（3 行：镜像、快照、`ephemeral`），下次预选；`default_image: last` 会自动启动它。不可写则静默跳过。 |
 | `boot.default_snapshot` | 字符串 | `current` | `current`、`base` 或快照标签（标签/base 为一次性层）。同时是 `omloader boot --snapshot` 的默认值。 |
 | `boot.kernel_cmdline_extra` | 字符串 | `""` | 追加到 **VM** 客户系统内核命令行（在 `image.yaml kernel.cmdline` 之后）。 |

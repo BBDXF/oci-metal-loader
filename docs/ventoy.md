@@ -34,7 +34,7 @@ Create `omloader/boot.yaml` on VTOYDATA (or `/omloader/boot.yaml` next to the IS
 boot:
   default_image: myimage        # empty/absent = just the shell
   default_snapshot: current    # optional (default "current"; a snapshot label boots it ephemerally)
-  timeout: 5                    # seconds countdown; press Enter on the serial console or keyboard to get a shell instead
+  timeout: 10                   # countdown seconds (min. 5), shown in the TUI; press any key to cancel
   extra_cmdline_flags: [poweroff_on_fail=1]   # omloader.<flag> equivalents: poweroff_on_fail=1, experimental=oci, ...
 ```
 Without `omloader.image=` on the kernel command line `autoboot.sh` reads this file (`omloader config get boot.default_image` etc.), prints the countdown, then runs

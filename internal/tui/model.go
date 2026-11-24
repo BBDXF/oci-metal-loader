@@ -108,6 +108,11 @@ type Model struct {
 	netLines, settings []string
 	nsc, ssc           int
 	started            bool
+
+	auto    *AutoBoot // pending automatic boot (autoboot.go)
+	autoOn  bool
+	autoEnd time.Time
+	marks   []string
 }
 
 // New creates a model for an 80x24 terminal; call Init to load the first screen.
@@ -172,6 +177,7 @@ func (m *Model) startOp(title string, fn func(ctx context.Context, w io.Writer) 
 // Tick must be called periodically (and after Op.Wait in tests): it delivers operation completions.
 func (m *Model) Tick() {
 	m.refreshHeader(false)
+	m.autoTick()
 	o := m.op
 	if o == nil || o.handled {
 		return

@@ -164,6 +164,13 @@ func (t *Terminal) Run(m *Model, ready func()) Result {
 	if ready != nil {
 		ready()
 	}
+	flush := func() bool { // console-log marker lines (autoboot): printed between frames, then a full redraw
+		ms := m.TakeMarks()
+		for _, s := range ms {
+			fmt.Fprint(t.Out, "\r\n"+s+"\r\n")
+		}
+		return len(ms) > 0
+	}
 	tick := time.NewTicker(300 * time.Millisecond)
 	defer tick.Stop()
 	var pending []byte
@@ -189,13 +196,13 @@ func (t *Terminal) Run(m *Model, ready func()) Result {
 				m.Update(k)
 			}
 			m.Tick()
-			draw(redraw)
+			draw(redraw || flush())
 		case <-escTimer:
 			escTimer = nil
 			pending = nil
 			m.Update(N("esc"))
 			m.Tick()
-			draw(false)
+			draw(flush())
 		case s := <-sig:
 			if s == syscall.SIGWINCH {
 				m.W, m.H = t.Size()
@@ -205,7 +212,7 @@ func (t *Terminal) Run(m *Model, ready func()) Result {
 			return Result{Kind: ResQuit}
 		case <-tick.C:
 			m.Tick()
-			draw(false) // line-diffed: costs nothing when the frame did not change
+			draw(flush()) // line-diffed: costs nothing when the frame did not change
 		}
 	}
 	return m.Result()

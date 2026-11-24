@@ -10,7 +10,7 @@ say() { echo "$@"; echo "$@" > /dev/tty1 2>/dev/null; }
 
 # ---- boot config (no kernel parameters, e.g. under Ventoy): <data>/omloader/boot.yaml with boot.default_image ----
 # Without omloader.image=/hook/selftest on the kernel command line, look for boot.yaml (omloader.yaml format) on VTOYDATA,
-# OMLOADER or the partition holding the ISO. If boot.default_image is set: countdown boot.timeout s (Enter = shell), then
+# OMLOADER or the partition holding the ISO. If boot.default_image is set: countdown boot.timeout s (ui=shell: here, any key = menu; ui=tui: the TUI shows the countdown, see /run/omloader/autoboot), then
 # behave exactly as if omloader.image=<default_image> [omloader.snapshot=<default_snapshot>] [+ extra_cmdline_flags] was given.
 # image recorded by the TUI at its last boot (first line of <data>/omloader/last-boot); empty when absent
 last_boot_image() {
@@ -29,14 +29,23 @@ bootcfg_apply() {
       omloader config validate -c "$f" >/dev/null 2>&1 || say "OMLOADER_LOADER: ignoring invalid boot config $f ($(omloader config validate -c "$f" 2>&1 | head -1))"
       continue
     fi
-    TO=$(omloader config get -c "$f" boot.timeout 2>/dev/null); TO=${TO:-5}
+    TO=$(omloader config get -c "$f" boot.timeout 2>/dev/null); TO=${TO:-10}
     SN=$(omloader config get -c "$f" boot.default_snapshot 2>/dev/null)
     if [ "$DI" = last ]; then   # boot.default_image: last = what the TUI recorded at its last boot (<data>/omloader/last-boot: image, snapshot, ephemeral flag)
       DI=$(last_boot_image)
       if [ -z "$DI" ]; then say "OMLOADER_LOADER: boot config $f: default_image=last but nothing was booted yet (no last-boot file) -- menu"; continue; fi
       [ -z "$SN" ] && SN=current
     fi
-    FL=$(omloader config get -c "$f" boot.extra_cmdline_flags 2>/dev/null)
+    FL=$(omloader config get -c "$f" boot.extra_cmdline_flags 2>/dev/null | tr "\n" " ")
+    if [ "$(cat /run/omloader/ui 2>/dev/null)" = tui ]; then
+      # TUI mode: the TUI owns the countdown (banner, any key cancels; omloader tui reads /run/omloader/autoboot and creates
+      # /run/omloader/autoboot.claimed). Nothing blocks here (no getty delay, no tty reads). Watchdog: if the TUI never claims it,
+      # the shell path below boots after the countdown plus a grace period (autoboot.sh --fallback).
+      printf 'IMAGE="%s"\nSNAPSHOT="%s"\nTIMEOUT="%s"\nFLAGS="%s"\nCONFIG="%s"\n' "$DI" "${SN:-current}" "$TO" "$FL" "$f" > /run/omloader/autoboot
+      say "OMLOADER_LOADER: boot config $f: default_image=$DI snapshot=${SN:-current} timeout=${TO}s -- the TUI shows the countdown (any key there cancels)"
+      setsid -f /usr/local/lib/omloader/autoboot.sh --fallback </dev/null >/dev/null 2>&1
+      return 1
+    fi
     say "OMLOADER_LOADER: boot config $f: default_image=$DI snapshot=${SN:-current} timeout=${TO}s -- press any key within ${TO}s for the menu instead"
     ( : </dev/ttyS0 ) 2>/dev/null && exec 3</dev/ttyS0 || exec 3</dev/null
     ( : </dev/tty1 ) 2>/dev/null && exec 4</dev/tty1 || exec 4</dev/null
@@ -75,17 +84,33 @@ decide_ui() {
   if [ -n "$(arg omloader.image)" ] || [ "$(arg omloader.hook)" = 1 ] || [ "$(arg omloader.selftest)" = 1 ]; then ui=shell; fi
   echo "$ui" > /run/omloader/ui
 }
-mkdir -p /run/omloader; rm -f /run/omloader/uicfg
-decide_ui
-if [ -z "$(arg omloader.image)" ] && [ "$(arg omloader.hook)" != 1 ] && [ "$(arg omloader.selftest)" != 1 ]; then bootcfg_apply; fi
-# omloader.experimental=oci -> opt in to the experimental Docker/OCI image support (disabled by default)
-EXP=$(arg omloader.experimental); [ -n "$EXP" ] && export OML_EXPERIMENTAL="$EXP"
-echo 1 > /proc/sys/kernel/sysrq
 find_label() { blkid -L "$1" 2>/dev/null; }
 # clean shutdown of the loader's own partitions: flush, then remount read-only (marks the ext4 journal clean
 # / clears the exfat dirty flag), then power off. systemd's normal poweroff does this by itself; these paths bypass it.
 sync_ro() { sync; /usr/local/lib/omloader/mounts.sh stop >/dev/null 2>&1; for m in /mnt/snap /mnt/images; do mountpoint -q $m && mount -o remount,ro $m 2>/dev/null; done; sync; }
 poweroff_now() { sync_ro; echo o > /proc/sysrq-trigger; sleep 5; }
+mkdir -p /run/omloader
+if [ "${1:-}" = --poweroff ]; then echo 1 > /proc/sys/kernel/sysrq; sync_ro; echo o > /proc/sysrq-trigger; sleep 5; exit 0; fi   # used by the TUI auto-boot (poweroff_on_fail=1)
+if [ "${1:-}" = --fallback ]; then
+  # watchdog started by bootcfg_apply in TUI mode: the TUI claims the auto-boot when it starts; if it never does, boot here
+  say() { echo "$@"; }
+  . /run/omloader/autoboot 2>/dev/null || exit 0
+  eff=${TIMEOUT:-10}; case "$eff" in *[!0-9]*) eff=10;; esac; [ "$eff" -lt 5 ] && eff=5
+  sleep $((eff + 30))
+  [ -e /run/omloader/autoboot.claimed ] && exit 0
+  say "OMLOADER_LOADER: the TUI did not start; falling back to the shell auto-boot of '$IMAGE' (${SNAPSHOT})"
+  CMD="$CMD omloader.image=$IMAGE"
+  [ -n "$SNAPSHOT" ] && [ "$SNAPSHOT" != current ] && CMD="$CMD omloader.snapshot=$SNAPSHOT"
+  for ans in $FLAGS; do CMD="$CMD omloader.$ans"; done
+  BOOTCFG=$CONFIG
+else
+  rm -f /run/omloader/uicfg /run/omloader/autoboot /run/omloader/autoboot.claimed /run/omloader/autoboot.cancelled
+  decide_ui
+  if [ -z "$(arg omloader.image)" ] && [ "$(arg omloader.hook)" != 1 ] && [ "$(arg omloader.selftest)" != 1 ]; then bootcfg_apply; fi
+fi
+# omloader.experimental=oci -> opt in to the experimental Docker/OCI image support (disabled by default)
+EXP=$(arg omloader.experimental); [ -n "$EXP" ] && export OML_EXPERIMENTAL="$EXP"
+echo 1 > /proc/sys/kernel/sysrq
 
 if [ "$(arg omloader.hook)" = 1 ]; then   # test helper: run /mnt/stage/hook.sh from an OMLSTAGE-labelled fs, then power off
   SD=$(find_label OMLSTAGE); mkdir -p /mnt/stage

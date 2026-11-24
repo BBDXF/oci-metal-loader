@@ -123,8 +123,14 @@ consequence confirmations. Limit: the dialog reports the size written to the liv
 
 ### Auto-boot countdown and "last booted"
 
-With `boot.default_image` set (boot.yaml on the data partition, see INSTALL.md) `autoboot.sh` counts down `boot.timeout` seconds before the TUI starts and prints
-`Booting '<image>' (<snapshot>) in N s -- press any key for the menu` on tty1 and the serial console; **any key** opens the TUI instead (or the shell with `boot.ui: shell`).
+With `boot.default_image` set (boot.yaml on the data partition, see INSTALL.md) and `boot.ui: tui` (default), `autoboot.sh` only records the target in
+`/run/omloader/autoboot` and the **TUI itself** counts down: a highlighted banner `Booting <image> (<snapshot>) in N s -- press any key to cancel` on the
+bottom status row, started when the first frame is on screen and never shorter than 5 s (`boot.timeout` default 10); it does not wait for a viewer, so a client attaching later than that can miss it. **Any key** (Esc too) cancels and leaves you in
+the normal TUI; at 0 it boots exactly like Enter on that image/snapshot. Every console (tty1/VNC and serial each run a TUI) shows the countdown and a key on one cancels all;
+the boot itself is serialised by a lock. The console log gets `OMLOADER_LOADER: boot config ...: default_image=...`, `... boot cancelled, opening the menu` and `... Booting '<image>' ...` lines.
+`boot.extra_cmdline_flags` apply here too: `experimental=X` sets `OML_EXPERIMENTAL`, `poweroff_on_fail=1` powers off (after printing `OMLOADER_LOADER_FAILED`) when the boot fails.
+If no TUI starts within the countdown + 30 s, a shell watchdog boots the target (single owner: the watchdog stands down as soon as a TUI starts). With `boot.ui: shell` / `omloader.ui=shell`
+the shell script counts down on tty1/serial as before (`Booting '<image>' (<snapshot>) in N s -- press any key for the menu`).
 `boot.default_snapshot` (`current` | `base` | label; labels/base are throwaway boots) selects what boots. With `boot.remember_last: true` (default) every boot from
 the TUI writes `<data>/omloader/last-boot` (image, snapshot, `ephemeral`), preselects it next time and `boot.default_image: last` auto-boots that image's `current`.
 

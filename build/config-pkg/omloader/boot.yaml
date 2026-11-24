@@ -7,7 +7,7 @@
 # boot:
 #   default_image: ubuntu-noble   # folder name under images/; empty = show the TUI
 #   default_snapshot: current     # current | base | a snapshot label (label/base = throwaway boot)
-#   timeout: 5                    # seconds; press Enter to cancel
+#   timeout: 10                   # seconds; any key cancels (the TUI shows the countdown, minimum 5 s)
 #   ui: tui                       # tui | shell (what the console shows when nothing boots)
 
 # --- the default login is PUBLIC (oci / Oci123, root with the same password): change it! ---

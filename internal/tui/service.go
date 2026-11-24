@@ -123,6 +123,7 @@ type Service interface {
 type BootRequest struct {
 	Image, Snapshot string
 	Ephemeral       bool
+	Flags           string // auto-boot only: boot.extra_cmdline_flags (poweroff_on_fail=1, experimental=oci)
 }
 
 // ResultKind is how the model ended.

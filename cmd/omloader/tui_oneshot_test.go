@@ -36,3 +36,36 @@ func TestRememberLastBoot(t *testing.T) {
 		t.Fatal("must not record")
 	}
 }
+
+func TestAutoBootFile(t *testing.T) {
+	old := autobootFile
+	defer func() { autobootFile = old }()
+	autobootFile = filepath.Join(t.TempDir(), "autoboot")
+	s := &realSvc{}
+	if s.AutoBoot() != nil {
+		t.Fatal("no file -> nil")
+	}
+	os.WriteFile(autobootFile, []byte("IMAGE=\"ubuntu-noble\"\nSNAPSHOT=\"before-upgrade\"\nTIMEOUT=\"3\"\nFLAGS=\"poweroff_on_fail=1 experimental=oci\"\n"), 0o644)
+	a := s.AutoBoot()
+	if a == nil || a.Image != "ubuntu-noble" || a.Snapshot != "before-upgrade" || a.Timeout != 3 || len(a.Flags) != 2 || a.Flags[1] != "experimental=oci" {
+		t.Fatalf("%+v", a)
+	}
+	claimAutoBoot()
+	if s.AutoBoot() == nil {
+		t.Fatal("claimed by another console must still count down there")
+	}
+	s.AutoBootCancel()
+	if !s.AutoBootCancelled() || s.AutoBoot() != nil {
+		t.Fatal("cancelled -> nil (once per boot)")
+	}
+}
+
+func TestApplyBootFlags(t *testing.T) {
+	t.Setenv("OML_EXPERIMENTAL", "")
+	if !applyBootFlags([]string{"poweroff_on_fail=1", "experimental=oci", "font=x"}) || os.Getenv("OML_EXPERIMENTAL") != "oci" {
+		t.Fatal("flags not applied")
+	}
+	if applyBootFlags([]string{"poweroff_on_fail=0"}) || applyBootFlags(nil) {
+		t.Fatal("poweroff_on_fail must need =1")
+	}
+}

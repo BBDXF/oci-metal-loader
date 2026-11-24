@@ -77,7 +77,7 @@ for mode in ${MODES:-normal grub2}; do
 done
 # Enter during the countdown cancels the auto boot
 tag=vt-cancel
-if vboot $tag normal $O/usb.raw 'booting .omloci. in' 150; then
+if vboot $tag normal $O/usb.raw 'Booting .omloci. \(.*\) in' 150; then
   $T/ventoy-ser.py $W/$tag.ser '\n'
   waitfor $tag 'boot cancelled|OMLOADER_SHELL_READY|OMLOADER_TUI_READY' 20
   grep -aq 'boot cancelled' $W/$tag.clean && ! grep -aq 'OMLOADER_GUEST_OK' $W/$tag.clean && pass "Enter on the serial console cancels the boot.yaml countdown" || fail "countdown cancel"

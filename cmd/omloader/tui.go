@@ -57,14 +57,20 @@ func runTUI(args []string, out, errw io.Writer) int {
 	svc := &realSvc{cfgPath: *cfg, imagesRoot: *ir, snapRoot: *sr, dataRoot: *dr, env: env}
 	os.Setenv("DM_DISABLE_UDEV", "1")
 	th := tui.EnvTheme(*ascii)
+	armed := true // the automatic boot countdown only runs in the first TUI session (never again after a failed boot)
 	for {
 		m := tui.New(svc, th)
 		m.Km.Override(os.Getenv("OMLOADER_TUI_KEYS"))
 		m.Init()
+		if a := svc.AutoBoot(); armed && a != nil {
+			m.ArmAutoBoot(*a)
+			claimAutoBoot()
+		}
+		armed = false
 		term := &tui.Terminal{In: os.Stdin, Out: os.Stdout}
 		// marker for the test harness / boot timing: printed to the console log right before the first frame
 		fmt.Fprintf(os.Stdout, "OMLOADER_TUI_READY uptime=%s\r\n", uptime())
-		res := term.Run(m, nil)
+		res := term.Run(m, m.StartAutoBoot)
 		switch res.Kind {
 		case tui.ResShell:
 			return tuiExitShell
@@ -78,8 +84,14 @@ func runTUI(args []string, out, errw io.Writer) int {
 			time.Sleep(time.Minute)
 			return 0
 		case tui.ResBoot:
+			pof := applyBootFlags(strings.Fields(res.Boot.Flags))
 			if rc := tuiBoot(svc, res.Boot, out, errw); rc == 0 {
 				return 0
+			} else if pof { // boot.extra_cmdline_flags poweroff_on_fail=1 (same as the shell path)
+				fmt.Fprintf(out, "OMLOADER_LOADER: 'omloader boot' returned rc=%d\r\nOMLOADER_LOADER_FAILED\r\n", rc)
+				(&boot.ExecRunner{}).Run("/usr/local/lib/omloader/autoboot.sh", "--poweroff")
+				time.Sleep(time.Minute)
+				return rc
 			}
 			fmt.Fprint(out, "\r\nPress Enter to return to the TUI... ")
 			bufio.NewReader(os.Stdin).ReadString('\n')
