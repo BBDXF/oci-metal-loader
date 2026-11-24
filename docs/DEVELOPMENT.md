@@ -111,6 +111,12 @@ and the key reference in [INSTALL.md](INSTALL.md)/[INSTALL.zh-CN.md](INSTALL.zh-
 - **Container console login is only implemented for systemd guests** (autologin drop-ins); sysvinit/busybox-init/OpenRC guests get the busybox debug shell (`debug_shell`) and best-effort shutdown hooks
   (sysvinit `K99omloader-sync`, busybox-init `::shutdown:`; OpenRC: none). The tty1 console is only useful with a display; with `console=tty0 console=ttyS0,115200` (the loader's grub.cfg) the guest's `/dev/console` is ttyS0.
   Removing a user from `runtime.users` does not delete the account (accounts are only created/updated); passwords in the image config are only hashed on the loader (prefer `password_hash`).
+- **Real Docker/OCI images (experimental; tried 2026-11-24 with `test/e2e-ocireal.sh`, images fetched with podman):** `busybox` (2.3 MB) and `alpine:3.20` (3.7 MB) import and
+  boot (busybox: `sh` via the entrypoint wrapper, DHCP lease 10.0.2.15; alpine: `/sbin/init` = busybox init, but `/sbin/openrc` is not in the image so every sysinit line fails and only the inittab login runs; the
+  `oci` autologin/sudo account is not applied to non-systemd images, a warning says so). `nginx:alpine` (30 MB) runs its entrypoint (`/docker-entrypoint.sh nginx -g daemon off;`) as the only process: no shell on the console, ports are not mapped or
+  reachable from outside. `jrei/systemd-debian:12` (63 MB): systemd boots to `graphical.target` but showed **no login at all** (it was not a hang): the image's `multi-user.target.wants` is empty, so `getty.target` was never started;
+  the autologin adapter now also enables `getty.target`, `getty@tty1` then runs (VNC/screen login). **Still open:** `serial-getty@ttyS0` waits 90 s for `dev-ttyS0.device` because the image has no udev, so the serial console gets no login prompt.
+  Docker Hub proxies (2026-11-24): `1ms` serves manifests but answers blob requests with 403, `daocloud` denies some namespaces (`jrei/*`), the official registry and `xuanyuan` worked; a registry client does not exist (use skopeo/podman).
 - **VM path has no independent data volumes**: all guest data lives in the COW layer of the snapshot node (data volumes exist for containers only).
 - **VM path is verified only on the Debian/initramfs-tools fixture.** The `rdinit` guest reassembly is generic in principle but untested elsewhere; no Windows guests (see "Windows" above), no LVM or encrypted (LUKS) root.
 - **Secure Boot is not supported**: UEFI Secure Boot must be disabled.

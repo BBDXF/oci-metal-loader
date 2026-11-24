@@ -399,6 +399,13 @@ func applySystemdAutologin(root string, rt config.Runtime, user string, sysd boo
 				if err := guestSymlink(root, "/etc/systemd/system/getty.target.wants/getty@tty1.service", u); err != nil {
 					return err
 				}
+				// ... and that getty.target itself is started: minimal systemd images (jrei/systemd-debian) ship an empty
+				// multi-user.target.wants, so nothing pulled getty.target in and the console stayed silent (no login prompt at all)
+				if gt := firstExisting(root, "/lib/systemd/system/getty.target", "/usr/lib/systemd/system/getty.target"); gt != "" {
+					if err := guestSymlink(root, "/etc/systemd/system/multi-user.target.wants/getty.target", gt); err != nil {
+						return err
+					}
+				}
 			}
 			for _, d := range dropins {
 				if err := W(d, "[Service]\nExecStart=\nExecStart=-"+agetty+" --autologin "+user+" --noclear %I $TERM\n", 0o644); err != nil {
