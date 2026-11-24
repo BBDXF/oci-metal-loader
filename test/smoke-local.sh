@@ -14,7 +14,7 @@ done
 if [ -w /dev/kvm ]; then ACCEL="-enable-kvm -cpu host"; TIMEOUT=${TIMEOUT:-300}; else ACCEL="-accel tcg -cpu max"; TIMEOUT=${TIMEOUT:-900}; echo "smoke: no /dev/kvm, using TCG (slow)"; fi
 RUN=$(mktemp -d "$W/smoke.XXXXXX"); trap 'rm -rf "$RUN"' EXIT
 cp "$VARS" "$RUN/vars.fd"; cp "$ISO" "$RUN/boot.iso"
-echo 'set omloader_args="omloader.ui=shell"' > "$RUN/extra.cfg"   # grub.cfg sources /boot/grub/extra.cfg
+printf 'set omloader_args="omloader.ui=shell"\nset timeout=1\n' > "$RUN/extra.cfg"   # grub.cfg sources /boot/grub/extra.cfg
 xorriso -dev "$RUN/boot.iso" -boot_image any keep -map "$RUN/extra.cfg" /boot/grub/extra.cfg -commit -end >/dev/null 2>&1 || { echo "xorriso inject failed"; exit 3; }
 : > "$LOG"
 timeout -s KILL "$TIMEOUT" qemu-system-x86_64 $ACCEL -machine q35 -m "$MEM" -smp 2 -no-reboot -display none -monitor none -serial "file:$LOG" \

@@ -22,7 +22,7 @@ ARGS="$ARGS ${EXTRA:-}"
 RUN=$W/run.$$; mkdir -p $RUN; trap 'rm -rf $RUN' EXIT
 cp /usr/share/OVMF/OVMF_VARS_4M.fd $RUN/vars.fd
 cp $ISO $RUN/boot.iso
-echo "set omloader_args=\"$ARGS\"" > $RUN/extra.cfg
+echo "set omloader_args=\"$ARGS\"; set timeout=1" > $RUN/extra.cfg
 xorriso -dev $RUN/boot.iso -boot_image any keep -map $RUN/extra.cfg /boot/grub/extra.cfg -commit -end >/dev/null 2>&1 || { echo "xorriso inject failed"; exit 3; }
 case $BUS in
   nvme)   DEV="-device nvme,drive=usb,serial=omloader0";;
