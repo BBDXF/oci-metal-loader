@@ -737,28 +737,40 @@ func dataSource(mountinfo, mediumMnt, imagesRoot string) string {
 	return ""
 }
 
-// DropClaimedDisks removes the disks that hold a partition the guest preinit mounts directly (a storage that is neither NoMount nor
-// a store-file loop): the kernel would refuse the exclusive whole-disk dm-linear (partition already claimed). Returns the dropped names.
-func DropClaimedDisks(disks []HDDisk, st []StorageRef) ([]HDDisk, []string) {
-	claimed := map[string]bool{}
+// MarkClaimedRW adjusts the partitions that the guest preinit mounts itself (a storage that is neither NoMount nor a store-file
+// loop). The guest reaches them through the per-partition dm device (so everything shares the whole-disk claim); that dm must
+// follow the storage's mount mode (RW) or the guest mount would fail. Returns the names of the adjusted partitions (disk/N).
+func MarkClaimedRW(disks []HDDisk, st []StorageRef) []string {
+	rw := map[string]bool{}
 	for _, s := range st {
 		if s.NoMount || s.Loop != nil || s.UUID == "" {
 			continue
 		}
-		claimed[s.UUID] = true
+		rw[s.UUID] = rw[s.UUID] || s.RW
 	}
-	var keep []HDDisk
-	var dropped []string
-	for _, d := range disks {
-		bad := false
-		for _, p := range d.Parts {
-			bad = bad || p.UUID != "" && claimed[p.UUID]
-		}
-		if bad {
-			dropped = append(dropped, d.Name)
-		} else {
-			keep = append(keep, d)
+	var out []string
+	for i := range disks {
+		for j := range disks[i].Parts {
+			p := &disks[i].Parts[j]
+			if w, ok := rw[p.UUID]; ok && p.UUID != "" {
+				p.RO = !w
+				out = append(out, fmt.Sprintf("%s/%d", disks[i].Name, p.N))
+			}
 		}
 	}
-	return keep, dropped
+	return out
+}
+
+// ClaimedPartDev returns the per-partition dm device that stands in for the raw partition starting at startSectors on the mapped
+// disk pd ("" when the disk has no such partition).
+func ClaimedPartDev(pd *HostDiskPlan, startSectors uint64) string {
+	if pd == nil {
+		return ""
+	}
+	for _, pt := range pd.Parts {
+		if pt.Start == startSectors {
+			return "/dev/mapper/" + DMPartName(pd.Name, pt.N)
+		}
+	}
+	return ""
 }

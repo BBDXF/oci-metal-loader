@@ -151,3 +151,21 @@ func TestDataSourceFallback(t *testing.T) {
 		t.Fatal("dataSource")
 	}
 }
+
+func TestMarkClaimedRWAndPartDev(t *testing.T) {
+	disks := []HDDisk{{Name: "d", Parts: []HDPart{
+		{RawPart: RawPart{N: 3, Start: 100}, UUID: "A", RO: true},
+		{RawPart: RawPart{N: 4, Start: 200}, UUID: "B", RO: true}}}}
+	st := []StorageRef{{UUID: "B", RW: true}, {UUID: "A", NoMount: true}, {UUID: "A", Loop: &FileRef{}}}
+	got := MarkClaimedRW(disks, st)
+	if len(got) != 1 || got[0] != "d/4" || disks[0].Parts[1].RO || !disks[0].Parts[0].RO {
+		t.Fatalf("got %v %+v", got, disks)
+	}
+	pl := HostDisksPlan(disks)
+	if d := ClaimedPartDev(&pl[0], 200); d != "/dev/mapper/oml-dp4" {
+		t.Fatal(d)
+	}
+	if ClaimedPartDev(&pl[0], 5) != "" || ClaimedPartDev(nil, 1) != "" {
+		t.Fatal("expected empty")
+	}
+}

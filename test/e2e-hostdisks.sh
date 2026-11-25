@@ -27,14 +27,22 @@ grep -aq 'OMLOADER_HOSTDISKS_README=yes' $W/hd-a.clean && pass "A: /mnt/disks/RE
 cp --sparse=always $O/store-exfat.raw $O/store-hd.raw
 NAME=omlfixture LOG=$W/hd-b.log $T/run-kvm.sh >/dev/null; clean hd-b
 grep -a 'OMLOADER_HOSTDISKS\|host disk' $W/hd-b.clean | tail -4
-if grep -aq 'OMLOADER_GUEST: host disk [a-z0-9]* mapped as oml-' $W/hd-b.clean; then
-  pass "B: guest preinit mapped the host disk (whole-disk dm + partitions)"
-  grep -aq 'OMLOADER_HOSTDISKS_FSTAB=1' $W/hd-b.clean && pass "B: fstab block written into the VM guest" || fail "B: no fstab block"
-  grep -aq 'OMLOADER_HOSTDISKS_DM=.*oml-[a-z0-9]*p1' $W/hd-b.clean && pass "B: oml-<disk>p1 present in the guest" || fail "B: no partition dm in guest"
-else  # the fixture's preinit mounts the data partition directly (exclusive claim): the disk must be skipped cleanly, no dead fstab entries
-  grep -aq 'host disks: .* not offered to the guest' $W/hd-b.clean && pass "B: disk with a preinit-mounted partition skipped with a warning" || fail "B: neither mapped nor skipped"
-  grep -aq 'OMLOADER_HOSTDISKS_FSTAB=0' $W/hd-b.clean && pass "B: no fstab block for the skipped disk" || fail "B: fstab block for a skipped disk"
-fi
+grep -aq 'OMLOADER_GUEST: host disk [a-z0-9]* mapped as oml-' $W/hd-b.clean && pass "B: guest preinit mapped the host disk (whole-disk dm + partitions)" || fail "B: host disk not mapped"
+grep -aq 'OMLOADER_HOSTDISKS_FSTAB=1' $W/hd-b.clean && pass "B: fstab block written into the VM guest" || fail "B: no fstab block"
+grep -aq 'OMLOADER_HOSTDISKS_DM=.*oml-[a-z0-9]*p1' $W/hd-b.clean && pass "B: oml-<disk>p1 present in the guest" || fail "B: no partition dm in guest"
+# C: VM, VTOYDATA (exfat) and the OMLOADER ext4 partition (preinit-mounted store) on the SAME disk (usb.raw): one claim via the partition dm
+[ -f $O/usb.raw ] || $T/make-disk.sh
+cp --sparse=always $O/usb.raw $O/usb-hd.raw; export DISK=$O/usb-hd.raw
+for n in 1 2; do
+  NAME=omlfixture LOG=$W/hd-c$n.log $T/run-kvm.sh >/dev/null; clean hd-c$n
+  grep -a 'OMLOADER_HOSTDISKS\|host disk\|host_disks\|OMLOADER_COUNTER\|host disk claim' $W/hd-c$n.clean | tail -6
+done
+grep -aq 'OMLOADER_GUEST: host disk [a-z0-9]* mapped as oml-' $W/hd-c1.clean && pass "C: same-disk OMLOADER partition: disk mapped" || fail "C: disk not mapped"
+grep -aq 'using /dev/mapper/oml-[a-z0-9]*p2 instead of /dev/' $W/hd-c1.clean && pass "C: guest reached the OMLOADER partition via its partition dm" || fail "C: raw partition mounted"
+grep -aq 'OMLOADER_HOSTDISKS_MNTS=.*/mnt/disks/[a-z0-9]*/VTOYDATA' $W/hd-c1.clean && pass "C: fstab has /mnt/disks/<disk>/VTOYDATA" || fail "C: VTOYDATA missing from fstab"
+grep -aq 'OMLOADER_HOSTDISKS_DM=.*oml-[a-z0-9]*p1' $W/hd-c1.clean && pass "C: oml-<disk>p1 present" || fail "C: no p1 dm"
+grep -aq 'OMLOADER_COUNTER=1' $W/hd-c1.clean && grep -aq 'OMLOADER_COUNTER=2' $W/hd-c2.clean && pass "C: persistence across reboot (counter 1 -> 2)" || fail "C: no persistence"
+rm -f $O/usb-hd.raw
 rm -f $O/store-hd.raw
 [ $FAIL = 0 ] && echo "E2E-HOSTDISKS: ALL PASS" || echo "E2E-HOSTDISKS: FAILURES"
 exit $FAIL

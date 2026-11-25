@@ -240,6 +240,19 @@ func GuestAssemble(p *GuestPlan, r Runner, o GuestOptions) (string, error) {
 		if dev == "" {
 			return "", fmt.Errorf("storage %s (uuid=%s label=%s) not found", s.ID, s.UUID, s.Label)
 		}
+		if s.Loop == nil && !s.NoMount && len(p.HostDisks) > 0 {
+			// host_disks: reach a real partition through its per-partition dm (built on the whole-disk dm) so that all access
+			// shares one claim; the raw partition is never opened by the guest.
+			if sd, start, ok := sysParent(o.SysRoot, dev); ok {
+				if hds == nil {
+					hds = assembleHostDisks(p, r, o, logf, sd)
+				}
+				if pdev := ClaimedPartDev(hds.bySys[sd], start); pdev != "" && o.DevExists(pdev) {
+					logf("storage %s: using %s instead of %s (host disk claim)", s.ID, pdev, dev)
+					dev = pdev
+				}
+			}
+		}
 		devs[s.ID] = dev
 		if s.NoMount {
 			logf("storage %s: %s (not mounted; raw store backing)", s.ID, dev)
