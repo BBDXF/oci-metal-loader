@@ -4,6 +4,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"syscall"
 
 	"omloader/internal/boot"
 	"omloader/internal/config"
@@ -15,6 +18,7 @@ const storeUsage = `usage:
   omloader store info   --path FILE          (host fs, size, allocated, label, state clean/dirty/errors)
   omloader store check  --path FILE [--release]   (e2fsck -n, offline)
   omloader store grow   --path FILE --size N [--release]   (offline: extend + e2fsck -fp + resize2fs)
+  omloader store autocreate --host-root DIR [-c cfg]   (loader, boot time: create omloader/store.img if no store exists; exit 0 = created)
   omloader store find   --host-root DIR [--host-dev DEV] [-c cfg]   (first store file with ext4 label OMLOADER; used by the loader)
 `
 
@@ -143,16 +147,30 @@ func runStore(args []string, out, errw io.Writer, r boot.Runner) int {
 				return 3
 			}
 		}
-		l := snapmgr.FindStoreFiles(*hroot, sf, *label)
-		if len(l) == 0 {
+		var chosen string
+		for _, c := range snapmgr.FindStoreFilesDetail(*hroot, sf, *label) {
+			switch {
+			case c.Skip != "":
+				fmt.Fprintf(errw, "store file %s skipped: %s\n", c.Path, c.Skip)
+			case chosen == "":
+				chosen = c.Path
+			default:
+				fmt.Fprintf(errw, "store file %s skipped: %s is already chosen (first match wins)\n", c.Path, chosen)
+			}
+		}
+		if chosen == "" {
 			fmt.Fprintln(errw, "no store file (ext4, label "+*label+") found")
 			return 1
 		}
-		for _, f := range l[1:] {
-			fmt.Fprintln(errw, "warning: more than one store file; ignoring", f)
-		}
-		fmt.Fprintln(out, l[0])
+		fmt.Fprintf(errw, "store file %s chosen (ext4 label %s)\n", chosen, *label)
+		fmt.Fprintln(out, chosen)
 		return 0
+	case "autocreate":
+		if *hroot == "" {
+			fmt.Fprintln(errw, "error: --host-root required")
+			return 1
+		}
+		return storeAutoCreate(*hroot, sf, *label, *pre, ops, out)
 	}
 	fmt.Fprint(errw, storeUsage)
 	return 1
@@ -162,4 +180,54 @@ func init() {
 	m4Commands["store"] = func(args []string, out, errw io.Writer) int {
 		return runStore(args, out, errw, &boot.ExecRunner{})
 	}
+}
+
+// storeAutoCreate creates <host>/omloader/store.img when no usable store file exists. Never fatal: exit 1 = not created
+// (reason printed as OMLOADER_LOADER lines).
+func storeAutoCreate(root string, sf config.StoreFile, label, pre string, ops snapmgr.StoreOps, out io.Writer) int {
+	say := func(f string, a ...any) { fmt.Fprintf(out, "OMLOADER_LOADER: "+f+"\n", a...) }
+	if !sf.Enabled || !sf.AutoCreate {
+		say("store auto-create disabled (storage.snapshots.store_file.auto_create=false)")
+		return 1
+	}
+	if l := snapmgr.FindStoreFiles(root, sf, label); len(l) > 0 {
+		say("store file %s already exists: not creating another", l[0])
+		return 1
+	}
+	path := filepath.Join(root, "omloader", "store.img")
+	os.Remove(path + ".new") // partial leftover of an interrupted creation
+	if _, err := os.Stat(path); err == nil {
+		say("%s exists but is not an ext4 image labelled %s: not overwriting it (remove or relabel it with e2label)", path, label)
+		return 1
+	}
+	want, err := config.ParseSize(sf.Size)
+	if err != nil {
+		say("store auto-create skipped: bad size %q: %v", sf.Size, err)
+		return 1
+	}
+	var st syscall.Statfs_t
+	if err := syscall.Statfs(root, &st); err != nil {
+		say("store auto-create skipped: statfs: %v", err)
+		return 1
+	}
+	size, why := snapmgr.PlanAutoCreate(int64(st.Bavail)*int64(st.Bsize), want)
+	if size == 0 {
+		say("store auto-create skipped: %s", why)
+		return 1
+	}
+	if why != "" {
+		say("%s", why)
+	}
+	say("creating store %s ... %d GiB (ext4, label %s; this can take a while)", path, size>>30, label)
+	if pre == "" {
+		pre = sf.Prealloc
+	}
+	host, prealloc, err := ops.StoreCreate(snapmgr.CreateOpts{Path: path, Size: size, Label: label, Prealloc: pre})
+	if err != nil {
+		os.Remove(path + ".new")
+		say("store auto-create FAILED: %v (snapshots stay in RAM)", err)
+		return 1
+	}
+	say("store created: %s %d GiB on %s (preallocated=%v)", path, size>>30, host, prealloc)
+	return 0
 }

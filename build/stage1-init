@@ -29,6 +29,7 @@ try_dev() { # $1 = block device. Typed mount only: an untyped `mount` probes eve
 }
 FOUND=; HOW=
 # ---- (c) iso-scan: the ISO is a *file* on some partition (Ventoy, a plain data stick, ...) ----
+# Order: omloader.isofile=/path.iso pin > Ventoy-looking partitions first > ventoy.json VTOY_DEFAULT_SEARCH_ROOT/IMAGE > omloader/ dir > scan.
 # omloader.isofile=/path.iso [omloader.isodev=LABEL=x|UUID=x|/dev/x] pins it; else /omloader.iso, /omloader/omloader.iso,
 # /ISO/omloader.iso (+ /omloader/omloader-<ver>.iso), then every *.iso within two directory levels whose volume label is OMLOADER_LIVE.
 HOST=/run/medium-host; mkdir -p $HOST /run/omloader
@@ -53,15 +54,50 @@ want_rw() { # $1 = device: is it the loader's data partition (omloader.data=, el
   v=$(blkid -L VTOYDATA 2>/dev/null)
   [ -z "$v" ] || [ "$v" = "$1" ] || [ "$(blkid -o value -s LABEL "$1" 2>/dev/null)" = OMLOADER ]
 }
+vj_get() { # $1 = key of ventoy/ventoy.json (no jq: tolerant of CRLF/BOM/spacing; empty when absent/malformed). Absolute, no ".."
+  local v; v=$(tr -d '\r\357\273\277' < $HOST/ventoy/ventoy.json 2>/dev/null | tr '\n' ' ' | grep -o "\"$1\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | sed 's/^[^:]*:[[:space:]]*"//; s/"$//')
+  case "$v" in *..*|"") return 0;; /*) echo "$v";; *) echo "/$v";; esac
+}
+# partition order: Ventoy-looking first (label Ventoy/VTOYDATA, or a /ventoy dir), then the rest in /proc/partitions order
+part_order() {
+  local n t l a= b=; P=/run/medium-probe; mkdir -p $P
+  for n in $(awk 'NR>2{print $4}' /proc/partitions); do
+    case "$n" in loop*|ram*|dm-*) continue;; esac
+    [ -b "/dev/$n" ] || continue
+    t=$(blkid -o value -s TYPE "/dev/$n" 2>/dev/null); l=$(blkid -o value -s LABEL "/dev/$n" 2>/dev/null)
+    case "$t" in exfat|vfat|ext2|ext3|ext4|xfs|ntfs) ;; *) continue;; esac
+    case "$l" in Ventoy|VTOYDATA) a="$a $n"; continue;; esac
+    if probe_mnt "$t" "/dev/$n" && { [ -d $P/ventoy ] || [ -f $P/ventoy/ventoy.json ]; }; then a="$a $n"; else b="$b $n"; fi
+    umount $P 2>/dev/null
+  done
+  echo $a $b
+}
+probe_mnt() { if [ "$1" = ntfs ]; then @ntfs-3g "$2" $P -o ro,noatime 2>/dev/null; else mount -t "$1" -o ro "$2" $P 2>/dev/null; fi; }
+# after a hit: list other partitions that also hold an omloader ISO (just for the log)
+skipped_list() { # $@ = remaining partitions
+  local n t out= c; P=/run/medium-probe
+  for n in "$@"; do
+    t=$(blkid -o value -s TYPE "/dev/$n" 2>/dev/null)
+    case "$t" in exfat|vfat|ext2|ext3|ext4|xfs|ntfs) ;; *) continue;; esac
+    probe_mnt "$t" "/dev/$n" || continue
+    for c in $P/omloader.iso $P/omloader/omloader*.iso $P/ISO/omloader.iso; do [ -f "$c" ] && out="$out /dev/$n:${c#$P}"; done
+    umount $P 2>/dev/null
+  done
+  [ -n "$out" ] && echo "OMLOADER_STAGE1: iso: skipped other candidates:$out"
+}
 scan_dev() { # $1 = partition/disk device. 0 = ISO found (host fs stays mounted on $HOST, ISO on /run/medium)
   d=$1; t=$(blkid -o value -s TYPE "$d" 2>/dev/null); HRW=0
   case "$t" in exfat|vfat|ext2|ext3|ext4|xfs|ntfs) ft=$t;; *) return 1;; esac
   hostmnt "$ft" ro "$d" || return 1
-  f=
-  if [ -n "$ISOFILE" ]; then iso_try "$HOST$ISOFILE" 1 && f=$ISOFILE
+  f=; STEP=
+  if [ -n "$ISOFILE" ]; then iso_try "$HOST$ISOFILE" 1 && { f=$ISOFILE; STEP=pinned; }
   else
-    for c in /omloader.iso /omloader/omloader.iso /omloader/omloader-*.iso /ISO/omloader.iso; do iso_try "$HOST$c" 1 && { f=$c; break; }; done
-    if [ -z "$f" ]; then for c in "$HOST"/*.iso "$HOST"/*/*.iso "$HOST"/*/*/*.iso; do iso_try "$c" && { f=${c#$HOST}; break; }; done; fi
+    # Ventoy conventions: ventoy/ventoy.json control VTOY_DEFAULT_SEARCH_ROOT (searched recursively by Ventoy) and VTOY_DEFAULT_IMAGE
+    R=$(vj_get VTOY_DEFAULT_SEARCH_ROOT); R=${R%/}
+    if [ -n "$R" ]; then for c in "$HOST$R"/*.iso "$HOST$R"/*/*.iso "$HOST$R"/*/*/*.iso; do iso_try "$c" && { f=${c#$HOST}; STEP=ventoy-search-root; break; }; done; fi
+    if [ -z "$f" ]; then R=$(vj_get VTOY_DEFAULT_IMAGE); [ -n "$R" ] && iso_try "$HOST$R" && { f=$R; STEP=ventoy-default-image; }; fi
+    if [ -z "$f" ]; then for c in "$HOST"/omloader/omloader.iso "$HOST"/omloader/omloader-*.iso "$HOST"/omloader.iso "$HOST"/ISO/omloader.iso; do iso_try "$c" 1 && { f=${c#$HOST}; STEP=omloader-dir; break; }; done; fi
+    if [ -z "$f" ]; then for c in "$HOST"/*.iso "$HOST"/*/*.iso "$HOST"/*/*/*.iso; do iso_try "$c" && { f=${c#$HOST}; STEP=scan; break; }; done; fi
   fi
   if [ -n "$f" ]; then
     ISOPATH=$f
@@ -76,6 +112,7 @@ scan_dev() { # $1 = partition/disk device. 0 = ISO found (host fs stays mounted 
     fi
     cat > /run/omloader/medium.env <<ENV
 MEDIUM_VIA=iso-scan
+MEDIUM_STEP=$STEP
 MEDIUM_HOST_DEV=$d
 MEDIUM_HOST_FS=$ft
 MEDIUM_HOST_MNT=$HOST
@@ -83,7 +120,8 @@ MEDIUM_HOST_RW=$HRW
 MEDIUM_ISO=$f
 MEDIUM_ISO_LOOP=$ISOLOOP
 ENV
-    FOUND=$d; HOW="iso-scan: dev=$d fs=$ft file=$f"; return 0
+    FOUND=$d; HOW="iso-scan: dev=$d fs=$ft file=$f"
+    echo "OMLOADER_STAGE1: iso: $d ($ft, label $(blkid -o value -s LABEL "$d" 2>/dev/null)) $f via $STEP"; return 0
   fi
   umount $HOST 2>/dev/null; SCANNED="$SCANNED$d "; return 1
 }
@@ -105,10 +143,13 @@ while [ $i -lt 40 ] && [ -z "$FOUND" ]; do
     if [ -n "$ISODEV" ]; then
       d=$(resolve_dev "$ISODEV"); [ -b "$d" ] && scan_dev "$d"
     else
-      for n in $(awk 'NR>2{print $4}' /proc/partitions); do
-        case "$n" in loop*|ram*|dm-*) continue;; esac
+      ORDER=$(part_order)
+      for n in $ORDER; do
         case "$SCANNED" in *" /dev/$n "*) continue;; esac
-        [ -b "/dev/$n" ] && scan_dev "/dev/$n" && break
+        if scan_dev "/dev/$n"; then
+          REST=; seen=; for m in $ORDER; do [ "$seen" = 1 ] && REST="$REST $m"; [ "$m" = "$n" ] && seen=1; done
+          [ -n "$REST" ] && skipped_list $REST; break
+        fi
       done
     fi
   fi

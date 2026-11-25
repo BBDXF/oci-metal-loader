@@ -30,3 +30,5 @@
 #   snapshots:
 #     store_file:
 #       size: 20G
+#       # auto_create: true     # default: when no store exists, create omloader/store.img (ext4, label OMLOADER) at boot
+#       # size: 20G             # size of that file; shrunk to what fits (>= 4G) with a 1G margin, else skipped

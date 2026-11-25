@@ -191,7 +191,9 @@ func (o StoreOps) allocate(path string, size int64, prealloc bool) error {
 func resolvePrealloc(mode, fs string) (bool, error) {
 	switch mode {
 	case "", "auto":
-		return NoSparse(fs), nil
+		// NTFS: allocate fully too (a sparse store file on ntfs3 / kernel 6.12 lost data written after the last
+		// poweroff without unmount: ext4 journal superblock zeroed)
+		return NoSparse(fs) || fs == "ntfs" || fs == "ntfs3" || fs == "fuseblk", nil
 	case "yes":
 		return true, nil
 	case "no":
@@ -419,4 +421,64 @@ func HostMatches(blkidExport string, m config.HostMatch) bool {
 		return strings.EqualFold(m.UUID, uuid)
 	}
 	return m.Label == "" || m.Label == label
+}
+
+// StoreCandidate is one file examined by FindStoreFilesDetail; Skip is empty for a usable one.
+type StoreCandidate struct{ Path, Skip string }
+
+// FindStoreFilesDetail is FindStoreFiles plus the reason every other candidate was skipped. Order is deterministic:
+// Path, then each glob pattern in config order, matches sorted within a pattern.
+func FindStoreFilesDetail(hostRoot string, sf config.StoreFile, label string) []StoreCandidate {
+	if label == "" {
+		label = StoreLabel
+	}
+	pats := append([]string{}, sf.Glob...)
+	if sf.Path != "" {
+		pats = append([]string{sf.Path}, pats...)
+	}
+	seen := map[string]bool{}
+	var res []StoreCandidate
+	for _, p := range pats {
+		m, _ := filepath.Glob(filepath.Join(hostRoot, p))
+		sort.Strings(m)
+		for _, f := range m {
+			if seen[f] {
+				continue
+			}
+			seen[f] = true
+			st, err := os.Stat(f)
+			switch {
+			case err != nil || !st.Mode().IsRegular():
+				continue
+			case st.Size() < 2048:
+				res = append(res, StoreCandidate{f, "too small"})
+				continue
+			}
+			sb, err := ReadExt4SB(f)
+			switch {
+			case err != nil:
+				res = append(res, StoreCandidate{f, "not an ext4 image"})
+			case sb.Label != label:
+				res = append(res, StoreCandidate{f, fmt.Sprintf("label %q != %q", sb.Label, label)})
+			default:
+				res = append(res, StoreCandidate{Path: f})
+			}
+		}
+	}
+	return res
+}
+
+const autoMargin = int64(1 << 30)
+const autoMin = int64(4 << 30)
+
+// PlanAutoCreate decides the size of an auto-created store: want if free >= want+1 GiB, else what fits
+// (free-1 GiB) when that is >= 4 GiB, else skip with a reason.
+func PlanAutoCreate(free, want int64) (size int64, reason string) {
+	if free >= want+autoMargin {
+		return want, ""
+	}
+	if fit := (free - autoMargin) &^ (mib - 1); fit >= autoMin {
+		return fit, fmt.Sprintf("only %d MiB free: shrinking the store to %d MiB", free/mib, fit/mib)
+	}
+	return 0, fmt.Sprintf("not enough free space (%d MiB free; need >= %d MiB + 1 GiB margin)", free/mib, autoMin/mib)
 }

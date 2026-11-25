@@ -28,7 +28,7 @@ const (
 // device still has the file open, but the final sync clears the exfat dirty flag anyway.
 const syncScript = `#!%s
 # omloader: flush + mark clean the loader partitions (OMLOADER ext4 / VTOYDATA) at shutdown.
-B=/.omloader/busybox; [ -x $B ] || B=
+B=/.omloader/busybox; [ -s $B ] || B=   # the bind mount may already be gone (empty placeholder): then use the image's tools
 export PATH=/sbin:/bin:/usr/sbin:/usr/bin
 [ -r /.omloader/devs ] || exit 0
 $B sync
@@ -37,18 +37,31 @@ while read -r name dev fs; do
   if ! $B grep -q " $d " /proc/mounts 2>/dev/null; then
     d=/run/omloader-sync-$name
     $B mkdir -p $d 2>/dev/null
-    $B mount -t "$fs" "$dev" $d 2>/dev/null || continue
+    [ "$fs" = ntfs ] && fs=ntfs3   # blkid says ntfs; the host is mounted by the in-kernel ntfs3 (same superblock is reused)
+    if ! $B mount -t "$fs" "$dev" $d 2>/dev/null; then
+      # e.g. blkid says "ntfs" but the host is mounted by the in-kernel ntfs3 / FUSE: use the mount that still exists
+      d=$($B grep "^$dev " /proc/mounts | $B head -n 1 | $B cut -d' ' -f2); [ -n "$d" ] || { echo "omloader: $name ($dev $fs) not mounted any more, nothing to flush" > /dev/console 2>/dev/null; continue; }
+    fi
   fi
   $B sync
   if $B mount -o remount,ro $d 2>/dev/null; then echo "omloader: $name flushed and remounted read-only" > /dev/console 2>/dev/null
-  else $B sync; echo "omloader: $name flushed (remount read-only refused: busy, e.g. the OMLOADER store file on it is still attached)" > /dev/console 2>/dev/null; fi
+  else
+    # the store file is still open (loop): fsync it explicitly so the host fs commits the file's metadata (ntfs3 valid size / allocation)
+    for f in $d/omloader/*.img; do [ -f "$f" ] && { $B fsync "$f" 2>/dev/null || $B sync -d "$f" 2>/dev/null || sync "$f" 2>/dev/null; }; done
+    $B sync; echo "omloader: $name flushed (remount read-only refused: busy, e.g. the OMLOADER store file on it is still attached)" > /dev/console 2>/dev/null; fi
 done < /.omloader/devs
 $B sync
 # NTFS host via ntfs-3g (FUSE daemon, argv[0] "@ntfs-3g" so it survives the root switch): everything is flushed and the
 # store ext4 is read-only now, so let the daemon unmount cleanly (SIGTERM) to clear the NTFS dirty flag.
+P=
 for d in /proc/[0-9]*; do
-  case "$($B cat $d/comm 2>/dev/null)" in ntfs-3g|@ntfs-3g) $B kill -TERM "${d#/proc/}" 2>/dev/null;; esac
+  case "$($B cat $d/comm 2>/dev/null)" in ntfs-3g|@ntfs-3g) $B kill -TERM "${d#/proc/}" 2>/dev/null; P="$P ${d#/proc/}";; esac
 done
+# wait (max ~10 s) until the daemon has written everything back and exited: the power-off must not cut it short
+i=0; while [ -n "$P" ] && [ $i -lt 100 ]; do
+  A=; for p in $P; do [ -d /proc/$p ] && A="$A $p"; done; P=$A; [ -n "$P" ] && $B sleep 0.1; i=$((i+1))
+done
+$B sync
 exit 0
 `
 
@@ -299,7 +312,7 @@ func adaptUI(in AdaptInput, warn io.Writer, sysd, hasBB bool) error {
 
 	// shutdown sync hooks
 	shebang := "/bin/sh"
-	if hasBB {
+	if hasBB && firstExisting(root, "/bin/sh", "/usr/bin/sh") == "" {
 		shebang = guestHelperDir + "/busybox sh"
 	}
 	syncUnitPath, syncWants := "/etc/systemd/system/omloader-sync.service", "/etc/systemd/system/sysinit.target.wants/omloader-sync.service"

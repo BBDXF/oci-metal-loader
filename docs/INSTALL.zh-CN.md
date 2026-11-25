@@ -90,6 +90,16 @@
 **不经 Ventoy** 时（或在 GRUB 条目上按 `e` 编辑），可用内核参数：`omloader.image=ubuntu-noble omloader.snapshot=current` 立即启动、没有倒计时（优先于 `boot.yaml`）；更多参数见 `boot.extra_cmdline_flags`（[第 11 节](#11-内核命令行参数omloader)）。
 **故障排查：** *Ventoy 显示菜单并一直等待* → `VTOY_DEFAULT_IMAGE` 与 ISO 路径/文件名不符（或 `ventoy.json` 不在第一分区的 `ventoy/` 下）。*Ventoy 询问启动模式* → 选 *normal*（或 *GRUB2*）一次；memdisk 模式对该 ISO 无效，见 [ventoy.md](ventoy.md)。*进入了 TUI 而不是镜像* → 找不到/无效的 `boot.yaml`（`omloader config validate -c boot.yaml`）、`default_image` 为空、`last` 尚无记录，或按过键。快照要持久保存需要存储（第 3 节）。*（仅在 QEMU 中验证，真机未测试。）*
 
+### 加载器如何选择 ISO / 数据分区 / 配置 / 存储
+| 项目 | 顺序（先匹配者生效） |
+|---|---|
+| ISO | `omloader.live=`/标签 `OMLOADER_LIVE`/光驱 > iso-scan：先查看起来像 Ventoy 的分区；每个分区内 `omloader.isofile=` > `VTOY_DEFAULT_SEARCH_ROOT` > `VTOY_DEFAULT_IMAGE` > `omloader/` 目录 > 标签为 `OMLOADER_LIVE` 的任意 `*.iso`（见 [ventoy.md](ventoy.md)） |
+| 数据分区 | `omloader.data=` > 标签 `VTOYDATA` > 存放 ISO 的分区 |
+| `boot.yaml` | 数据分区的 `omloader/boot.yaml` > `OMLOADER` 分区 > ISO 所在分区 |
+| 存储 | **任意**磁盘上标签为 `OMLOADER` 的 ext4/xfs/btrfs 分区 > `omloader/` 下的存储文件（见 [store-file.md](store-file.md)）> 内存（不持久） |
+
+警告：内置磁盘上的 `VTOYDATA` 或 `OMLOADER` 标签同样会被识别；不同分区上有多个 omloader ISO 会有歧义（按上述顺序取第一个，请查看 `OMLOADER_STAGE1: iso:` 日志行）。
+
 ## 5. 获取镜像
 
 镜像位于 `omloader/images/<名称>/`（`image.yaml` + `lxd-vm` 的 `base.raw` 或 `lxd-container` 的 `base.squashfs`）。三种方式：
@@ -194,9 +204,10 @@ VM 客户系统通过 `kexec` 启动，关机时无法卸载存储，所以下�
 | `storage.snapshots.fallback` | `tmpfs` \| `none` | `tmpfs` | **保留**（没有存储时加载器总是用内存）。 |
 | `storage.snapshots.store_file.enabled` | bool | `true` | 在宿主分区上查找 ext4 存储文件（[store-file.md](store-file.md)）。 |
 | `…store_file.path` | 字符串 | `""` | 宿主分区内的确切路径，优先检查。 |
-| `…store_file.glob` | 列表 | `[/omloader/store.img, /ventoy/*.dat]` | 宿主分区内的匹配模式；只有 ext4 卷标为 `OMLOADER` 的文件才算。 |
+| `…store_file.glob` | 列表 | `[/omloader/store.img, /omloader/*.dat, /omloader/*.img, /ventoy/*.dat]` | 宿主分区内的匹配模式，按此顺序，先匹配者胜；只有 ext4 卷标为 `OMLOADER` 的文件才算（`e2label` 或 `CreatePersistentImg.sh -l OMLOADER`）；Ventoy 的 `vtoycow` 文件会被忽略。 |
+| `…store_file.auto_create` | 布尔 | `true` | 没有 OMLOADER 分区/文件且宿主可写时，启动时自动创建 `omloader/store.img`（只读、`omloader.store=off`、剩余空间不足 大小+1 GiB 时跳过；≥ 4G 时缩小到可用空间）。 |
 | `…store_file.host_match.label` / `.uuid` | 字符串 | `""` / `""` | 可选：限制哪个数据分区可存放该文件（空 = 数据分区：VTOYDATA，否则是存放 ISO 的分区；uuid 优先于卷标；不匹配则不搜索存储文件）。 |
-| `…store_file.size` | 大小 | `20G` | `omloader store create` 的默认大小。 |
+| `…store_file.size` | 大小 | `20G` | 自动创建的存储文件大小，也是 `omloader store create` 的默认大小（与下载缓存 `cache.max_size_gb` 无关）。 |
 | `…store_file.prealloc` | `auto`\|`yes`\|`no` | `auto` | `auto` = exFAT/vfat 上完整分配（无稀疏文件），其他文件系统为稀疏。 |
 
 **`snapshot`、`verify`**
@@ -478,3 +489,7 @@ Boot: omloader boot --image <image> [--snapshot current|base|<label>] [--ephemer
 Alpha 阶段，仅在 QEMU/OVMF 中测试。仅 UEFI x86_64；不支持 Secure Boot；仅 Linux 客户系统；VM 客户系统：ext4/xfs 根且 `/boot` 可用，无 LVM/LUKS，仅在 Debian 风格客户系统上验证，无独立数据卷，关机时不能干净卸载存储；
 容器的控制台登录仅对 systemd 客户系统实现（其他得到 busybox 调试 shell）；无热快照；dm-snapshot 的 VM 快照不能“合并删除”（请用 `flatten`）；Wi-Fi 未配置；拉取只支持 Simplestreams 源（sha256 校验，无 GPG）；
 Docker/OCI 镜像是实验性功能（默认开启；需要带 systemd 或 shell 的镜像，不支持端口映射，代理支持不均衡；可用 `experimental.oci_images: false` 关闭）。完整列表见 [DEVELOPMENT.md](DEVELOPMENT.md#known-limitations)。
+
+### 常见问题：TUI 显示 "store RAM only"
+
+快照只在内存中，断电即失。优先级：`OMLOADER` 分区 > 存储文件（`omloader/store.img`、`omloader/*.dat|*.img`、`ventoy/*.dat`，ext4 卷标必须为 `OMLOADER`）> 内存。默认首次启动时加载器会自动创建 `omloader/store.img`（`storage.snapshots.store_file.size`，20G）。以下情况不会创建：宿主只读（Windows 快速启动/休眠导致的 NTFS → 请完全关机）、剩余空间 < 4G + 1G、`auto_create: false`、`omloader.store=off`。原因见 Storage 页面/加载器日志，详见 [store-file.md](store-file.md)。

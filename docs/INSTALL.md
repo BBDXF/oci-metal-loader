@@ -93,6 +93,16 @@ Two independent countdowns chain together: **Ventoy** picks the ISO, then **omlo
 **Without Ventoy** (or when editing the GRUB entry with `e`) the kernel line can do it: `omloader.image=ubuntu-noble omloader.snapshot=current` boots immediately with no countdown (it wins over `boot.yaml`); `boot.extra_cmdline_flags` lists more flags ([section 11](#11-kernel-command-line-omloader)).
 **Troubleshooting:** *Ventoy shows its menu and waits* → `VTOY_DEFAULT_IMAGE` does not match the ISO path/name (or `ventoy.json` is not in `ventoy/` on the first partition). *Ventoy asks for a boot mode* → choose *normal* (or *GRUB2*) once; memdisk mode does not work for this ISO, see [ventoy.md](ventoy.md). *The TUI opens instead of the image* → `boot.yaml` is not found/invalid (`omloader config validate -c boot.yaml`), `default_image` is empty, `last` has nothing recorded yet, or a key was pressed. Needs a store (section 3) for snapshots to persist. *(Verified in QEMU only; real hardware untested.)*
 
+### How the loader chooses ISO / data partition / config / store
+| What | Order (first match wins) |
+|---|---|
+| ISO | `omloader.live=`/label `OMLOADER_LIVE`/CD-ROM > iso-scan: Ventoy-looking partitions first; per partition `omloader.isofile=` > `VTOY_DEFAULT_SEARCH_ROOT` > `VTOY_DEFAULT_IMAGE` > `omloader/` dir > any `*.iso` labelled `OMLOADER_LIVE` (see [ventoy.md](ventoy.md)) |
+| Data partition | `omloader.data=` > label `VTOYDATA` > the partition holding the ISO |
+| `boot.yaml` | `omloader/boot.yaml` on the data partition > on the `OMLOADER` partition > on the ISO partition |
+| Store | `OMLOADER`-labelled ext4/xfs/btrfs partition on **any** disk > store file under `omloader/` (see [store-file.md](store-file.md)) > RAM (not persistent) |
+
+Warning: a `VTOYDATA` or `OMLOADER` label on an internal disk is picked up too, and several omloader ISOs on different partitions are ambiguous (the first in the order above is used; check the `OMLOADER_STAGE1: iso:` log line).
+
 ## 5. Get images
 
 Images live in `omloader/images/<name>/` (`image.yaml` + `base.raw` for `lxd-vm` or `base.squashfs` for `lxd-container`). Three ways to get them there:
@@ -197,9 +207,10 @@ Keys marked **reserved** are accepted and validated but nothing in the current c
 | `storage.snapshots.fallback` | `tmpfs` \| `none` | `tmpfs` | **Reserved** (without a store the loader always uses RAM). |
 | `storage.snapshots.store_file.enabled` | bool | `true` | Look for an ext4 store file on the host partition ([store-file.md](store-file.md)). |
 | `…store_file.path` | string | `""` | Exact path of the file inside the host partition, checked first. |
-| `…store_file.glob` | list | `[/omloader/store.img, /ventoy/*.dat]` | Patterns inside the host partition; only files whose ext4 label is `OMLOADER` count. |
+| `…store_file.glob` | list | `[/omloader/store.img, /omloader/*.dat, /omloader/*.img, /ventoy/*.dat]` | Patterns inside the host partition, in this order, first match wins; only files whose ext4 label is `OMLOADER` count (`e2label`, or `CreatePersistentImg.sh -l OMLOADER`); Ventoy `vtoycow` files are ignored. |
+| `…store_file.auto_create` | bool | `true` | No OMLOADER partition/file found and host writable → create `omloader/store.img` at boot (skipped when read-only, `omloader.store=off`, or < size+1 GiB free; shrinks to fit if ≥ 4G). |
 | `…store_file.host_match.label` / `.uuid` | string | `""` / `""` | Optionally restrict which data partition may hold the file (empty = the data partition: VTOYDATA, else the one holding the ISO; uuid wins over label; mismatch = no store file search). |
-| `…store_file.size` | size | `20G` | Default size of `omloader store create`. |
+| `…store_file.size` | size | `20G` | Size of the auto-created store and default of `omloader store create` (not `cache.max_size_gb`, the download cache). |
 | `…store_file.prealloc` | `auto`\|`yes`\|`no` | `auto` | `auto` = fully allocate on exFAT/vfat (no sparse files), sparse elsewhere. |
 
 **`snapshot`, `verify`**
@@ -340,7 +351,7 @@ Data partition (exFAT/NTFS/…; label VTOYDATA preferred, else the partition hol
     ├── boot.yaml                 global config (auto-boot, guest_defaults, network, …)
     ├── sources.yaml              your sources/mirrors (merged over the built-in catalog)
     ├── console.conf              optional: font=NAME for the Linux console
-    └── store.img                 ext4 store FILE (label OMLOADER) when no OMLOADER partition exists (option A)
+    └── store.img                 ext4 store FILE (label OMLOADER); auto-created at first boot (size 20G) if absent; also *.dat/*.img (option A)
 
 OMLOADER partition (ext4/xfs/btrfs, optional)  ── mounted at /mnt/snap
 ```
@@ -481,3 +492,7 @@ Store file commands: see [store-file.md](store-file.md). `omloader version` prin
 Alpha, QEMU/OVMF-tested only. UEFI x86_64 only; no Secure Boot; Linux guests only; VM guests: ext4/xfs root with `/boot`, no LVM/LUKS, verified on Debian-style guests only, no independent data volumes, no clean unmount of the store at poweroff;
 container console login is implemented for systemd guests (others get a busybox debug shell); no hot snapshots; dm-snapshot VM snapshots cannot be merge-deleted (use `flatten`); Wi-Fi unconfigured; pull supports Simplestreams sources only (sha256, no GPG);
 Docker/OCI images are EXPERIMENTAL (on by default; need systemd-or-shell images, no port mapping, uneven proxy support; switch off with `experimental.oci_images: false`). The complete list is in [DEVELOPMENT.md](DEVELOPMENT.md#known-limitations).
+
+### FAQ: the TUI says "store RAM only"
+
+Snapshots are then in RAM and lost at power-off. Precedence: `OMLOADER` partition > store file (`omloader/store.img`, `omloader/*.dat|*.img`, `ventoy/*.dat`, ext4 label must be `OMLOADER`) > RAM. By default the loader auto-creates `omloader/store.img` (`storage.snapshots.store_file.size`, 20G) on first boot. It does not when: the host is read-only (NTFS from Windows fast startup/hibernation → shut down fully), free space is < 4G + 1G, `auto_create: false`, or `omloader.store=off`. See the Storage page / loader log for the reason; details in [store-file.md](store-file.md).

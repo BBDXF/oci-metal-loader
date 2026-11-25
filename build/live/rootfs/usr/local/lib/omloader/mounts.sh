@@ -93,7 +93,20 @@ fi
 # omloader.store=off (kernel cmdline): do not attach a store file (maintenance: check/grow it offline)
 if [ $SNAPOK = 0 ] && [ -n "$IMGDEV" ] && [ "$(arg omloader.store)" != off ] && mountpoint -q /mnt/images; then
   CFG=; [ -r /mnt/images/omloader/boot.yaml ] && CFG="-c /mnt/images/omloader/boot.yaml"
+  : > /run/omloader/store.log
   SF=$(omloader store find --host-root /mnt/images --host-dev "$IMGDEV" $CFG 2>/run/omloader/store-find.err)
+  # no store file: create omloader/store.img (config auto_create/size; never fatal)
+  if [ -z "$SF" ] && ! grep -q 'does not match' /run/omloader/store-find.err 2>/dev/null; then
+    if [ $IMGRW != 1 ]; then
+      echo "OMLOADER_LOADER: store auto-create skipped: host partition is read-only (Windows fast startup/hibernation -> shut down fully, then reboot)" | tee -a /run/omloader/store.log
+    elif omloader store autocreate --host-root /mnt/images $CFG > /run/omloader/autocreate.out 2>&1; then
+      cat /run/omloader/autocreate.out | tee -a /run/omloader/store.log
+      SF=$(omloader store find --host-root /mnt/images --host-dev "$IMGDEV" $CFG 2>>/run/omloader/store-find.err)
+    else
+      cat /run/omloader/autocreate.out | tee -a /run/omloader/store.log
+    fi
+  fi
+  { sed 's/^/OMLOADER_LOADER: /' /run/omloader/store-find.err; } | tee -a /run/omloader/store.log
   if [ -n "$SF" ]; then
     if [ $IMGRW != 1 ]; then
       STOREERR=host-readonly
@@ -111,6 +124,8 @@ if [ $SNAPOK = 0 ] && [ -n "$IMGDEV" ] && [ "$(arg omloader.store)" != off ] && 
   fi
 fi
 [ $SNAPOK = 1 ] && mkdir -p /mnt/snap/snapshots 2>/dev/null
+# no store: ephemeral snapshots on a tmpfs (the live root is an overlay, which is not usable as overlay upperdir)
+[ $SNAPOK = 0 ] && ! mountpoint -q /mnt/snap && mount -t tmpfs -o mode=755 tmpfs /mnt/snap 2>/dev/null
 echo "OMLOADER_LOADER: snap=${SNAPDEV:-none}(mounted=$SNAPOK${STOREFILE:+ store-file=$STOREFILE}${STOREERR:+ store-error=$STOREERR}) images=${IMGDEV:-none} images_root=$IMAGES_ROOT"
 [ -d "$IMAGES_ROOT" ] && echo "OMLOADER_LOADER: images: $(ls $IMAGES_ROOT | tr '\n' ' ')"
 /usr/local/lib/omloader/firmware.sh /mnt/images/omloader/firmware || true

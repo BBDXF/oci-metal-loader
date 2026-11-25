@@ -21,7 +21,7 @@ mirror_policy:
 # storage:
 #   snapshots:
 #     store_file:
-#       glob: [/omloader/store.img, /ventoy/*.dat]
+#       glob: [/omloader/store.img, /omloader/*.dat, /omloader/*.img, /ventoy/*.dat]
 #       host_match: {label: ""}
 #       size: 20G
 #       prealloc: auto

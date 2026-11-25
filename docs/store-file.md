@@ -25,9 +25,10 @@ storage:
     store_file:
       enabled: true
       path: ""                                    # exact file inside the host partition (checked first)
-      glob: [/omloader/store.img, /ventoy/*.dat]  # Ventoy .dat convention; label must be OMLOADER
+      glob: [/omloader/store.img, /omloader/*.dat, /omloader/*.img, /ventoy/*.dat]  # in this order; label must be OMLOADER
       host_match: {label: "", uuid: ""}            # empty = the loader data partition (VTOYDATA, else the ISO partition); label/uuid restrict it
-      size: 20G                                   # default for `omloader store create`
+      auto_create: true                           # no store found + host writable: create omloader/store.img at boot
+      size: 20G                                   # size of the auto-created store and `omloader store create` default
       prealloc: auto                              # auto: yes on exFAT/vfat (no sparse files), no elsewhere
 ```
 
@@ -79,3 +80,18 @@ multi-GB zero fill anyway or fail on write when the partition is full). On ext4/
 Ventoy persistence uses ext4 image files (`*.dat`, created with `CreatePersistentImg.sh`) in `/ventoy/` on the data partition. The default glob
 `/ventoy/*.dat` lets you drop such a file in place, but it is only used when its ext4 label is `OMLOADER`
 (`CreatePersistentImg.sh -l OMLOADER` or `omloader store create`); other persistence files are left alone. The default location `/omloader/store.img` is checked first.
+
+## Discovery, precedence, auto-create (v0.2.2)
+
+- **Precedence:** a real ext4/xfs/btrfs partition labelled `OMLOADER` > a store file > RAM only (ephemeral).
+- **Where files are searched** (host = data partition), in this order, first match wins: `omloader/store.img`, `omloader/*.dat`, `omloader/*.img`
+  (sorted), `ventoy/*.dat`. Only a file whose **ext4 label is `OMLOADER`** counts (label an existing one with `e2label FILE OMLOADER`, or create it
+  with Ventoy's `CreatePersistentImg.sh -l OMLOADER`). Ventoy's own `vtoycow` persistence files are never touched. The chosen file and the reason
+  every other candidate was skipped are in the loader log, `omloader store find` (stderr) and the TUI Storage page.
+- **Auto-create:** with no OMLOADER partition and no valid store file the loader creates `omloader/store.img` (ext4, label OMLOADER, same code as
+  `omloader store create`) before the TUI starts, printing `OMLOADER_LOADER: creating store ... N GiB`. Size = `storage.snapshots.store_file.size`
+  (default `20G`; unrelated to the download-cache limit `cache.max_size_gb`). Config is read from `omloader/boot.yaml` on the data partition, else built-in defaults.
+- **Guards (never fatal, fall back to RAM only):** skipped with `auto_create: false` or `omloader.store=off`; skipped if the host is read-only
+  (NTFS dirty/hibernated: Windows fast startup/hibernation → shut down fully); needs free space >= size + 1 GiB, otherwise the size shrinks to what fits
+  if that is >= 4 GiB, else skipped; idempotent (an existing store is reused; a leftover `.new` from an interrupted creation is deleted; an
+  existing non-OMLOADER `store.img` is never overwritten). exFAT/vfat are fully allocated (slow for 20G), NTFS/ext4 sparse.

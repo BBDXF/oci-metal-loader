@@ -28,6 +28,13 @@ loop device stays valid. The serial/tty log says how: `OMLOADER_STAGE1: live med
 If the host partition is the data partition (see 4.) or labelled `OMLOADER` it is switched to read-write in stage 1 so `omloader-mounts` can use it as images/snapshot store without a conflicting second mount.
 (NTFS cannot be remounted: stage 1 releases the ISO, mounts ntfs-3g read-write again and re-attaches the ISO; a dirty or hibernated volume — Windows Fast Startup — stays **read-only**, images remain usable.) A partition holding the ISO while a different `VTOYDATA`/`omloader.data=` partition exists stays read-only. At shutdown `mounts.sh stop` unmounts the data partitions in the right order.
 
+### iso-scan order (stage 1)
+Partitions that look like Ventoy (label `Ventoy`/`VTOYDATA`, or a `ventoy/` directory) are tried first, then the rest. On each partition the steps are:
+pinned `omloader.isofile=` > `ventoy/ventoy.json` `VTOY_DEFAULT_SEARCH_ROOT` (ISOs below that directory, up to 3 levels; same meaning as in Ventoy) >
+`VTOY_DEFAULT_IMAGE` (an absolute path; Ventoy also requires it inside the search root) > `omloader/omloader*.iso`, `/omloader.iso`, `/ISO/omloader.iso` > any `*.iso` labelled `OMLOADER_LIVE`.
+The first hit wins. The log shows `OMLOADER_STAGE1: iso: <dev> (<fs>, label <l>) <path> via <step>` and, if other partitions hold `omloader*.iso` too,
+`iso: skipped other candidates: …`. Avoid several omloader ISOs on different partitions: only the first is used.
+
 ## Default image without kernel parameters
 Fully unattended (Ventoy default entry + omloader countdown): see [INSTALL.md, Unattended boot](INSTALL.md#unattended-boot-boot-a-chosen-image-with-no-key-presses).
 Create `omloader/boot.yaml` on the data partition (next to the ISO; also read from an OMLOADER partition):

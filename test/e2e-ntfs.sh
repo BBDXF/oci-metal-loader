@@ -29,7 +29,7 @@ sync; umount /mnt/images
 echo NTFS_POPULATED
 HOOK
 ISO_MB=$(( ($(stat -c %s $ISO) + 1048575) / 1048576 )); IMG_MB=$(du -sm --apparent-size $O/oci-images | cut -f1)
-P1_MB=$((ISO_MB + IMG_MB + 200)); P1=$W/ntfs-p1.img; ST=$W/ntfs-stage.img; rm -f $P1 $ST
+P1_MB=$((ISO_MB + IMG_MB + 3200)); P1=$W/ntfs-p1.img; ST=$W/ntfs-stage.img; rm -f $P1 $ST  # ~3 GiB free: room for the 1G store + 1G margin
 truncate -s ${P1_MB}M $P1; truncate -s $(( (ISO_MB + IMG_MB) * 13 / 10 + 100 ))M $ST; mkfs.ext4 -q -L OMLSTAGE -d $W/ntfs-stage $ST
 DISK=$P1 DISK2=$ST BUS=virtio EXTRA=omloader.hook=1 LOG=$W/ntfs-populate.log TIMEOUT=400 $T/run-kvm.sh >/dev/null || true
 grep -q NTFS_POPULATED $W/ntfs-populate.log || { echo "populate failed, see $W/ntfs-populate.log"; exit 1; }
@@ -94,5 +94,29 @@ pkill -9 -f "ntfs-run-ntfs-C" 2>/dev/null; sleep 2
 run ntfs-D "omloader.hook=1" 240
 if waitfor ntfs-D 'OMLOADER_HOOK_RC=' 200; then sleep 3; clean ntfs-D; common ntfs-D any; else fail "D: no hook result (see $W/ntfs-D.clean)"; grep -a 'STAGE1\|FATAL' $W/ntfs-D.clean | tail -5; fi
 pkill -9 -f "ntfs-run-ntfs-D" 2>/dev/null
+
+# ---- store-file cases on the NTFS data partition (ntfs-3g): auto-create, reuse, pre-placed foo.dat, vtoycow ignored ----
+hookcase() { # $1 tag, $2 hook script body; boots the same disk, waits for the poweroff
+  local t=$1; rm -rf $W/ntfs-hk2; mkdir -p $W/ntfs-hk2; printf '%s\n' "$2" > $W/ntfs-hk2/hook.sh
+  ST=$W/ntfs-hook2.img; rm -f $ST; truncate -s 16M $ST; mkfs.ext4 -q -L OMLSTAGE -d $W/ntfs-hk2 $ST
+  run $t "omloader.hook=1" 600
+  waitfor $t 'OMLOADER_HOOK_RC=' 500 || fail "$t: no hook result (see $W/$t.clean)"
+  sleep 2; clean $t; waitfor $t 'Power down|System halted' 60; pkill -9 -f "ntfs-run-$t" 2>/dev/null; sleep 1
+}
+REPORT='. /run/omloader/env; echo "TAG:r:BEGIN"; cat /run/omloader/env; echo SNAPDIR=$(ls /mnt/snap/snapshots 2>&1 | tr "\n" " "); ls -l /mnt/images/omloader /mnt/images/ventoy 2>&1; for f in /mnt/images/omloader/*.img /mnt/images/omloader/*.dat; do [ -f $f ] && echo "LABEL $f $(e2label $f)"; done; cat /run/omloader/store.log; echo "TAG:r:END"'
+hookcase E0 "set -e; printf 'storage:\n  snapshots:\n    store_file:\n      size: 1G\n' > /mnt/images/omloader/boot.yaml; echo prepared"
+hookcase E1 "$REPORT; mkdir -p /mnt/snap/snapshots/snapA; echo hi > /mnt/snap/snapshots/snapA/m; sync"
+R=$(sect E1 r)
+echo "$R" | grep -q 'OMLOADER_LOADER: creating store .*1 GiB' && pass "E1: auto-create marker line (1 GiB, NTFS/ntfs-3g)" || fail "E1: no creation marker: $(grep -a 'OMLOADER_LOADER: .*store' $W/E1.clean | head -5)"
+echo "$R" | grep -q 'LABEL /mnt/images/omloader/store.img OMLOADER' && pass "E1: omloader/store.img exists, label OMLOADER" || fail "E1: label: $R"
+echo "$R" | grep -q 'SNAPOK=1' && echo "$R" | grep -q 'STOREFILE=/mnt/images/omloader/store.img' && pass "E1: snapshots on the store (not RAM only)" || fail "E1: env: $R"
+hookcase E2 "$REPORT"
+R=$(sect E2 r)
+! grep -aq 'OMLOADER_LOADER: creating store' $W/E2.clean && echo "$R" | grep -q 'STOREFILE=/mnt/images/omloader/store.img' && echo "$R" | grep -q 'snapA' && pass "E2: store reused, no second creation, snapshot still there" || fail "E2: $R"
+hookcase F0 "set -e; rm -f /mnt/images/omloader/store.img /mnt/images/omloader/boot.yaml; truncate -s 64M /mnt/images/omloader/foo.dat; mkfs.ext4 -q -L OMLOADER /mnt/images/omloader/foo.dat; mkdir -p /mnt/images/ventoy; truncate -s 64M /mnt/images/ventoy/x.dat; mkfs.ext4 -q -L vtoycow /mnt/images/ventoy/x.dat; echo prepared"
+hookcase F1 "$REPORT"
+R=$(sect F1 r)
+echo "$R" | grep -q 'STOREFILE=/mnt/images/omloader/foo.dat' && pass "F1: pre-placed omloader/foo.dat (label OMLOADER) chosen" || fail "F1: $R"
+! grep -aq 'OMLOADER_LOADER: creating store' $W/F1.clean && ! echo "$R" | grep -q 'ventoy/x.dat chosen' && pass "F1: no creation; vtoycow file ignored" || fail "F1: $R"
 [ $FAIL = 0 ] && echo "E2E-NTFS: ALL PASS" || echo "E2E-NTFS: FAILED"
 exit $FAIL

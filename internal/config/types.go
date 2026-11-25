@@ -47,12 +47,13 @@ type SnapStore struct {
 // StoreFile configures "store-file mode". Precedence in the loader: a real ext4/btrfs/xfs partition labelled
 // OMLOADER wins, else a store file found on the host partition, else `fallback`.
 type StoreFile struct {
-	Enabled   bool      `yaml:"enabled" json:"enabled"`
-	Path      string    `yaml:"path" json:"path"`             // exact file inside the host partition (checked first), e.g. /omloader/store.img
-	Glob      []string  `yaml:"glob" json:"glob"`             // patterns inside the host partition; only files whose ext4 label is OMLOADER count
-	HostMatch HostMatch `yaml:"host_match" json:"host_match"` // which partition holds the file (uuid wins over label)
-	Size      string    `yaml:"size" json:"size"`             // default size of `omloader store create`
-	Prealloc  string    `yaml:"prealloc" json:"prealloc"`     // auto (yes on exfat/vfat) | yes | no
+	Enabled    bool      `yaml:"enabled" json:"enabled"`
+	Path       string    `yaml:"path" json:"path"`               // exact file inside the host partition (checked first), e.g. /omloader/store.img
+	Glob       []string  `yaml:"glob" json:"glob"`               // patterns inside the host partition; only files whose ext4 label is OMLOADER count
+	HostMatch  HostMatch `yaml:"host_match" json:"host_match"`   // which partition holds the file (uuid wins over label)
+	Size       string    `yaml:"size" json:"size"`               // size of `omloader store create` and of the auto-created store
+	AutoCreate bool      `yaml:"auto_create" json:"auto_create"` // create omloader/store.img at boot when no store exists (default true)
+	Prealloc   string    `yaml:"prealloc" json:"prealloc"`       // auto (yes on exfat/vfat) | yes | no
 }
 
 // HostMatch selects the host partition of a store file.

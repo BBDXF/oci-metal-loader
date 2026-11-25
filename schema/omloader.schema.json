@@ -62,6 +62,9 @@
                 "enabled": {
                   "type": "boolean"
                 },
+                "auto_create": {
+                  "type": "boolean"
+                },
                 "path": {
                   "type": "string",
                   "not": {

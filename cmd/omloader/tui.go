@@ -632,6 +632,16 @@ func (s *realSvc) Store() (tui.StoreStatus, error) {
 			st.Notes = append(st.Notes, "no persistent snapshot store: /mnt/snap is on the loader's RAM (ephemeral). Create a store file below.")
 		}
 	}
+	if b, err := os.ReadFile("/run/omloader/store.log"); err == nil {
+		for _, l := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+			if l = strings.TrimPrefix(l, "OMLOADER_LOADER: "); l != "" {
+				st.Notes = append(st.Notes, l)
+			}
+		}
+	}
+	if c, err := s.cfg(); err == nil && c.Storage.Snapshots.StoreFile.AutoCreate && s.env["STOREFILE"] != "" {
+		st.Notes = append(st.Notes, "auto-created at first boot if missing, size "+c.Storage.Snapshots.StoreFile.Size)
+	}
 	if e := s.env["STOREERR"]; e != "" {
 		st.Notes = append(st.Notes, "store error: "+e)
 	}

@@ -196,7 +196,7 @@ func TestStoreFileConfigDefaultsAndValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	sf := r.Config.Storage.Snapshots.StoreFile
-	if !sf.Enabled || sf.HostMatch.Label != "" || sf.Prealloc != "auto" || len(sf.Glob) != 2 || sf.Glob[1] != "/ventoy/*.dat" {
+	if !sf.Enabled || sf.HostMatch.Label != "" || sf.Prealloc != "auto" || len(sf.Glob) != 4 || sf.Glob[0] != "/omloader/store.img" || sf.Glob[3] != "/ventoy/*.dat" || !sf.AutoCreate || sf.Size != "20G" {
 		t.Fatalf("%+v", sf)
 	}
 	p := filepath.Join(t.TempDir(), "c.yaml")
@@ -204,5 +204,47 @@ func TestStoreFileConfigDefaultsAndValidation(t *testing.T) {
 	_, err = config.Load(p, "")
 	if err == nil || !strings.Contains(err.Error(), "prealloc") || !strings.Contains(err.Error(), "absolute") || !strings.Contains(err.Error(), "size") {
 		t.Fatal(err)
+	}
+}
+
+func TestFindStoreFilesDetailOrderAndSkips(t *testing.T) {
+	d := t.TempDir()
+	writeSB(t, d+"/omloader/b.dat", "OMLOADER", 1, 0)
+	writeSB(t, d+"/omloader/a.img", "other", 1, 0)
+	writeSB(t, d+"/omloader/a.dat", "OMLOADER", 1, 0)
+	writeSB(t, d+"/ventoy/x.dat", "vtoycow", 1, 0)
+	r, _ := config.Load("", "")
+	got := FindStoreFilesDetail(d, r.Config.Storage.Snapshots.StoreFile, "")
+	want := []string{"/omloader/a.dat", "/omloader/b.dat", "/omloader/a.img", "/ventoy/x.dat"}
+	if len(got) != 4 {
+		t.Fatal(got)
+	}
+	for i, w := range want {
+		if got[i].Path != d+w {
+			t.Fatal(i, got)
+		}
+	}
+	if got[0].Skip != "" || got[1].Skip != "" || got[2].Skip == "" || got[3].Skip == "" {
+		t.Fatal(got)
+	}
+	writeSB(t, d+"/omloader/store.img", "OMLOADER", 1, 0)
+	if g := FindStoreFilesDetail(d, r.Config.Storage.Snapshots.StoreFile, ""); g[0].Path != d+"/omloader/store.img" {
+		t.Fatal("store.img must come first", g)
+	}
+}
+
+func TestPlanAutoCreate(t *testing.T) {
+	const G = int64(1 << 30)
+	for _, c := range []struct{ free, want, size int64 }{
+		{25 * G, 20 * G, 20 * G}, {21 * G, 20 * G, 20 * G}, {10 * G, 20 * G, 9 * G}, {5 * G, 20 * G, 4 * G}, {4*G + G/2, 20 * G, 0}, {0, 20 * G, 0},
+	} {
+		if got, why := PlanAutoCreate(c.free, c.want); got != c.size || (got != c.want && why == "") {
+			t.Fatalf("%+v -> %d %q", c, got, why)
+		}
+	}
+	for in, w := range map[string]int64{"16G": 16 << 30, "1G": 1 << 30, "512M": 512 << 20} {
+		if n, err := config.ParseSize(in); err != nil || n != w {
+			t.Fatal(in, n, err)
+		}
 	}
 }
