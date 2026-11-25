@@ -103,6 +103,7 @@ func (t *storageTracker) ref(file string, rw bool) (FileRef, error) {
 		// store-file mode: the filesystem sits on a loop device backed by a file on another storage; that host
 		// storage is recorded first (and must be writable: the loop device writes into the file).
 		var loopFile *FileRef
+		var exts []Extent
 		if strings.HasPrefix(m.Source, "/dev/loop") {
 			bo, err := t.r.Run("losetup", "--noheadings", "-O", "BACK-FILE", m.Source)
 			if err != nil {
@@ -117,12 +118,24 @@ func (t *storageTracker) ref(file string, rw bool) (FileRef, error) {
 				return FileRef{}, fmt.Errorf("store file %s: %w", bf, err)
 			}
 			loopFile = &hr
+			if !t.dryFake {
+				if ex, size, err := FileExtents(bf); err == nil {
+					if v, err := ValidateExtents(ex, size); err == nil {
+						exts = v
+						for _, h := range t.list {
+							if h.ID == hr.Storage {
+								h.NoMount = true
+							}
+						}
+					}
+				}
+			}
 		}
 		out, err := t.r.Run("blkid", "-o", "export", m.Source)
 		if err != nil {
 			return FileRef{}, err
 		}
-		s = &StorageRef{ID: fmt.Sprintf("s%d", len(t.list)), Root: m.Root, Loop: loopFile}
+		s = &StorageRef{ID: fmt.Sprintf("s%d", len(t.list)), Root: m.Root, Loop: loopFile, Extents: exts}
 		for _, ln := range strings.Split(out, "\n") {
 			k, v, _ := strings.Cut(strings.TrimSpace(ln), "=")
 			switch k {

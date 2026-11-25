@@ -33,6 +33,12 @@ echo "OMLOADER_GUEST: assembling snapshot root" > /dev/console 2>&1
 exec /init "$@"
 `
 
+// dmUdevRules makes udev (systemd/dracut initrds) know the dm devices created by preinit outside udev, so systemd
+// gets a .device unit for /dev/mapper/<name> (no DM cookie => stock 10-dm.rules would leave SYSTEMD_READY=0 / no symlink).
+const dmUdevRules = `# omloader: dm devices assembled by preinit (no udev cookie)
+SUBSYSTEM=="block", KERNEL=="dm-*", ATTR{dm/name}=="oml-*", SYMLINK+="mapper/$attr{dm/name}", TAG+="systemd", ENV{SYSTEMD_READY}="1"
+`
+
 // ExtraSpec describes the appended initrd.
 type ExtraSpec struct {
 	Plan        *GuestPlan
@@ -50,6 +56,7 @@ func BuildExtra(s ExtraSpec) ([]byte, error) {
 	}
 	w.File(GuestDir+"/omloader", 0o755, self)
 	w.File(GuestPreinit, 0o755, []byte(preinitScript))
+	w.File("/etc/udev/rules.d/99-zz-omloader-dm.rules", 0o644, []byte(dmUdevRules))
 	libs := map[string]string{}
 	interp := ""
 	names := make([]string, 0, len(s.Tools))
@@ -191,7 +198,7 @@ func kernelVersion(root, kernelReal string) (string, error) {
 func missingStoreModules(r Runner, root, kver string, st []StorageRef) []string {
 	need := false
 	for _, s := range st {
-		need = need || s.Loop != nil
+		need = need || s.Loop != nil && len(s.Extents) == 0
 	}
 	if !need {
 		return nil

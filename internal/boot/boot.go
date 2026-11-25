@@ -463,6 +463,39 @@ func (o Options) prepareGuest(r Runner, res *config.Resolved, p *Plan, mnt, kern
 		}
 		gp.Layers = append(gp.Layers, GuestLayer{Node: l.Node, DMName: l.DMName, Cow: c})
 	}
+	// A NoMount host storage (store file reached by dm-linear) also holds the base image: map that file too, or
+	// fall back to mounting the host fs and losetup (needs the guest's fs driver + loop).
+	if !o.DryRun {
+		for _, s := range tr.list {
+			if !s.NoMount {
+				continue
+			}
+			ok := false
+			if gp.Base.Storage == s.ID {
+				if ex, size, e := FileExtents(p.BaseFile); e == nil {
+					if v, e := ValidateExtents(ex, size); e == nil {
+						gp.BaseExtents, ok = v, true
+					}
+				}
+			} else {
+				ok = true
+			}
+			for _, l := range gp.Layers {
+				if l.Cow.Storage == s.ID {
+					ok = false
+				}
+			}
+			if !ok {
+				s.NoMount = false
+				for _, d := range tr.list {
+					if d.Loop != nil && d.Loop.Storage == s.ID {
+						d.Extents = nil
+					}
+				}
+				gp.BaseExtents = nil
+			}
+		}
+	}
 	for _, s := range tr.list {
 		gp.Storages = append(gp.Storages, *s)
 	}

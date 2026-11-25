@@ -343,6 +343,10 @@ func adaptBase(in AdaptInput, warn io.Writer, sysd bool) (bool, error) {
 			}
 		}
 	}
+	if sysd {
+		// images with an uninitialised machine-id (Arch) would run the interactive systemd-firstboot on the console forever
+		guestSymlink(in.Root, "/etc/systemd/system/systemd-firstboot.service", "/dev/null")
+	}
 	if sysd && len(rt.Env) > 0 {
 		var kv []string
 		for _, k := range sortedKeys(rt.Env) {

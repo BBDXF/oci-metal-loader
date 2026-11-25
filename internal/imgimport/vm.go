@@ -22,7 +22,7 @@ type KernelInfo struct {
 	Initrd        string
 }
 
-var vmCmdline = "console=tty0 console=ttyS0,115200"
+var vmCmdline = "console=ttyS0,115200 console=tty0"
 
 // importLXDVM converts an LXD VM disk (qcow2 inside an LXD image: <dir>/disk.qcow2 [+ lxd.tar.xz], or a disk file path)
 // to <tmp>/base.raw and, unless NoProbe, detects kernel/initrd/root partition by attaching the raw disk read-only.

@@ -32,6 +32,11 @@ type StorageRef struct {
 	// Loop (store-file mode): this storage is a filesystem inside an image FILE on another storage (which is
 	// listed earlier): attach the file with losetup, then mount the loop device. UUID/Label are informational.
 	Loop *FileRef `json:"loop,omitempty"`
+	// Extents (with Loop): physical byte extents of the store file on its host storage; the guest builds a
+	// dm-linear device on the host block device instead of mounting the host fs + losetup (needs no loop/ntfs3).
+	Extents []Extent `json:"extents,omitempty"`
+	// NoMount: only locate the block device (used as dm-linear backing for Extents), never mount it.
+	NoMount bool `json:"nomount,omitempty"`
 }
 
 // FileRef is a file on a storage.
@@ -52,6 +57,8 @@ type GuestPlan struct {
 	Version   int          `json:"version"`
 	Image     string       `json:"image"`
 	Storages  []StorageRef `json:"storages"`
+	// BaseExtents: the base image file lives on a NoMount storage; it is exposed as a dm-linear device over these extents.
+	BaseExtents []Extent `json:"base_extents,omitempty"`
 	Base      FileRef      `json:"base"`
 	Sectors   int64        `json:"sectors"`
 	BaseDM    string       `json:"base_dm"` // used when there are no layers (read-only linear map)
@@ -159,10 +166,22 @@ func GuestAssemble(p *GuestPlan, r Runner, o GuestOptions) (string, error) {
 		}
 	}
 	mounts := map[string]string{}
+	devs := map[string]string{}
 	for _, s := range p.Storages {
 		var dev string
 		var lastErr error
-		if s.Loop != nil {
+		if s.Loop != nil && len(s.Extents) > 0 {
+			hd, ok := devs[s.Loop.Storage]
+			if !ok {
+				return "", fmt.Errorf("storage %s: host storage %q of the store file has no device (plan order)", s.ID, s.Loop.Storage)
+			}
+			name := "oml-store-" + s.ID
+			if _, err := r.Run("dmsetup", "create", name, "--table", LinearTable(s.Extents, hd)); err != nil {
+				return "", fmt.Errorf("storage %s: dm-linear over %s: %w", s.ID, hd, err)
+			}
+			dev = "/dev/mapper/" + name
+			logf("storage %s: store file mapped by %d extents on %s as %s", s.ID, len(s.Extents), hd, dev)
+		} else if s.Loop != nil {
 			m, ok := mounts[s.Loop.Storage]
 			if !ok {
 				return "", fmt.Errorf("storage %s: host storage %q of the store file is not mounted (plan order)", s.ID, s.Loop.Storage)
@@ -200,6 +219,11 @@ func GuestAssemble(p *GuestPlan, r Runner, o GuestOptions) (string, error) {
 		if dev == "" {
 			return "", fmt.Errorf("storage %s (uuid=%s label=%s) not found", s.ID, s.UUID, s.Label)
 		}
+		devs[s.ID] = dev
+		if s.NoMount {
+			logf("storage %s: %s (not mounted; raw store backing)", s.ID, dev)
+			continue
+		}
 		mnt := o.MountPrefix + s.ID
 		if err := os.MkdirAll(mnt, 0o755); err != nil {
 			return "", err
@@ -225,8 +249,18 @@ func GuestAssemble(p *GuestPlan, r Runner, o GuestOptions) (string, error) {
 		}
 		return filepath.Join(m, f.Rel), nil
 	}
-	base, err := path(p.Base)
-	if err != nil {
+	var base string
+	var err error
+	if len(p.BaseExtents) > 0 {
+		hd, ok := devs[p.Base.Storage]
+		if !ok {
+			return "", fmt.Errorf("base storage %q has no device", p.Base.Storage)
+		}
+		if _, err := r.Run("dmsetup", "create", "oml-basefile", "--table", LinearTable(p.BaseExtents, hd)); err != nil {
+			return "", fmt.Errorf("dm-linear over base file: %w", err)
+		}
+		base = "/dev/mapper/oml-basefile"
+	} else if base, err = path(p.Base); err != nil {
 		return "", err
 	}
 	var layers []stackLayer
