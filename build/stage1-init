@@ -33,12 +33,13 @@ FOUND=; HOW=
 # omloader.isofile=/path.iso [omloader.isodev=LABEL=x|UUID=x|/dev/x] pins it; else /omloader.iso, /omloader/omloader.iso,
 # /ISO/omloader.iso (+ /omloader/omloader-<ver>.iso), then every *.iso within two directory levels whose volume label is OMLOADER_LIVE.
 HOST=/run/medium-host; mkdir -p $HOST /run/omloader
-ISOFILE=$(arg omloader.isofile); ISODEV=$(arg omloader.isodev); SCANNED=" "; ISOLOOP=; ISOPATH=
+ISOFILE=$(arg omloader.isofile); ISODEV=$(arg omloader.isodev); SCANNED=" "; ISOLOOP=; ISOPATH=; DIAG=
 iso_try() { # $1 = ISO file, $2 = 1 -> no volume label check (explicit name)
-  [ -f "$1" ] || return 1
+  [ -f "$1" ] || { [ -n "$DIAG" ] && echo "OMLOADER_STAGE1: candidate $1: not a file" >/dev/console; return 1; }
   lo=$(losetup -f 2>/dev/null) && losetup -r "$lo" "$1" 2>/run/losetup.err || { echo "OMLOADER_STAGE1: losetup $1: $(cat /run/losetup.err)"; return 1; }
-  if [ -z "$2" ] && [ "$(blkid -o value -s LABEL "$lo" 2>/dev/null)" != OMLOADER_LIVE ]; then losetup -d "$lo" 2>/dev/null; return 1; fi
-  if mount -t iso9660 -o ro "$lo" /run/medium 2>/dev/null && has_live; then ISOLOOP=$lo; return 0; fi
+  # no blkid label check (unreliable on a fresh read-only loop of a file on NTFS): accepted iff it mounts as iso9660 and has_live
+  if mount -t iso9660 -o ro "$lo" /run/medium 2>/run/isomnt.err && has_live; then ISOLOOP=$lo; return 0; fi
+  [ -n "$DIAG" ] && echo "OMLOADER_STAGE1: iso_try $1: iso9660 mount/has_live failed ($(tail -1 /run/isomnt.err 2>/dev/null))" >/dev/console
   umount /run/medium 2>/dev/null; losetup -d "$lo" 2>/dev/null; return 1
 }
 resolve_dev() { case "$1" in LABEL=*) blkid -L "${1#LABEL=}";; UUID=*) blkid -U "${1#UUID=}";; *) echo "$1";; esac 2>/dev/null; }
@@ -95,7 +96,8 @@ skipped_list() { # $@ = remaining partitions
 scan_dev() { # $1 = partition/disk device. 0 = ISO found (host fs stays mounted on $HOST, ISO on /run/medium)
   d=$1; t=$(blkid -o value -s TYPE "$d" 2>/dev/null); HRW=0
   case "$t" in exfat|vfat|ext2|ext3|ext4|xfs|ntfs) ft=$t;; *) return 1;; esac
-  hostmnt "$ft" ro "$d" || return 1
+  if ! hostmnt "$ft" ro "$d" 2>/run/hostmnt.err; then [ -n "$DIAG" ] && echo "OMLOADER_STAGE1: scan $d type=$t label=$(blkid -o value -s LABEL "$d" 2>/dev/null): mount FAILED ($(tail -1 /run/hostmnt.err /run/ntfs.err 2>/dev/null | tr '\n' ' '))" >/dev/console; return 1; fi
+  [ -n "$DIAG" ] && echo "OMLOADER_STAGE1: scan $d type=$t label=$(blkid -o value -s LABEL "$d" 2>/dev/null): mounted ok, $(find $HOST -maxdepth 8 -iname '*.iso' 2>/dev/null | wc -l) *.iso file(s)" >/dev/console
   f=; STEP=
   if [ -n "$ISOFILE" ]; then iso_try "$HOST$ISOFILE" 1 && { f=$ISOFILE; STEP=pinned; }
   else
@@ -104,8 +106,15 @@ scan_dev() { # $1 = partition/disk device. 0 = ISO found (host fs stays mounted 
     if [ -n "$R" ]; then for c in "$HOST$R"/*.iso "$HOST$R"/*/*.iso "$HOST$R"/*/*/*.iso; do iso_try "$c" && { f=${c#$HOST}; STEP=ventoy-search-root; break; }; done; fi
     if [ -z "$f" ]; then R=$(vj_get VTOY_DEFAULT_IMAGE); [ -n "$R" ] && iso_try "$HOST$R" && { f=$R; STEP=ventoy-default-image; }; fi
     if [ -z "$f" ]; then for c in "$HOST"/omloader/omloader.iso "$HOST"/omloader/omloader-*.iso "$HOST"/omloader.iso "$HOST"/ISO/omloader.iso; do iso_try "$c" 1 && { f=${c#$HOST}; STEP=omloader-dir; break; }; done; fi
-    if [ -z "$f" ]; then for c in "$HOST"/*.iso "$HOST"/*/*.iso "$HOST"/*/*/*.iso; do iso_try "$c" && { f=${c#$HOST}; STEP=scan; break; }; done; fi
+    if [ -z "$f" ]; then   # any depth <= 6 (custom Ventoy folders), skipping Windows system dirs; names may hold spaces/non-ASCII
+      find $HOST -maxdepth 6 \( -name 'System Volume Information' -o -name '$RECYCLE.BIN' \) -prune -o -type f -iname 'omloader*.iso' -print 2>/dev/null | sort > /run/isofind.lst
+      while IFS= read -r c; do iso_try "$c" 1 && { f=${c#$HOST}; STEP=find; break; }; done < /run/isofind.lst
+    fi
+    if [ -z "$f" ]; then find $HOST -maxdepth 4 \( -name 'System Volume Information' -o -name '$RECYCLE.BIN' \) -prune -o -type f -iname '*.iso' -print 2>/dev/null | sort > /run/isoall.lst
+      while IFS= read -r c; do iso_try "$c" && { f=${c#$HOST}; STEP=scan; break; }; done < /run/isoall.lst
+    fi
   fi
+  if [ -z "$f" ]; then umount $HOST 2>/dev/null; return 1; fi
   if [ -n "$f" ]; then
     ISOPATH=$f
     # the data partition is mounted rw by omloader-mounts later: switch this (shared) mount to rw now so both agree
@@ -146,7 +155,7 @@ while [ $i -lt 40 ] && [ -z "$FOUND" ]; do
     [ -n "$L" ] && try_dev "$L" && { FOUND=$L; HOW="label OMLOADER_LIVE"; }
   fi
   if [ -z "$FOUND" ]; then   # (b) scan every block device (ISO written to a USB stick / re-labelled / Ventoy dm device)
-    for d in /dev/sr* /dev/mapper/* /dev/sd* /dev/vd* /dev/nvme*n* /dev/mmcblk*; do
+    for d in /dev/sr* /dev/mapper/* /dev/dm-* /dev/sd* /dev/vd* /dev/nvme*n* /dev/mmcblk*; do
       [ -b "$d" ] || continue
       try_dev "$d" && { FOUND=$d; HOW="device scan"; break; }
     done
@@ -169,14 +178,14 @@ while [ $i -lt 40 ] && [ -z "$FOUND" ]; do
 done
 if [ -z "$FOUND" ]; then   # diagnostics: one more, traced, pass over every partition
   echo "OMLOADER_STAGE1: live medium not found; partitions:"; cat /proc/partitions; blkid
-  SCANNED=" "; set -x
+  SCANNED=" "; DIAG=1
+  for d in /dev/sr* /dev/mapper/* /dev/dm-*; do [ -b "$d" ] && echo "OMLOADER_STAGE1: virtual/optical dev $d type=$(blkid -o value -s TYPE "$d" 2>/dev/null) label=$(blkid -o value -s LABEL "$d" 2>/dev/null)" >/dev/console; done
   for n in $(awk 'NR>2{print $4}' /proc/partitions); do
     case "$n" in loop*|ram*|dm-*) continue;; esac
     [ -b "/dev/$n" ] && scan_dev "/dev/$n" && break
   done
-  set +x
 fi
-[ -n "$FOUND" ] || die "live medium (label OMLOADER_LIVE / live/live.squashfs) not found"
+[ -n "$FOUND" ] || die "live medium (live/live.squashfs + live/omloader.squashfs, label OMLOADER_LIVE) not found. Pin the ISO: reboot and add kernel args omloader.isofile=/path/x.iso omloader.isodev=/dev/xxx (or LABEL=x); partitions/ISO diagnostics are above"
 echo "OMLOADER_STAGE1: live medium $FOUND ($HOW)"
 mount -t squashfs -o loop,ro /run/medium/live/live.squashfs /run/live || die "cannot mount live.squashfs"
 mount -t squashfs -o loop,ro /run/medium/live/omloader.squashfs /run/extra || die "cannot mount omloader.squashfs"

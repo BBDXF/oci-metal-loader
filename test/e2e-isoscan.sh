@@ -50,5 +50,18 @@ mkpart p1 PLAIN1 $W/is-s/a; mkpart p2 DATA $W/is-s/b; mkpart p3 PLAIN3 $W/is-s/c
 runcase B
 grep -aq 'OMLOADER_STAGE1: iso: /dev/vda2 (ext4, label DATA) /omloader/omloader-x.iso via omloader-dir' $W/B.clean && pass "B omloader-dir" || fail "B step line"
 grep -aq 'MEDIUM_STEP=omloader-dir' $W/B.clean && pass "B medium.env step" || fail "B medium.env"
+# ---- case C: nested custom folder (spaces, non-ASCII, depth 4), found by the find step ----
+rm -rf $W/is-s; mkdir -p $W/is-s/a "$W/is-s/b/Some Dir/Süb/x/y" $W/is-s/c; touch $W/is-s/a/e $W/is-s/c/e
+cp $ISO "$W/is-s/b/Some Dir/Süb/x/y/omloader-0.2.4.iso"
+mkpart p1 PLAIN1 $W/is-s/a; mkpart p2 VHDX $W/is-s/b; mkpart p3 PLAIN3 $W/is-s/c; mkdisk C
+runcase C
+grep -aq 'via find' $W/C.clean && pass "C nested find" || fail "C nested find"
+grep -aq 'MEDIUM_STEP=find' $W/C.clean && pass "C medium.env step" || fail "C medium.env"
+# ---- case D: generic scan, ISO renamed (no omloader* name), nested folder -> label-less mount+has_live check ----
+rm -rf $W/is-s; mkdir -p $W/is-s/a $W/is-s/b/ventoy_startup $W/is-s/c; touch $W/is-s/a/e $W/is-s/c/e
+cp $ISO $W/is-s/b/ventoy_startup/custom.iso
+mkpart p1 PLAIN1 $W/is-s/a; mkpart p2 VHDX $W/is-s/b; mkpart p3 PLAIN3 $W/is-s/c; mkdisk D
+runcase D
+grep -aq 'via scan' $W/D.clean && pass "D generic scan" || fail "D generic scan"
 rm -rf $W/is-s $W/is-p?.img $W/is-*.raw
 exit $FAIL
