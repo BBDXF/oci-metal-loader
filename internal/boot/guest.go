@@ -54,19 +54,19 @@ type GuestLayer struct {
 
 // GuestPlan is /omloader/plan.json, consumed by `omloader guest-assemble`.
 type GuestPlan struct {
-	Version   int          `json:"version"`
-	Image     string       `json:"image"`
-	Storages  []StorageRef `json:"storages"`
+	Version  int          `json:"version"`
+	Image    string       `json:"image"`
+	Storages []StorageRef `json:"storages"`
 	// BaseExtents: the base image file lives on a NoMount storage; it is exposed as a dm-linear device over these extents.
-	BaseExtents []Extent `json:"base_extents,omitempty"`
-	Base      FileRef      `json:"base"`
-	Sectors   int64        `json:"sectors"`
-	BaseDM    string       `json:"base_dm"` // used when there are no layers (read-only linear map)
-	Layers    []GuestLayer `json:"layers"`
-	RootIndex int          `json:"root_index"` // 1-based index in kpartx output
-	RootDev   string       `json:"root_dev"`   // expected /dev/mapper/<partition>
-	Modules   []string     `json:"modules"`    // initrd paths, insmod in order
-	Loader    string       `json:"loader"`     // dynamic loader inside the initrd used to run bundled tools
+	BaseExtents []Extent     `json:"base_extents,omitempty"`
+	Base        FileRef      `json:"base"`
+	Sectors     int64        `json:"sectors"`
+	BaseDM      string       `json:"base_dm"` // used when there are no layers (read-only linear map)
+	Layers      []GuestLayer `json:"layers"`
+	RootIndex   int          `json:"root_index"` // 1-based index in kpartx output
+	RootDev     string       `json:"root_dev"`   // expected /dev/mapper/<partition>
+	Modules     []string     `json:"modules"`    // initrd paths, insmod in order
+	Loader      string       `json:"loader"`     // dynamic loader inside the initrd used to run bundled tools
 }
 
 // Layer is one dm-snapshot layer on the loader side.
