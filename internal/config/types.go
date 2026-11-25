@@ -25,6 +25,41 @@ type Config struct {
 	Experimental  Experimental `yaml:"experimental" json:"experimental"`
 	// GuestDefaults: console accounts/autologin applied to every image (all types) that does not set its own (see EffectiveRuntime).
 	GuestDefaults GuestDefaults `yaml:"guest_defaults" json:"guest_defaults"`
+	// Guest: first-boot initialisation defaults (timezone, hostname, locale, keymap) and the init policy.
+	Guest GuestInit `yaml:"guest" json:"guest"`
+	// Clock: how the hardware clock (RTC) is interpreted by the loader and the guests.
+	Clock Clock `yaml:"clock" json:"clock"`
+}
+
+// GuestInit are the prefilled values of the first-boot init dialog (the image's own settings win when it has them).
+type GuestInit struct {
+	Timezone string `yaml:"timezone" json:"timezone"` // IANA name, default UTC (the shipped config pack sets Asia/Shanghai)
+	Hostname string `yaml:"hostname" json:"hostname"` // default "{image}" (the sanitised image name)
+	Locale   string `yaml:"locale" json:"locale"`     // default en_US.UTF-8
+	Keymap   string `yaml:"keymap" json:"keymap"`     // default us
+	Init     string `yaml:"init" json:"init"`         // confirm (default) | accept-defaults | skip
+}
+
+// Clock configures the RTC interpretation: utc (default) | localtime (dual boot with Windows).
+type Clock struct {
+	RTC string `yaml:"rtc" json:"rtc"`
+}
+
+// EffRTC is the effective clock.rtc.
+func (c Clock) EffRTC() string {
+	if c.RTC == "localtime" {
+		return "localtime"
+	}
+	return "utc"
+}
+
+// InitMode is the effective guest.init.
+func (g GuestInit) InitMode() string {
+	switch g.Init {
+	case "accept-defaults", "skip":
+		return g.Init
+	}
+	return "confirm"
 }
 
 type Storage struct {
@@ -197,6 +232,8 @@ type Image struct {
 	Snapshots ImageSnaps   `yaml:"snapshots" json:"snapshots"`
 	Runtime   Runtime      `yaml:"runtime" json:"runtime"`
 	Data      []DataVolume `yaml:"data" json:"data"`
+	// LXDTemplates: guest paths templated by the LXD metadata.yaml of the imported image (hints for the first-boot init dialog).
+	LXDTemplates []string `yaml:"lxd_templates" json:"lxd_templates"`
 }
 type Kernel struct {
 	Path          string   `yaml:"path" json:"path"`

@@ -182,3 +182,17 @@ func TestDefaultGuestAccounts(t *testing.T) {
 		t.Errorf("guest_defaults: %+v", g)
 	}
 }
+
+func TestGuestInitDefaults(t *testing.T) {
+	r, err := Load("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := r.Config.Guest
+	if g.Timezone != "UTC" || g.Hostname != "{image}" || g.Locale != "en_US.UTF-8" || g.Keymap != "us" || g.InitMode() != "confirm" || r.Config.Clock.EffRTC() != "utc" {
+		t.Errorf("guest %+v clock %+v", g, r.Config.Clock)
+	}
+	if errs := r.Validate(); len(errs) > 0 {
+		t.Errorf("defaults invalid: %v", errs)
+	}
+}

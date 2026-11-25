@@ -341,6 +341,27 @@ guest_defaults:
 - NTFS needs a guest driver (`ntfs3` module or `ntfs-3g`); many distro VM kernels ship neither (install `ntfs-3g` in the image). If Windows used Fast Startup/hibernation the volume is dirty and ntfs3 refuses read-write: shut Windows down fully (or disable Fast Startup).
 - Global setting only (no per-image override).
 
+### 9.5 First-boot init dialog and clock (`guest:`, `clock:`)
+
+Every image (each snapshot lineage rooted at `base`) must be confirmed once before it boots: the TUI shows a form with timezone, hostname, locale, keymap, user and password, each labelled with its source (`image` = the image's own LXD `metadata.yaml` templates, `default config` = `guest:` / `guest_defaults`). Fields marked `image` that you leave unchanged keep the image's own value. The result is stored as `<images>/<image>/init.json`; later boots (all snapshots) do not ask again, `snapshot revert base` clears it. Images without a confirmed init are **not** eligible for the autoboot countdown: the TUI opens the form with "Image not initialised, confirm to boot.". `omloader boot` refuses such an image unless `--accept-defaults` (or `omloader.init=accept` on the kernel command line, or `guest.init: accept-defaults`).
+
+Applying: cloud-init images get a NoCloud seed in `/var/lib/cloud/seed/nocloud/`; systemd images get `localtime`, `timezone`, `locale.conf`, `vconsole.conf` (what `systemd-firstboot` would write, so it has nothing to ask); others (Alpine/OpenRC) get `/etc/localtime`, `/etc/timezone`, `/etc/TZ`. `/etc/adjtime` follows `clock.rtc`.
+
+```yaml
+guest:
+  timezone: UTC          # IANA name; the shipped omloader/boot.yaml sets Asia/Shanghai
+  hostname: "{image}"    # {image} = the sanitised image name
+  locale: en_US.UTF-8
+  keymap: us
+  init: confirm          # confirm | accept-defaults (no dialog) | skip (no init; systemd-firstboot stays masked)
+clock:
+  rtc: utc               # utc | localtime
+```
+
+`guest.timezone` and `clock.rtc` also set the loader's own time zone and RTC mode (`timedatectl`).
+
+**Windows dual-boot trap:** Windows keeps the hardware clock in *local time*, Linux in UTC, so the time is wrong by the UTC offset after switching. Either set `clock.rtc: localtime` here, or make Windows use UTC: `reg add "HKLM\SYSTEM\CurrentControlSet\Control\TimeZoneInformation" /v RealTimeIsUniversal /t REG_DWORD /d 1 /f`.
+
 ## 10. File and folder layout
 
 **Repository** (for developers; details in [DEVELOPMENT.md](DEVELOPMENT.md#repository-layout)):

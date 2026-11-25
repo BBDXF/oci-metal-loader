@@ -351,3 +351,14 @@ func TestImportOCIGatedWhenOff(t *testing.T) {
 		t.Errorf("env opt-in must pass the gate: %v", err)
 	}
 }
+
+func TestTemplatePaths(t *testing.T) {
+	md := "architecture: x86_64\ntemplates:\n  /etc/hostname:\n    when: [create]\n    template: hostname.tpl\n  /var/lib/cloud/seed/nocloud-net/user-data:\n    template: ud.tpl\n"
+	got := TemplatePaths([]byte(md))
+	if len(got) != 2 || got[0] != "/etc/hostname" || got[1] != "/var/lib/cloud/seed/nocloud-net/user-data" {
+		t.Errorf("%v", got)
+	}
+	if TemplatePaths([]byte("{}")) != nil {
+		t.Error("no templates")
+	}
+}

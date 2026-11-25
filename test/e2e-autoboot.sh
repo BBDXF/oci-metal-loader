@@ -38,7 +38,7 @@ vmalive() { pgrep -u $USER -f "$W/$1.raw" >/dev/null; }
 send() { $T/ventoy-ser.py $W/$1.sock "$2"; }
 FLAGS='  extra_cmdline_flags: [poweroff_on_fail=1, experimental=oci]\n'
 # ---- A: ui=tui, expiry boots once
-mkdisk ab-a "$(printf 'boot:\n  default_image: omloci\n  default_snapshot: current\n  timeout: 4\n  extra_cmdline_flags: [poweroff_on_fail=1, experimental=oci]\n')"
+mkdisk ab-a "$(printf 'guest:\n  init: accept-defaults\nboot:\n  default_image: omloci\n  default_snapshot: current\n  timeout: 4\n  extra_cmdline_flags: [poweroff_on_fail=1, experimental=oci]\n')"
 vmstart ab-a ""
 if waitfor ab-a 'OMLOADER_COUNTER=[0-9]|OMLOADER_LOADER: .boot. returned|OMLOADER_LOADER_FAILED' 200; then
   C=$W/ab-a.clean
@@ -49,7 +49,7 @@ if waitfor ab-a 'OMLOADER_COUNTER=[0-9]|OMLOADER_LOADER: .boot. returned|OMLOADE
 else fail "A: no boot result"; grep -a 'OMLOADER_LOADER' $W/ab-a.clean | tail -5; fi
 vmstop ab-a
 # ---- B: cancel, shell, back to the TUI: no second countdown
-mkdisk ab-b "$(printf 'boot:\n  default_image: omloci\n  timeout: 6\n  extra_cmdline_flags: [experimental=oci]\n')"
+mkdisk ab-b "$(printf 'guest:\n  init: accept-defaults\nboot:\n  default_image: omloci\n  timeout: 6\n  extra_cmdline_flags: [experimental=oci]\n')"
 vmstart ab-b ""
 if waitfor ab-b "OMLOADER_LOADER: Booting 'omloci' \(current\) in 6 s" 120; then
   send ab-b 'x'
@@ -63,7 +63,7 @@ if waitfor ab-b "OMLOADER_LOADER: Booting 'omloci' \(current\) in 6 s" 120; then
 else fail "B: no countdown banner"; fi
 vmstop ab-b
 # ---- C: ui=shell keeps the plain countdown
-mkdisk ab-c "$(printf 'boot:\n  default_image: omloci\n  timeout: 4\n  extra_cmdline_flags: [experimental=oci]\n')"
+mkdisk ab-c "$(printf 'guest:\n  init: accept-defaults\nboot:\n  default_image: omloci\n  timeout: 4\n  extra_cmdline_flags: [experimental=oci]\n')"
 vmstart ab-c "omloader.ui=shell"
 if waitfor ab-c 'OMLOADER_COUNTER=[0-9]|OMLOADER_LOADER: .boot. returned|OMLOADER_LOADER_FAILED' 200; then
   C=$W/ab-c.clean
@@ -72,14 +72,14 @@ if waitfor ab-c 'OMLOADER_COUNTER=[0-9]|OMLOADER_LOADER: .boot. returned|OMLOADE
 else fail "C: no boot result"; fi
 vmstop ab-c
 # ---- D: default_image: last
-mkdisk ab-d "$(printf 'boot:\n  default_image: last\n  timeout: 4\n  extra_cmdline_flags: [experimental=oci]\n')" "$(printf 'omloci\ncurrent\n')"
+mkdisk ab-d "$(printf 'guest:\n  init: accept-defaults\nboot:\n  default_image: last\n  timeout: 4\n  extra_cmdline_flags: [experimental=oci]\n')" "$(printf 'omloci\ncurrent\n')"
 vmstart ab-d ""
 if waitfor ab-d 'OMLOADER_COUNTER=[0-9]|OMLOADER_LOADER: .boot. returned|OMLOADER_LOADER_FAILED' 200; then
   grep -aq 'default_image=omloci snapshot=current' $W/ab-d.clean && grep -aq OMLOADER_GUEST_OK $W/ab-d.clean && pass "D: default_image: last resolved to the recorded image and booted" || fail "D: last"
 else fail "D: no boot result"; fi
 vmstop ab-d
 # ---- E: poweroff_on_fail=1 after a failed TUI auto-boot
-mkdisk ab-e "$(printf 'boot:\n  default_image: nosuchimage\n  timeout: 4\n  extra_cmdline_flags: [poweroff_on_fail=1, experimental=oci]\n')"
+mkdisk ab-e "$(printf 'guest:\n  init: accept-defaults\nboot:\n  default_image: nosuchimage\n  timeout: 4\n  extra_cmdline_flags: [poweroff_on_fail=1, experimental=oci]\n')"
 vmstart ab-e ""
 if waitfor ab-e 'OMLOADER_LOADER_FAILED' 150; then
   pass "E: failed TUI auto-boot printed OMLOADER_LOADER_FAILED"

@@ -21,7 +21,7 @@ const usage = `usage:
   omloader config validate [-c omloader.yaml] [-i image.yaml]
   omloader config show --resolved [-c omloader.yaml] [-i image.yaml]
   omloader config get [-c omloader.yaml] KEY   (print one resolved value, e.g. boot.default_image; for scripts)
-  omloader boot --image NAME [--snapshot current|base|LABEL] [--ephemeral] [-c global.yaml]
+  omloader boot --image NAME [--accept-defaults] [--snapshot current|base|LABEL] [--ephemeral] [-c global.yaml]
             [--images-root DIR] [--snap-root DIR] [--dry-run] [--no-kexec] [--exec-cmd-log FILE]
             [--force] [--ro] [--no-inject] [--data-root DIR] [--shell auto|image|busybox]
   omloader tui [-c omloader.yaml] [--images-root DIR] [--snap-root DIR] [--data-root DIR] [--ascii]   (interactive terminal UI; docs/tui.md)
@@ -125,6 +125,7 @@ func runBoot(args []string, out, errw io.Writer) int {
 	dataRoot := fs.String("data-root", "", "data volumes root (default <snap-root>/../data)")
 	expOCI := fs.Bool("experimental-oci", false, "force-enable the experimental Docker/OCI image support (on by default; accepted for compatibility)")
 	noInj := fs.Bool("no-inject", false, "do not append the guest-assemble initrd")
+	acceptDefaults := fs.Bool("accept-defaults", false, "apply the prefilled first-boot init (time zone, hostname, ...) without asking (also: omloader.init=accept, guest.init: accept-defaults)")
 	shell := fs.String("shell", "", "console shell for this boot: auto | image | busybox (overrides runtime.shell; default: the omloader.shell= kernel flag)")
 	if pos, err := parse(fs, args); err != nil || len(pos) > 0 {
 		return 1
@@ -156,7 +157,12 @@ func runBoot(args []string, out, errw io.Writer) int {
 	if err != nil {
 		return fail(err)
 	}
-	o := boot.Options{Image: *image, Snapshot: *snap, ImagesRoot: *ir, SnapRoot: *sr,
+	ini, skipInit, err := boot.ResolveInit(&res.Config, boot.ImageHints{Templates: res.Image.LXDTemplates}, *image, dir,
+		*acceptDefaults || kernelArg("omloader.init") == "accept", *dry)
+	if err != nil {
+		return fail(err)
+	}
+	o := boot.Options{Init: ini, SkipInit: skipInit, Hints: boot.ImageHints{Templates: res.Image.LXDTemplates}, Image: *image, Snapshot: *snap, ImagesRoot: *ir, SnapRoot: *sr,
 		Shell: *shell, DryRun: *dry, NoKexec: *nok, Ephemeral: *eph, RO: *ro, NoInject: *noInj, DataRoot: *dataRoot, Global: *cfg, Out: out, Warn: errw}
 	plan, err := boot.BuildPlan(o, res, dir)
 	if err != nil {

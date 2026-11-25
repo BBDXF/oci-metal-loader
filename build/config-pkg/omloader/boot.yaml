@@ -10,6 +10,18 @@
 #   timeout: 10                   # seconds; any key cancels (the TUI shows the countdown, minimum 5 s)
 #   ui: tui                       # tui | shell (what the console shows when nothing boots)
 
+# --- first-boot init dialog defaults (each image is confirmed once; the image's own settings are prefilled first) ---
+guest:
+  timezone: Asia/Shanghai       # IANA name; code default is UTC
+  # hostname: "{image}"
+  # locale: en_US.UTF-8
+  # keymap: us
+  # init: confirm               # confirm | accept-defaults (no dialog) | skip
+# Hardware clock. Windows keeps the RTC in LOCAL time: when dual-booting without changing Windows, set localtime
+# (or make Windows use UTC: reg add HKLM\SYSTEM\CurrentControlSet\Control\TimeZoneInformation /v RealTimeIsUniversal /t REG_DWORD /d 1 /f)
+# clock:
+#   rtc: utc                    # utc | localtime
+
 # --- the default login is PUBLIC (oci / Oci123, root with the same password): change it! ---
 # guest_defaults:
 #   autologin: false

@@ -21,6 +21,8 @@ for hd in /mnt/disks/*/VTOYDATA /mnt/disks/*/VHDX; do [ -d "$hd" ] || continue
 [ -f /mnt/disks/README.txt ] && echo OMLOADER_HOSTDISKS_README=yes
 echo OMLOADER_GUEST_KERNEL=$(uname -r)
 echo OMLOADER_GUEST_HOSTNAME=$(cat /etc/hostname)
+echo OMLOADER_GUEST_TZLINK=$(readlink /etc/localtime)
+echo OMLOADER_GUEST_TIMEZONE=$(cat /etc/timezone 2>/dev/null)
 echo OMLOADER_GUEST_ROOTFS=$(awk '$2=="/"{t=$3} END{print t}' /proc/mounts)
 [ -f /.omloader-adapted ] && echo OMLOADER_GUEST_ADAPTED=yes
 [ -d /lib/modules/$(uname -r)/kernel ] && echo OMLOADER_GUEST_MODULES=yes

@@ -40,6 +40,9 @@ type Options struct {
 	SpaceFn       snapmgr.StatfsFunc // statfs override (tests)
 	ResolvConf    string             // source for guest /etc/resolv.conf (default /etc/resolv.conf)
 	Global        string
+	Init          *InitState // confirmed first-boot init (ResolveInit); nil = none
+	SkipInit      bool       // guest.init: skip
+	Hints         ImageHints // image-defined init fields
 	Out           io.Writer
 	Warn          io.Writer
 
@@ -431,7 +434,21 @@ func Execute(o Options, res *config.Resolved, p *Plan, r Runner) (string, error)
 	if realRoot && !o.DryRun {
 		// kernel + initrd are loaded in memory now: provision default accounts into the live COW layer, then unmount cleanly
 		hostName, _ := config.ResolveHostname(res.Config.GuestDefaults, img.Runtime, o.Image) // "" when keep
-		ProvisionVMGuest(r, mnt, config.EffectiveRuntime(res.Config.GuestDefaults, img.Runtime), res.Config.Boot.VMFixESPFstab, hostName, out, warn)
+		rtv := config.EffectiveRuntime(res.Config.GuestDefaults, img.Runtime)
+		if o.Init != nil {
+			rtv = o.Init.ApplyRuntime(rtv)
+			if !o.Init.keep(FHostname) && o.Init.Hostname != "" {
+				hostName = o.Init.Hostname
+			}
+		}
+		ProvisionVMGuest(r, mnt, rtv, res.Config.Boot.VMFixESPFstab, hostName, out, warn)
+		if o.Init != nil {
+			if _, err := r.Run("mount", "-o", "remount,rw", mnt); err == nil {
+				if err := ApplyInit(mnt, *o.Init, DetectGuest(mnt, o.Hints), warn); err != nil {
+					fmt.Fprintf(warn, "warning: %v\n", err)
+				}
+			}
+		}
 		if hdc := res.Config.GuestDefaults.HostDisks; hdc.Enabled() || guestExists(mnt, "/etc/fstab") {
 			hpl := hdPlan
 			if _, err := r.Run("mount", "-o", "remount,rw", mnt); err == nil {

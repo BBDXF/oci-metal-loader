@@ -47,6 +47,7 @@ func runTUI(args []string, out, errw io.Writer) int {
 		fmt.Fprintln(errw, "error:", err)
 		return 1
 	}
+	loaderClock(c)
 	env := loaderEnv()
 	*ir = resolveImagesRoot(c, *ir)
 	if *sr == "" {
@@ -90,6 +91,12 @@ func runTUI(args []string, out, errw io.Writer) int {
 				return 0
 			} else if pof { // boot.extra_cmdline_flags poweroff_on_fail=1 (same as the shell path)
 				fmt.Fprintf(out, "OMLOADER_LOADER: 'omloader boot' returned rc=%d\r\nOMLOADER_LOADER_FAILED\r\n", rc)
+				// the TUI on another console (VGA vs serial) may be the one that boots and fails: mirror the marker to /dev/console
+				if f, err := os.OpenFile("/dev/console", os.O_WRONLY, 0); err == nil {
+					fmt.Fprint(f, "OMLOADER_LOADER: 'omloader boot' returned rc="+strconv.Itoa(rc)+"\r\nOMLOADER_LOADER_FAILED\r\n")
+					f.Close()
+				}
+				time.Sleep(time.Second) // let the serial console drain the marker before the sysrq poweroff
 				(&boot.ExecRunner{}).Run("/usr/local/lib/omloader/autoboot.sh", "--poweroff")
 				time.Sleep(time.Minute)
 				return rc
@@ -289,7 +296,13 @@ func (s *realSvc) Revert(image, target, keep string) error {
 	if err != nil {
 		return err
 	}
-	return st.Revert(target, keep)
+	if err := st.Revert(target, keep); err != nil {
+		return err
+	}
+	if target == "base" {
+		boot.ClearInit(s.imageDir(image)) // reset to base: the first-boot init is asked again
+	}
+	return nil
 }
 
 func (s *realSvc) DeletePlan(image, label string, rec, force bool) ([]string, error) {

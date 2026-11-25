@@ -142,6 +142,9 @@ func runSnap(args []string, out, errw io.Writer) int {
 		if err := st.Revert(pos[1], *keep); err != nil {
 			return fail(err)
 		}
+		if pos[1] == "base" {
+			boot.ClearInit(imgDir) // reset to base: the first-boot init is asked again
+		}
 		msg := "the old live state was discarded"
 		if *keep != "" {
 			msg = "the old live state was kept as " + *keep

@@ -33,6 +33,11 @@ type AdaptInput struct {
 	// KeepHostname leaves the guest's own hostname alone (guest_defaults.hostname / runtime.hostname = keep); otherwise Runtime.Hostname
 	// (resolved by config.ResolveHostname; empty = the sanitised image name) is written to /etc/hostname and /etc/hosts.
 	KeepHostname bool
+	// Init is the confirmed first-boot init (nil = none). SkipInit (guest.init: skip) keeps the console-prompting
+	// systemd-firstboot.service masked, because nothing was initialised for it.
+	Init     *InitState
+	SkipInit bool
+	Hints    ImageHints
 }
 
 // walkInRoot resolves p inside root like ResolveInRoot but creates missing
@@ -209,7 +214,7 @@ func Adapt(in AdaptInput) (bool, error) {
 		warn = io.Discard
 	}
 	first := !guestExists(in.Root, AdaptMarker)
-	want := uiConfigHash(in.Runtime, in.KeepHostname)
+	want := uiConfigHash(in.Runtime, in.KeepHostname, in.Init)
 	if !first && markerUIHash(in.Root) == want {
 		return false, nil
 	}
@@ -226,6 +231,11 @@ func Adapt(in AdaptInput) (bool, error) {
 	if err := adaptUI(in, warn, sysd, hasBB); err != nil {
 		return false, fmt.Errorf("console/users adapter: %w", err)
 	}
+	if in.Init != nil {
+		if err := ApplyInit(in.Root, *in.Init, DetectGuest(in.Root, in.Hints), warn); err != nil {
+			fmt.Fprintf(warn, "warning: %v\n", err)
+		}
+	}
 	if err := guestWrite(in.Root, AdaptMarker, []byte("omloader adapter v2 "+time.Now().UTC().Format(time.RFC3339)+"\nui-config="+want+"\n"), 0o644); err != nil {
 		return false, err
 	}
@@ -233,16 +243,20 @@ func Adapt(in AdaptInput) (bool, error) {
 }
 
 // uiConfigHash fingerprints the runtime keys handled by adaptUI.
-func uiConfigHash(rt config.Runtime, keepHost bool) string {
+func uiConfigHash(rt config.Runtime, keepHost bool, ini *InitState) string {
 	host := rt.Hostname
 	if keepHost {
 		host = "\x00keep"
 	}
 	v := struct {
-		V  int
-		RT config.Runtime
-	}{5, config.Runtime{Hostname: host, Autologin: rt.Autologin, AutologinUser: rt.AutologinUser, Users: rt.Users, RootPasswordHash: rt.RootPasswordHash,
-		RootPassword: rt.RootPassword, Shell: rt.ShellMode(), ShutdownSync: rt.ShutdownSync}}
+		V    int
+		RT   config.Runtime
+		Init string
+	}{6, config.Runtime{Hostname: host, Autologin: rt.Autologin, AutologinUser: rt.AutologinUser, Users: rt.Users, RootPasswordHash: rt.RootPasswordHash,
+		RootPassword: rt.RootPassword, Shell: rt.ShellMode(), ShutdownSync: rt.ShutdownSync}, ""}
+	if ini != nil {
+		v.Init = ini.Hash()
+	}
 	b, _ := json.Marshal(v)
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])
@@ -343,8 +357,9 @@ func adaptBase(in AdaptInput, warn io.Writer, sysd bool) (bool, error) {
 			}
 		}
 	}
-	if sysd {
-		// images with an uninitialised machine-id (Arch) would run the interactive systemd-firstboot on the console forever
+	if sysd && in.SkipInit {
+		// guest.init: skip: images with an uninitialised machine-id (Arch) would run the interactive systemd-firstboot on the console forever.
+		// Otherwise the init dialog (ApplyInit) leaves it nothing to ask.
 		guestSymlink(in.Root, "/etc/systemd/system/systemd-firstboot.service", "/dev/null")
 	}
 	if sysd && len(rt.Env) > 0 {

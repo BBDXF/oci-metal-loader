@@ -57,8 +57,10 @@ func importLXDVM(o Options, tmp string) (map[string]any, error) {
 			}
 		}
 	}
+	var templates []string
 	if meta != "" {
 		if mb, err := readMetadata(o, meta); err == nil {
+			templates = TemplatePaths(mb)
 			var md struct {
 				Architecture string `yaml:"architecture"`
 			}
@@ -75,6 +77,9 @@ func importLXDVM(o Options, tmp string) (map[string]any, error) {
 		"snapshots": map[string]any{"mode": "dm-snapshot"}}
 	k := map[string]any{"cmdline": vmCmdline}
 	y["kernel"] = k
+	if len(templates) > 0 {
+		y["lxd_templates"] = templates
+	}
 	if o.NoProbe {
 		fmt.Fprintf(o.Warn, "note: --no-probe: fill kernel.path, kernel.initrd and kernel.root_partition in image.yaml (or re-run without --no-probe inside the loader)\n")
 		return y, nil

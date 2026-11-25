@@ -10,6 +10,9 @@ import (
 // bootNow ends the TUI with a boot request; there is no confirmation (the key bar says what Enter does).
 // snapshot is "current", a snapshot label or "base"; ephemeral boots discard their changes.
 func (m *Model) bootNow(image, snapshot string, eph bool) {
+	if m.initGate(image, initNotice, func() { m.bootNow(image, snapshot, eph) }) {
+		return
+	}
 	if lb, ok := m.Svc.(LastBooter); ok && m.prefs().RememberLast {
 		lb.RememberBoot(image, snapshot, eph)
 	}
@@ -18,6 +21,9 @@ func (m *Model) bootNow(image, snapshot string, eph bool) {
 
 // bootBB boots like bootNow but forces the busybox console shell for this one boot (omloader boot --shell busybox).
 func (m *Model) bootBB(image, snapshot string) {
+	if m.initGate(image, initNotice, func() { m.bootBB(image, snapshot) }) {
+		return
+	}
 	m.bootNow(image, snapshot, false)
 	m.res.Boot.Shell = "busybox"
 }

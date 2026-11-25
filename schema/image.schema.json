@@ -26,6 +26,7 @@
         "pattern": "(^|/)\\.\\.(/|$)"
       }
     },
+    "lxd_templates": {"type": "array", "items": {"type": "string"}, "description": "guest paths templated by the LXD metadata.yaml (hints for the first-boot init dialog)"},
     "sha256": {
       "type": "string",
       "pattern": "^[0-9a-fA-F]{64}$"

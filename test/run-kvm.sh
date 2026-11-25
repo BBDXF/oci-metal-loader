@@ -18,6 +18,8 @@ ARGS=""
 [ -n "${SNAP:-}" ] && ARGS="$ARGS omloader.snapshot=$SNAP"
 [ -n "${SELFTEST:-}" ] && ARGS="$ARGS omloader.selftest=1"
 [ -n "${EXPERIMENTAL_OCI:-}" ] && ARGS="$ARGS omloader.experimental=oci"
+# every fixture boot must skip the first-boot init dialog (INIT_CONFIRM=1 keeps the default "confirm" policy)
+[ -n "${INIT_CONFIRM:-}" ] || ARGS="$ARGS omloader.init=accept"
 ARGS="$ARGS ${EXTRA:-}"
 RUN=$W/run.$$; mkdir -p $RUN; trap 'rm -rf $RUN' EXIT
 cp /usr/share/OVMF/OVMF_VARS_4M.fd $RUN/vars.fd

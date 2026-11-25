@@ -16,7 +16,7 @@ set -e; mkdir -p $W
 if [ -z "${SKIP_BUILD:-}" ]; then
   $ROOT/build/build-iso.sh; $T/make-fixture-oci.sh
   rm -rf $W/vtoy-extra; mkdir -p $W/vtoy-extra/omloader
-  printf 'boot:\n  default_image: omloci\n  default_snapshot: current\n  timeout: 4\n  extra_cmdline_flags: [poweroff_on_fail=1, experimental=oci]\n' > $W/vtoy-extra/omloader/boot.yaml
+  printf 'guest:\n  init: accept-defaults\nboot:\n  default_image: omloci\n  default_snapshot: current\n  timeout: 4\n  extra_cmdline_flags: [poweroff_on_fail=1, experimental=oci]\n' > $W/vtoy-extra/omloader/boot.yaml
   VTOY_EXTRA=$W/vtoy-extra NO_VM=1 $T/make-disk.sh
 fi
 cat > $W/ventoy-test.json <<'JSON'

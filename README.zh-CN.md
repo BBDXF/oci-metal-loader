@@ -120,6 +120,8 @@ Alpha。已经可用的：LXD 虚拟机和容器启动、快照、数据卷、�
 
 **虚拟机客户机与 ESP：** 客户机的 `/boot/efi`（ESP）刻意不挂载——加载器会把该 fstab 条目标为 `nofail`（`boot.vm_fix_esp_fstab`，默认开启）；客户机由 `kexec` 启动，用不到 ESP，只是会往 ESP 写入的工具（如 `update-grub`）无处可写。
 
+**首次启动：** 每个镜像在首次启动前须确认一次（时区、主机名、语言、键盘、用户；预填自镜像或 `guest:` 默认值），未初始化的镜像不参与自动启动倒计时（docs/INSTALL.zh-CN.md 9.5）。
+
 **主机名：** 所有客户机（容器、虚拟机、OCI）的主机名默认取镜像名（如 `vm-ubuntu-noble`，而不是 `distrobuilder-<uuid>`）；可用 `guest_defaults.hostname`（`image` | `keep` | 自定义名称）或 `image.yaml` 的 `runtime.hostname` 修改或关闭。
 
 **限制：** **不支持 UEFI Secure Boot**，必须关闭。omloader 刻意与 Ventoy 绑定：把 `omloader.iso` 放到 Ventoy U 盘上即可（没有 `omloader install`）。

@@ -462,6 +462,24 @@
         }
       }
     },
+    "guest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "first-boot init dialog defaults (docs/INSTALL.md)",
+      "properties": {
+        "timezone": {"type": "string"},
+        "hostname": {"type": "string"},
+        "locale": {"type": "string"},
+        "keymap": {"type": "string"},
+        "init": {"type": "string", "enum": ["confirm", "accept-defaults", "skip"]}
+      }
+    },
+    "clock": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "hardware clock interpretation for the loader and guests",
+      "properties": {"rtc": {"type": "string", "enum": ["utc", "localtime"]}}
+    },
     "guest_defaults": {
       "type": "object",
       "additionalProperties": false,

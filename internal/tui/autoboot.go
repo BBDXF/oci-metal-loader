@@ -32,6 +32,15 @@ func (m *Model) ArmAutoBoot(a AutoBoot) {
 		a.Timeout = MinAutoBootSec
 	}
 	m.auto, m.autoOn = &a, false
+	if in, ok := m.Svc.(Initer); ok && in.InitNeeded(a.Image) {
+		// not eligible for the countdown: an un-initialised image must be confirmed by the user first
+		m.auto = nil
+		m.mark("OMLOADER_LOADER: image '" + a.Image + "' is not initialised -- no countdown, confirm its first-boot settings")
+		m.initGate(a.Image, initNotice, func() {
+			m.bootNow(a.Image, a.Snapshot, false)
+			m.res.Boot.Flags = strings.Join(a.Flags, " ")
+		})
+	}
 }
 
 // StartAutoBoot starts the armed countdown (call it from the terminal's "first frame drawn" hook).

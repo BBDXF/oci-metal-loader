@@ -120,6 +120,8 @@ What is missing or unverified: real hardware (testing postponed), LUKS/LVM guest
 
 **VM guests and the ESP:** the guest's `/boot/efi` (ESP) is deliberately not mounted — the loader marks that fstab entry `nofail` (`boot.vm_fix_esp_fstab`, default on); the guest is started by `kexec` and never needs the ESP, but tools that write to it (e.g. `update-grub`) have nothing to write to.
 
+**First boot:** every image is confirmed once (timezone, hostname, locale, keymap, user; prefilled from the image or `guest:` defaults) before it boots; un-initialised images get no autoboot countdown (docs/INSTALL.md 9.5).
+
 **Hostname:** every guest (container, VM, OCI) gets the image name as hostname (`vm-ubuntu-noble`, not `distrobuilder-<uuid>`); change or disable it with `guest_defaults.hostname` (`image` | `keep` | a name) or `runtime.hostname` in `image.yaml`.
 
 **Limitations:** UEFI **Secure Boot is not supported** and must be disabled. omloader is deliberately bound to Ventoy: put `omloader.iso` on a Ventoy stick (there is no `omloader install`).

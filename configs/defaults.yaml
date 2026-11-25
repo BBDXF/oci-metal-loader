@@ -70,6 +70,16 @@ experimental:
 #   image `runtime.users` set (even `[]`)      -> replaces `users`
 #   image root_password / root_password_hash   -> replaces root_password
 #   image autologin or autologin_user set      -> replaces autologin + autologin_user
+# First-boot init dialog: every image must be confirmed once (timezone/hostname/locale/keymap/user) before it boots.
+# init: confirm (ask; no autoboot countdown for un-initialised images) | accept-defaults (apply without asking) | skip (no init)
+guest:
+  timezone: UTC           # the shipped omloader/boot.yaml config pack sets Asia/Shanghai
+  hostname: "{image}"
+  locale: en_US.UTF-8
+  keymap: us
+  init: confirm
+clock:
+  rtc: utc                # utc | localtime (dual boot with Windows, which keeps the RTC in local time)
 guest_defaults:
   hostname: image         # image = the image name as an RFC 1123 label (vm-ubuntu-noble); keep = leave the guest's own; or a literal name. image.yaml runtime.hostname wins
   host_disks:             # the machine's own disks/partitions inside guests: /mnt/disks/<disk>/<label> (default ON, like Ventoy's plain data partition)

@@ -110,6 +110,12 @@ func ExecuteOverlay(o Options, res *config.Resolved, p *Plan, r Runner) (*Switch
 	img := res.Image
 	rtc := config.EffectiveRuntime(res.Config.GuestDefaults, img.Runtime)
 	hostName, keepHost := config.ResolveHostname(res.Config.GuestDefaults, img.Runtime, o.Image)
+	if o.Init != nil {
+		rtc = o.Init.ApplyRuntime(rtc)
+		if !o.Init.keep(FHostname) && o.Init.Hostname != "" {
+			hostName, keepHost = o.Init.Hostname, false
+		}
+	}
 	rtc.Hostname = hostName
 	if o.Shell != "" {
 		rtc.Shell = o.Shell
@@ -191,7 +197,7 @@ func ExecuteOverlay(o Options, res *config.Resolved, p *Plan, r Runner) (*Switch
 			spec.Init = append(append([]string{}, img.Runtime.Entrypoint...), img.Runtime.Cmd...)
 		}
 	} else {
-		applied, err := Adapt(AdaptInput{Root: o.NewRoot, Image: o.Image, Runtime: rtc, KeepHostname: keepHost, Busybox: o.Busybox, ResolvConf: o.ResolvConf, Warn: warn})
+		applied, err := Adapt(AdaptInput{Root: o.NewRoot, Image: o.Image, Runtime: rtc, KeepHostname: keepHost, Init: o.Init, SkipInit: o.SkipInit, Hints: o.Hints, Busybox: o.Busybox, ResolvConf: o.ResolvConf, Warn: warn})
 		if err != nil {
 			return fail(fmt.Errorf("firstboot adapter: %w", err))
 		}

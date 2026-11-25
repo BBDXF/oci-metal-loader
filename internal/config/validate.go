@@ -81,6 +81,11 @@ func (r *Resolved) Validate() ErrorList {
 	if h := gd.Hostname; h != "" && h != "image" && h != "keep" && !hostLabelRe.MatchString(h) {
 		add("guest_defaults.hostname", "invalid hostname %q (want image, keep or an RFC 1123 label: [a-z0-9-], max 63, no leading/trailing -)", h)
 	}
+	enum("guest.init", c.Guest.Init, "confirm", "accept-defaults", "skip")
+	enum("clock.rtc", c.Clock.RTC, "utc", "localtime")
+	if tz := c.Guest.Timezone; tz != "" && (hasDotDot(tz) || strings.HasPrefix(tz, "/") || strings.ContainsAny(tz, " \t\n")) {
+		add("guest.timezone", "invalid timezone %q (want an IANA name such as Asia/Shanghai or UTC)", tz)
+	}
 	nopath("storage.images.path", c.Storage.Images.Path)
 	nopath("storage.snapshots.path", c.Storage.Snapshots.Path)
 	nopath("cache.path", c.Cache.Path)

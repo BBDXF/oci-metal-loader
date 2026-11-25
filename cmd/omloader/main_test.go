@@ -132,3 +132,20 @@ func TestOCIGatedCLI(t *testing.T) {
 		t.Fatalf("lxd import is not gated (code %d): %s", c, e.String())
 	}
 }
+
+func TestBootRefusesUninitialisedImage(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "images", "img")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, "image.yaml"), []byte("name: img\ntype: lxd-container\nformat: squashfs\nbase: base.squashfs\nsnapshots: {mode: overlayfs}\n"), 0o644)
+	var out, errb bytes.Buffer
+	args := []string{"--image", "img", "--images-root", filepath.Join(root, "images"), "--snap-root", filepath.Join(root, "snaps"), "--dry-run"}
+	if rc := runBoot(args, &out, &errb); rc == 0 || !strings.Contains(errb.String(), "not initialised") {
+		t.Fatalf("rc=%d err=%q", rc, errb.String())
+	}
+	errb.Reset()
+	runBoot(append(args, "--accept-defaults"), &out, &errb)
+	if strings.Contains(errb.String(), "not initialised") {
+		t.Errorf("--accept-defaults still refused: %q", errb.String())
+	}
+}

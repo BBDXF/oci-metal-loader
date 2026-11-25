@@ -294,7 +294,26 @@ func importLXD(o Options, sq string) (map[string]any, error) {
 		rt["autologin"] = true
 	}
 	y["runtime"] = rt
+	if t := TemplatePaths(mb); len(t) > 0 {
+		y["lxd_templates"] = t
+	}
 	return y, nil
+}
+
+// TemplatePaths lists the guest paths templated by an LXD metadata.yaml (templates: {/etc/hostname: {template: ..}}), sorted.
+func TemplatePaths(metadata []byte) []string {
+	var md struct {
+		Templates map[string]any `yaml:"templates"`
+	}
+	if yaml.Unmarshal(metadata, &md) != nil {
+		return nil
+	}
+	var out []string
+	for p := range md.Templates {
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func readMetadata(o Options, p string) ([]byte, error) {

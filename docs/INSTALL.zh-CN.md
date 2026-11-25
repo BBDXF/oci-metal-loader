@@ -338,6 +338,27 @@ guest_defaults:
 - NTFS 需要客户机有驱动（`ntfs3` 模块或 `ntfs-3g`），不少发行版 VM 内核两者都没有（需在镜像里安装 `ntfs-3g`）。若 Windows 启用了快速启动/休眠，卷为脏状态，ntfs3 会拒绝读写挂载：请完全关机（或关闭快速启动）。
 - 仅全局配置（无按镜像覆盖）。
 
+### 9.5 首次启动初始化对话框与时钟（`guest:`、`clock:`）
+
+每个镜像（以 `base` 为根的快照谱系）在首次启动前必须由用户确认一次：TUI 显示包含时区、主机名、语言、键盘布局、用户、密码的表单，并标明每项来源（`image` = 镜像自带的 LXD `metadata.yaml` 模板，`default config` = `guest:` / `guest_defaults`）。标为 `image` 且未修改的字段保留镜像自己的值。结果保存为 `<images>/<image>/init.json`，之后所有快照的启动不再询问；`snapshot revert base` 会清除它。未确认初始化的镜像**不参与**自动启动倒计时：TUI 会打开表单并提示 "Image not initialised, confirm to boot."。`omloader boot` 会拒绝此类镜像，除非加 `--accept-defaults`（或内核参数 `omloader.init=accept`，或配置 `guest.init: accept-defaults`）。
+
+应用方式：带 cloud-init 的镜像写入 `/var/lib/cloud/seed/nocloud/` NoCloud 种子；systemd 镜像写入 `localtime`、`timezone`、`locale.conf`、`vconsole.conf`（即 `systemd-firstboot` 会写的内容，使其无需再询问）；其他（Alpine/OpenRC）写入 `/etc/localtime`、`/etc/timezone`、`/etc/TZ`。`/etc/adjtime` 按 `clock.rtc` 写入。
+
+```yaml
+guest:
+  timezone: UTC          # IANA 名称；随包的 omloader/boot.yaml 设为 Asia/Shanghai
+  hostname: "{image}"    # {image} = 规范化后的镜像名
+  locale: en_US.UTF-8
+  keymap: us
+  init: confirm          # confirm | accept-defaults（不弹窗）| skip（不初始化；systemd-firstboot 保持屏蔽）
+clock:
+  rtc: utc               # utc | localtime
+```
+
+`guest.timezone` 与 `clock.rtc` 同时作用于加载器自身的时区与 RTC 模式（`timedatectl`）。
+
+**Windows 双系统陷阱：** Windows 把硬件时钟当作*本地时间*，Linux 当作 UTC，切换系统后时间会差一个时区偏移。要么在此设置 `clock.rtc: localtime`，要么让 Windows 使用 UTC：`reg add "HKLM\SYSTEM\CurrentControlSet\Control\TimeZoneInformation" /v RealTimeIsUniversal /t REG_DWORD /d 1 /f`。
+
 ## 10. 文件与目录布局
 
 **代码仓库**（给开发者；详见 [DEVELOPMENT.md](DEVELOPMENT.md#repository-layout)）：
