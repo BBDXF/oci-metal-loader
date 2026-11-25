@@ -2,6 +2,7 @@ package boot
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -119,4 +120,54 @@ func (f *failRunner) Run(name string, args ...string) (string, error) {
 		return "", os.ErrNotExist
 	}
 	return f.DryRunner.Run(name, args...)
+}
+
+func TestKernelVersionArch(t *testing.T) {
+	root := t.TempDir()
+	for _, f := range []string{"usr/lib/modules/6.12.1-arch1-1/kernel/fs/ntfs3/ntfs3.ko.zst", "usr/lib/modules/6.12.1-arch1-1/kernel/drivers/block/loop.ko.xz"} {
+		os.MkdirAll(filepath.Dir(filepath.Join(root, f)), 0o755)
+		os.WriteFile(filepath.Join(root, f), nil, 0o644)
+	}
+	os.Symlink("usr/lib", filepath.Join(root, "lib"))
+	if v, err := kernelVersion(root, "/boot/vmlinuz-linux"); err != nil || v != "6.12.1-arch1-1" {
+		t.Fatal(v, err)
+	}
+	if v, err := kernelVersion(root, "/boot/vmlinuz-6.12.1-arch1-1"); err != nil || v != "6.12.1-arch1-1" {
+		t.Fatal(v, err)
+	}
+}
+
+// fake module trees through the real kmod: .ko, .ko.zst, .ko.xz, .ko.gz and built-in must all count as present, absent ones as missing.
+func TestModuleDetectionFakeTrees(t *testing.T) {
+	if _, err := exec.LookPath("modprobe"); err != nil {
+		t.Skip("no modprobe")
+	}
+	root := t.TempDir()
+	d := filepath.Join(root, "usr/lib/modules/6.12.1-arch1-1")
+	os.MkdirAll(filepath.Join(d, "kernel"), 0o755)
+	os.Symlink("usr/lib", filepath.Join(root, "lib"))
+	dep := ""
+	for _, f := range []string{"kernel/loop.ko", "kernel/ntfs3.ko.zst", "kernel/ext4.ko.xz", "kernel/fuse.ko.gz"} {
+		os.WriteFile(filepath.Join(d, f), nil, 0o644)
+		dep += f + ":\n"
+	}
+	os.WriteFile(filepath.Join(d, "modules.dep"), []byte(dep), 0o644)
+	os.WriteFile(filepath.Join(d, "modules.builtin"), []byte("kernel/vfat.ko\n"), 0o644)
+	exec.Command("depmod", "-b", root, "6.12.1-arch1-1").Run() // empty fake .ko files make depmod complain but it still writes the indexes
+	st := []StorageRef{{ID: "s0", FSType: "ntfs3"}, {ID: "s1", FSType: "ext4", Loop: &FileRef{Storage: "s0", Rel: "x"}}}
+	if m := missingStoreModules(&ExecRunner{}, root, "6.12.1-arch1-1", st); len(m) != 0 {
+		t.Fatal("present modules reported missing:", m)
+	}
+	st[0].FSType = "vfat" // built-in
+	if m := missingStoreModules(&ExecRunner{}, root, "6.12.1-arch1-1", st); len(m) != 0 {
+		t.Fatal("builtin reported missing:", m)
+	}
+	st[0].FSType = "nosuchfs"
+	if m := missingStoreModules(&ExecRunner{}, root, "6.12.1-arch1-1", st); len(m) != 1 || m[0] != "nosuchfs" {
+		t.Fatal(m)
+	}
+	fs := moduleFiles(&ExecRunner{}, root, "6.12.1-arch1-1", []string{"loop", "ntfs3", "ext4"})
+	if len(fs) != 3 || !strings.HasSuffix(fs[1], "ntfs3.ko.zst") {
+		t.Fatal(fs)
+	}
 }

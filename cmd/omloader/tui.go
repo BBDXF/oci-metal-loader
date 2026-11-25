@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -641,6 +642,17 @@ func (s *realSvc) Store() (tui.StoreStatus, error) {
 	}
 	if c, err := s.cfg(); err == nil && c.Storage.Snapshots.StoreFile.AutoCreate && s.env["STOREFILE"] != "" {
 		st.Notes = append(st.Notes, "auto-created at first boot if missing, size "+c.Storage.Snapshots.StoreFile.Size)
+	}
+	if b, err := os.ReadFile(CreateStatusFile); err == nil {
+		f := strings.Fields(string(b))
+		switch {
+		case len(f) == 3 && f[0] == "creating":
+			d, _ := strconv.ParseInt(f[1], 10, 64)
+			t, _ := strconv.ParseInt(f[2], 10, 64)
+			st.Notes = append([]string{fmt.Sprintf("creating store: %.1f/%.1f GB (background; snapshots are in RAM until the next boot)", float64(d)/1e9, float64(t)/1e9)}, st.Notes...)
+		case len(f) > 0 && f[0] == "ready":
+			st.Notes = append([]string{"store ready, used from next boot"}, st.Notes...)
+		}
 	}
 	if e := s.env["STOREERR"]; e != "" {
 		st.Notes = append(st.Notes, "store error: "+e)

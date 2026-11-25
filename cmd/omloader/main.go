@@ -170,6 +170,8 @@ func runBoot(args []string, out, errw io.Writer) int {
 	var r boot.Runner = &boot.ExecRunner{LogFile: *cl}
 	if *dry {
 		r = &boot.DryRunner{Out: out}
+	} else {
+		CancelAutoCreate(out)
 	}
 	if res.Image.Type != "lxd-vm" {
 		if _, err := boot.ExecuteOverlay(o, res, plan, r); err != nil {

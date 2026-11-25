@@ -67,12 +67,13 @@ sect() { sed -n "/TAG:$2:BEGIN/,/TAG:$2:END/p" $W/$1.clean; }
 waitfor() { for i in $(seq 1 $3); do clean $1; grep -aqE "$2" $W/$1.clean && return 0; sleep 1; done; return 1; }
 common() { # $1 tag, $2 rw|ro
   local t=$1
+  # grep the whole console (kernel printk (loop1: detected capacity change) can land in the MIDDLE of the stage-1 line on the serial console, so only the line prefix + medium.env are checked) (not just the first "live medium" line: serial/console interleaving can split it); dump stage 1 on failure
   L=$(grep -a 'OMLOADER_STAGE1: live medium' $W/$t.clean | head -1); echo "--- $t: $L"
-  echo "$L" | grep -qE 'iso-scan: dev=/dev/vda1 fs=ntfs file=/omloader/omloader.iso' && pass "$t: stage 1 found the ISO on the NTFS partition (ntfs-3g in the initramfs)" || fail "$t: stage 1 line: $L"
+  grep -aqE 'iso-scan: dev=/dev/vda1 fs=ntfs file=' $W/$t.clean && sect $t medium | grep -q 'omloader/omloader.iso' && pass "$t: stage 1 found the ISO on the NTFS partition (in-kernel ntfs3)" || { fail "$t: stage 1 line: $L"; grep -a 'STAGE1' $W/$t.clean | head -20; }
   sect $t env | grep -q 'IMGDEV=/dev/vda1' && pass "$t: data partition = the ISO's partition (label VHDX, no VTOYDATA: fallback)" || fail "$t: env: $(sect $t env | tr '\n' ' ')"
   sect $t env | grep -q 'IMAGES_ROOT=/mnt/images/omloader/images' && sect $t ls | grep -qx omloci && pass "$t: images from omloader/images visible (omloci)" || fail "$t: images: $(sect $t ls | tr '\n' ' ')"
   sect $t snap | grep -q 'RC=0' && pass "$t: image omloci resolved by the CLI list (image.yaml read from NTFS)" || fail "$t: snapshot list: $(sect $t snap | tr '\n' ' ')"
-  sect $t argv | grep -q '^@ntfs-3g ' && pass "$t: FUSE daemon runs with argv[0] '@ntfs-3g' (survives switch-root)" || fail "$t: daemon argv: $(sect $t argv | tr '\n' ' ')"
+  sect $t medium | grep -q 'MEDIUM_HOST_DRV=ntfs3' && ! sect $t argv | grep -q ntfs-3g && pass "$t: host NTFS on the in-kernel ntfs3 driver (no FUSE daemon)" || fail "$t: driver: $(sect $t medium | tr '\n' ' ') $(sect $t argv | tr '\n' ' ')"
   if [ $2 = any ]; then   # ntfs-3g recovers an unclean (non-hibernated) volume and mounts it rw; only hibernation (Fast Startup) forces ro, which cannot be provoked here
     echo "INFO: $t: after the hard kill the volume was mounted $(sect $t medium | grep -q 'MEDIUM_HOST_RW=1' && echo read-write '(ntfs-3g recovered it)' || echo READ-ONLY)"
   elif [ $2 = rw ]; then
@@ -105,18 +106,53 @@ hookcase() { # $1 tag, $2 hook script body; boots the same disk, waits for the p
 }
 REPORT='. /run/omloader/env; echo "TAG:r:BEGIN"; cat /run/omloader/env; echo SNAPDIR=$(ls /mnt/snap/snapshots 2>&1 | tr "\n" " "); ls -l /mnt/images/omloader /mnt/images/ventoy 2>&1; for f in /mnt/images/omloader/*.img /mnt/images/omloader/*.dat; do [ -f $f ] && echo "LABEL $f $(e2label $f)"; done; cat /run/omloader/store.log; echo "TAG:r:END"'
 hookcase E0 "set -e; printf 'storage:\n  snapshots:\n    store_file:\n      size: 1G\n' > /mnt/images/omloader/boot.yaml; echo prepared"
-hookcase E1 "$REPORT; mkdir -p /mnt/snap/snapshots/snapA; echo hi > /mnt/snap/snapshots/snapA/m; sync"
+hookcase E1 "for i in \$(seq 1 300); do grep -q ^ready /run/omloader/store-create.status && break; sleep 1; done; sleep 2; $REPORT; mkdir -p /mnt/snap/snapshots/snapA; echo hi > /mnt/snap/snapshots/snapA/m; sync"
 R=$(sect E1 r)
-echo "$R" | grep -q 'OMLOADER_LOADER: creating store .*1 GiB' && pass "E1: auto-create marker line (1 GiB, NTFS/ntfs-3g)" || fail "E1: no creation marker: $(grep -a 'OMLOADER_LOADER: .*store' $W/E1.clean | head -5)"
+echo "$R" | grep -q 'OMLOADER_LOADER: creating store .*1 GiB' && pass "E1: auto-create marker line (1 GiB, NTFS/ntfs3)" || fail "E1: no creation marker: $(grep -a 'OMLOADER_LOADER: .*store' $W/E1.clean | head -5)"
+echo "$R" | grep -q 'store allocated via fallocate' && pass "E1: store allocated with fallocate (mode 0, full size)" || fail "E1: alloc method: $(echo "$R" | grep -a allocated)"
 echo "$R" | grep -q 'LABEL /mnt/images/omloader/store.img OMLOADER' && pass "E1: omloader/store.img exists, label OMLOADER" || fail "E1: label: $R"
-echo "$R" | grep -q 'SNAPOK=1' && echo "$R" | grep -q 'STOREFILE=/mnt/images/omloader/store.img' && pass "E1: snapshots on the store (not RAM only)" || fail "E1: env: $R"
-hookcase E2 "$REPORT"
+echo "$R" | grep -q 'SNAPOK=0' && pass "E1: background creation: this session was RAM-only (store used from the next boot)" || fail "E1: env: $R"
+hookcase E2 "$REPORT; sleep 1"
 R=$(sect E2 r)
-! grep -aq 'OMLOADER_LOADER: creating store' $W/E2.clean && echo "$R" | grep -q 'STOREFILE=/mnt/images/omloader/store.img' && echo "$R" | grep -q 'snapA' && pass "E2: store reused, no second creation, snapshot still there" || fail "E2: $R"
+! grep -aq 'OMLOADER_LOADER: creating store' $W/E2.clean && echo "$R" | grep -q 'STOREFILE=/mnt/images/omloader/store.img' && echo "$R" | grep -q 'SNAPOK=1' && pass "E2: store reused from the next boot (SNAPOK=1), no second creation" || fail "E2: $R"
+# ---- H: power-off safety of a store auto-created on ntfs3: synced data survives a HARD kill; clean shutdown leaves a clean store ----
+CHK='. /run/omloader/env; echo "TAG:r:BEGIN"; echo STOREFILE=$STOREFILE SNAPOK=$SNAPOK; ls /mnt/snap/snapshots 2>&1 | tr "\n" " "; echo; echo "SYNCED=$(cat /mnt/snap/snapshots/synced/m 2>&1)"; echo "BIG=$(cat /mnt/snap/snapshots/clean/m 2>&1)"; echo "BIGSUM=$(cat /mnt/snap/snapshots/synced/sum 2>&1)/$(sha256sum < /mnt/snap/snapshots/synced/big 2>&1 | cut -c1-16)"; dmesg | grep -ciE "EXT4-fs error|corrupt" | sed "s/^/EXT4ERR=/"; dmesg | grep -ci "recovering journal\|orphan" | sed "s/^/REPLAY=/"; umount /mnt/snap; L=$(losetup -j $STOREFILE -O NAME --noheadings); e2fsck -fn $STOREFILE >/tmp/fsck.out 2>&1; echo FSCK_RC=$?; tail -2 /tmp/fsck.out; echo "TAG:r:END"'
+hookcase H0 "set -e; mkdir -p /mnt/snap/snapshots/synced; echo base > /mnt/snap/snapshots/synced/m; dd if=/dev/urandom of=/mnt/snap/snapshots/synced/big bs=1M count=64 status=none; sha256sum < /mnt/snap/snapshots/synced/big | cut -c1-16 > /mnt/snap/snapshots/synced/sum; sync; echo prepared"
+# H1: unsynced writes in flight, then the VM dies
+rm -rf $W/ntfs-hk2; mkdir -p $W/ntfs-hk2
+printf '%s\n' 'mkdir -p /mnt/snap/snapshots/inflight; echo HOOK_WROTE; dd if=/dev/urandom of=/mnt/snap/snapshots/inflight/x bs=1M count=300 status=none & sleep 1; for i in 1 2 3 4 5 6; do echo $i > /mnt/snap/snapshots/inflight/f$i; done; echo HOOK_INFLIGHT; sleep 600' > $W/ntfs-hk2/hook.sh
+ST=$W/ntfs-hook2.img; rm -f $ST; truncate -s 16M $ST; mkfs.ext4 -q -L OMLSTAGE -d $W/ntfs-hk2 $ST
+run H1 "omloader.hook=1" 300
+if waitfor H1 'HOOK_INFLIGHT' 200; then sleep 1; pass "H1: store mounted, data in flight; killing the VM (no shutdown)"; else fail "H1: no in-flight marker (see $W/H1.clean)"; fi
+pkill -9 -f "ntfs-run-H1"; sleep 2
+hookcase H2 "$CHK"
+R=$(sect H2 r)
+echo "$R" | grep -q 'SNAPOK=1' && echo "$R" | grep -q 'SYNCED=base' && pass "H2: after hard power-off the store mounts and the synced data is present" || fail "H2: $R"
+S1=$(echo "$R" | sed -n 's/^BIGSUM=\(.*\)\/.*/\1/p'); S2=$(echo "$R" | sed -n 's/^BIGSUM=.*\///p'); [ -n "$S1" ] && [ "$S1" = "$S2" ] && pass "H2: synced 64 MiB file intact (checksum)" || fail "H2: checksum $S1 vs $S2"
+echo "$R" | grep -q 'EXT4ERR=0' && pass "H2: no ext4 errors in dmesg (journal replay: $(echo "$R" | grep REPLAY))" || fail "H2: ext4 errors: $R"
+echo "$R" | grep -q 'FSCK_RC=[01]$' && pass "H2: e2fsck -fn clean after journal replay" || fail "H2: fsck: $R"
+# H3: clean shutdown -> nothing to replay, fsck clean
+hookcase H3 "mkdir -p /mnt/snap/snapshots/clean; echo done > /mnt/snap/snapshots/clean/m; echo prepared"
+hookcase H4 "$CHK"
+R=$(sect H4 r)
+echo "$R" | grep -q 'BIG=done' && echo "$R" | grep -q 'REPLAY=0' && echo "$R" | grep -q 'FSCK_RC=0$' && pass "H4: clean shutdown: data present, no journal replay, fsck clean" || fail "H4: $R"
+# ---- Z: forced zero-write path (omloader.alloc=zero): progress file grows, store usable next boot ----
+hookcase Z0 "rm -f /mnt/images/omloader/store.img; echo prepared"
+rm -rf $W/ntfs-hk2; mkdir -p $W/ntfs-hk2
+printf '%s\n' 'for i in $(seq 1 300); do cat /run/omloader/store-create.status >> /tmp/st.log; grep -q ^ready /run/omloader/store-create.status && break; sleep 1; done; echo "TAG:r:BEGIN"; sort -u /tmp/st.log | head -20; cat /run/omloader/store.log; echo "TAG:r:END"' > $W/ntfs-hk2/hook.sh
+ST=$W/ntfs-hook2.img; rm -f $ST; truncate -s 16M $ST; mkfs.ext4 -q -L OMLSTAGE -d $W/ntfs-hk2 $ST
+run Z1 "omloader.hook=1 omloader.alloc=zero" 600
+waitfor Z1 'OMLOADER_HOOK_RC=' 500 || fail "Z1: no hook result"; sleep 2; clean Z1; pkill -9 -f "ntfs-run-Z1"
+R=$(sect Z1 r)
+echo "$R" | grep -q 'store allocated via zero-write' && [ $(echo "$R" | grep -c '^creating') -ge 2 ] && echo "$R" | grep -q '^ready' && pass "Z1: zero-write path: progress status updated (0 -> total) ($(echo "$R" | grep -c '^creating') distinct samples), ready" || fail "Z1: $R"
 hookcase F0 "set -e; rm -f /mnt/images/omloader/store.img /mnt/images/omloader/boot.yaml; truncate -s 64M /mnt/images/omloader/foo.dat; mkfs.ext4 -q -L OMLOADER /mnt/images/omloader/foo.dat; mkdir -p /mnt/images/ventoy; truncate -s 64M /mnt/images/ventoy/x.dat; mkfs.ext4 -q -L vtoycow /mnt/images/ventoy/x.dat; echo prepared"
 hookcase F1 "$REPORT"
 R=$(sect F1 r)
 echo "$R" | grep -q 'STOREFILE=/mnt/images/omloader/foo.dat' && pass "F1: pre-placed omloader/foo.dat (label OMLOADER) chosen" || fail "F1: $R"
 ! grep -aq 'OMLOADER_LOADER: creating store' $W/F1.clean && ! echo "$R" | grep -q 'ventoy/x.dat chosen' && pass "F1: no creation; vtoycow file ignored" || fail "F1: $R"
+hookcase G0 "set -e; rm -f /mnt/images/omloader/foo.dat; echo prepared"
+run G "" 200
+if waitfor G 'OMLOADER_TUI_READY|OMLOADER_SHELL_READY' 60 && grep -aq 'creating omloader/store.img in the background' $W/G.clean; then pass "G: TUI/loader ready within 60 s while auto-create runs in the background"; else fail "G: loader not ready in 60 s with auto-create: $(grep -a 'OMLOADER_LOADER: .*store' $W/G.clean | head -3)"; fi
+pkill -9 -f "ntfs-run-G" 2>/dev/null
 [ $FAIL = 0 ] && echo "E2E-NTFS: ALL PASS" || echo "E2E-NTFS: FAILED"
 exit $FAIL

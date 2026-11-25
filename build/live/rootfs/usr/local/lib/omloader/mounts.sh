@@ -10,6 +10,7 @@
 export PATH=/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 if [ "$1" = stop ]; then
   . /run/omloader/env 2>/dev/null; . /run/omloader/medium.env 2>/dev/null
+  systemctl stop omloader-store-create.service 2>/dev/null   # a running background creation must not hold the host fs
   sync
   mountpoint -q /mnt/snap && umount /mnt/snap
   if [ -n "$STOREFILE" ]; then
@@ -18,9 +19,9 @@ if [ "$1" = stop ]; then
   sync
   if mountpoint -q /mnt/images; then umount /mnt/images 2>/dev/null || mount -o remount,ro /mnt/images 2>/dev/null; fi
   sync
-  # NTFS host mounted by stage 1 (ntfs-3g, rw): let the FUSE daemon exit cleanly (clears the NTFS dirty flag). The kernel
+  # NTFS host mounted by stage 1 with the ntfs-3g FALLBACK (rw): let the FUSE daemon exit cleanly (clears the NTFS dirty flag). The kernel
   # mount stays (the live root runs from the ISO on it), so do this last.
-  if [ "$MEDIUM_HOST_FS" = ntfs ] && [ "$MEDIUM_HOST_RW" = 1 ]; then
+  if [ "$MEDIUM_HOST_FS" = ntfs ] && [ "$MEDIUM_HOST_RW" = 1 ] && [ "$MEDIUM_HOST_DRV" != ntfs3 ]; then
     for d in /proc/[0-9]*; do case "$(cat $d/comm 2>/dev/null)" in ntfs-3g|@ntfs-3g) kill -TERM "${d#/proc/}" 2>/dev/null;; esac; done
   fi
   exit 0
@@ -99,11 +100,13 @@ if [ $SNAPOK = 0 ] && [ -n "$IMGDEV" ] && [ "$(arg omloader.store)" != off ] && 
   if [ -z "$SF" ] && ! grep -q 'does not match' /run/omloader/store-find.err 2>/dev/null; then
     if [ $IMGRW != 1 ]; then
       echo "OMLOADER_LOADER: store auto-create skipped: host partition is read-only (Windows fast startup/hibernation -> shut down fully, then reboot)" | tee -a /run/omloader/store.log
-    elif omloader store autocreate --host-root /mnt/images $CFG > /run/omloader/autocreate.out 2>&1; then
-      cat /run/omloader/autocreate.out | tee -a /run/omloader/store.log
-      SF=$(omloader store find --host-root /mnt/images --host-dev "$IMGDEV" $CFG 2>>/run/omloader/store-find.err)
     else
-      cat /run/omloader/autocreate.out | tee -a /run/omloader/store.log
+      # background creation (never blocks the TUI): omloader-store-create.service; the loader runs RAM-only until it is done and
+      # uses the store from the next boot (a guest start cancels a running creation, see docs/store-file.md)
+      echo "OMLOADER_LOADER: no store file: creating omloader/store.img in the background (RAM-only snapshots until the next boot)" | tee -a /run/omloader/store.log
+      echo "creating 0 0" > /run/omloader/store-create.status
+      echo "HOSTROOT=/mnt/images" > /run/omloader/store-create.env; echo "CFG=\"$CFG\"" >> /run/omloader/store-create.env
+      systemctl start --no-block omloader-store-create.service 2>/dev/null || true
     fi
   fi
   { sed 's/^/OMLOADER_LOADER: /' /run/omloader/store-find.err; } | tee -a /run/omloader/store.log

@@ -159,12 +159,16 @@ func moduleFiles(r Runner, root, kver string, names []string) []string {
 // kernelVersion derives the version from vmlinuz-<ver> or the only /lib/modules entry.
 func kernelVersion(root, kernelReal string) (string, error) {
 	b := filepath.Base(kernelReal)
-	if strings.HasPrefix(b, "vmlinuz-") {
-		return strings.TrimPrefix(b, "vmlinuz-"), nil
-	}
 	md, err := ResolveInRoot(root, "/lib/modules")
 	if err != nil {
 		return "", fmt.Errorf("cannot determine kernel version: %w", err)
+	}
+	if strings.HasPrefix(b, "vmlinuz-") {
+		// Arch names the image vmlinuz-linux (a flavour, not a version): only trust the suffix if a module dir has that name
+		v := strings.TrimPrefix(b, "vmlinuz-")
+		if dirExists(filepath.Join(md, v)) {
+			return v, nil
+		}
 	}
 	ents, err := os.ReadDir(md)
 	if err != nil {

@@ -95,7 +95,7 @@ func TestCreateExfatPrealloc(t *testing.T) {
 func TestCreateZeroFallbackAndSparse(t *testing.T) {
 	d := t.TempDir()
 	r := &stfR{resp: func(l string) (string, error) {
-		if strings.HasPrefix(l, "fallocate") {
+		if strings.Contains(l, " fallocate ") {
 			return "", os.ErrInvalid
 		}
 		return "", nil

@@ -1,0 +1,14 @@
+[Unit]
+Description=omloader: create the snapshot store file in the background
+After=omloader-mounts.service
+[Service]
+Type=simple
+ExecStart=/usr/local/lib/omloader/store-create.sh
+ExecStopPost=/bin/rm -f /mnt/images/omloader/store.img.new
+Nice=10
+IOSchedulingClass=idle
+StandardInput=null
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/console
+TimeoutStopSec=20

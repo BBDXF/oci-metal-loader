@@ -89,9 +89,13 @@ Ventoy persistence uses ext4 image files (`*.dat`, created with `CreatePersisten
   with Ventoy's `CreatePersistentImg.sh -l OMLOADER`). Ventoy's own `vtoycow` persistence files are never touched. The chosen file and the reason
   every other candidate was skipped are in the loader log, `omloader store find` (stderr) and the TUI Storage page.
 - **Auto-create:** with no OMLOADER partition and no valid store file the loader creates `omloader/store.img` (ext4, label OMLOADER, same code as
-  `omloader store create`) before the TUI starts, printing `OMLOADER_LOADER: creating store ... N GiB`. Size = `storage.snapshots.store_file.size`
+  `omloader store create`) in the **background** (`omloader-store-create.service`, writes `store.img.new`, renames when done; the TUI never waits), printing `OMLOADER_LOADER: creating store ... N GiB`. Size = `storage.snapshots.store_file.size`
   (default `20G`; unrelated to the download-cache limit `cache.max_size_gb`). Config is read from `omloader/boot.yaml` on the data partition, else built-in defaults.
 - **Guards (never fatal, fall back to RAM only):** skipped with `auto_create: false` or `omloader.store=off`; skipped if the host is read-only
   (NTFS dirty/hibernated: Windows fast startup/hibernation → shut down fully); needs free space >= size + 1 GiB, otherwise the size shrinks to what fits
   if that is >= 4 GiB, else skipped; idempotent (an existing store is reused; a leftover `.new` from an interrupted creation is deleted; an
-  existing non-OMLOADER `store.img` is never overwritten). exFAT/vfat are fully allocated (slow for 20G), NTFS/ext4 sparse.
+  existing non-OMLOADER `store.img` is never overwritten). exFAT/vfat/NTFS are fully allocated: with in-kernel ntfs3 (stage 1 default; ntfs-3g only as fallback) via `fallocate` (instant, no data writes); zero-writing only when fallocate is unsupported.
+
+### Background creation (v0.4.4) / 后台创建
+- The loader works RAM-only while the store is created; progress `creating store: X/Y GB` (from `/run/omloader/store-create.status`) is on the Storage page. When done: "store ready, used from next boot" (no live re-attach). Starting an image (`omloader boot`) **cancels** a running creation and deletes the partial `store.img.new`; it restarts at the next boot. A stale `.new` is removed at start.
+- 存储文件在后台创建（`omloader-store-create.service`，先写 `store.img.new`，完成后重命名），TUI 不再等待；创建期间快照仅在内存中，存储页显示 `creating store: X/Y GB`，完成后提示“store ready, used from next boot”（下次启动生效）。启动镜像会取消正在进行的创建并删除 `.new`，下次启动重新开始。NTFS 默认使用内核 ntfs3 并以 `fallocate` 分配（瞬间完成），ntfs-3g 仅作回退。

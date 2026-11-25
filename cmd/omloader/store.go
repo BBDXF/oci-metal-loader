@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
+	"time"
 
 	"omloader/internal/boot"
 	"omloader/internal/config"
@@ -222,12 +225,58 @@ func storeAutoCreate(root string, sf config.StoreFile, label, pre string, ops sn
 	if pre == "" {
 		pre = sf.Prealloc
 	}
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() { // progress for the TUI: allocated bytes of store.img.new (fallocate: jumps at once; zero-write: grows)
+		defer close(done)
+		for {
+			var n int64
+			if fi, err := os.Stat(path + ".new"); err == nil {
+				if sys, ok := fi.Sys().(*syscall.Stat_t); ok {
+					n = sys.Blocks * 512
+				}
+			}
+			writeCreateStatus(fmt.Sprintf("creating %d %d", n, size))
+			select {
+			case <-stop:
+				return
+			case <-time.After(time.Second):
+			}
+		}
+	}()
 	host, prealloc, err := ops.StoreCreate(snapmgr.CreateOpts{Path: path, Size: size, Label: label, Prealloc: pre})
+	close(stop)
+	<-done
 	if err != nil {
 		os.Remove(path + ".new")
+		writeCreateStatus("failed " + err.Error())
 		say("store auto-create FAILED: %v (snapshots stay in RAM)", err)
 		return 1
 	}
+	writeCreateStatus(fmt.Sprintf("ready %d %d", size, size))
+	say("store allocated via %s", snapmgr.AllocMethod)
 	say("store created: %s %d GiB on %s (preallocated=%v)", path, size>>30, host, prealloc)
 	return 0
+}
+
+// CreateStatusFile: "creating <done> <total>" | "ready ..." | "failed <why>" | "cancelled";
+const CreateStatusFile = "/run/omloader/store-create.status"
+
+func writeCreateStatus(s string) {
+	if _, err := os.Stat("/run/omloader"); err == nil {
+		os.WriteFile(CreateStatusFile+".tmp", []byte(s+"\n"), 0o644)
+		os.Rename(CreateStatusFile+".tmp", CreateStatusFile)
+	}
+}
+
+// CancelAutoCreate stops a running background store creation (omloader-store-create.service; its ExecStopPost removes the
+// partial store.img.new). Called before a guest starts (kexec / switch-root) so nothing writes to the host partition meanwhile.
+func CancelAutoCreate(out io.Writer) {
+	b, err := os.ReadFile(CreateStatusFile)
+	if err != nil || !strings.HasPrefix(string(b), "creating") {
+		return
+	}
+	fmt.Fprintln(out, "OMLOADER_LOADER: store creation still running: cancelling it before the guest starts (it restarts at the next boot)")
+	exec.Command("systemctl", "stop", "omloader-store-create.service").Run()
+	writeCreateStatus("cancelled")
 }

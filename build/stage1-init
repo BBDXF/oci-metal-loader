@@ -42,11 +42,18 @@ iso_try() { # $1 = ISO file, $2 = 1 -> no volume label check (explicit name)
   umount /run/medium 2>/dev/null; losetup -d "$lo" 2>/dev/null; return 1
 }
 resolve_dev() { case "$1" in LABEL=*) blkid -L "${1#LABEL=}";; UUID=*) blkid -U "${1#UUID=}";; *) echo "$1";; esac 2>/dev/null; }
-# NTFS: the loader kernel (Debian 13, 6.12) is not relied on for ntfs3, so stage 1 carries ntfs-3g (FUSE: fuse.ko + /dev/fuse). It is installed as
-# "@ntfs-3g": the '@' argv[0] convention makes systemd leave the daemon alone at switch-root / shutdown (it keeps serving the
-# ISO's host partition for the whole session; mounts.sh bind-mounts it as /mnt/images, mounts.sh stop ends it cleanly).
+# NTFS: the in-kernel ntfs3 (6.12; ntfs3.ko is in the stage-1 module list) is the default: real fallocate, no FUSE daemon. ntfs-3g (FUSE,
+# installed as "@ntfs-3g": the '@' argv[0] convention makes systemd leave the daemon alone at switch-root / shutdown) is the FALLBACK
+# when ntfs3 cannot mount (module missing, volume refused). NTFSDRV records which driver holds $HOST (-> medium.env MEDIUM_HOST_DRV).
+NTFSDRV=
+ntfs_mnt() { # $1 = ro|rw, $2 = device, $3 = mount point; ntfs3 first, ntfs-3g fallback
+  if [ "$NTFSNO3" != 1 ] && mount -t ntfs3 -o "$1,noatime,iocharset=utf8" "$2" "$3" 2>/run/ntfs.err; then NTFSDRV=ntfs3; return 0; fi
+  echo "OMLOADER_STAGE1: ntfs3 $1 mount of $2 failed ($(tail -1 /run/ntfs.err 2>/dev/null)): fallback ntfs-3g"
+  if @ntfs-3g "$2" "$3" -o "$1,noatime" 2>/run/ntfs.err; then NTFSDRV=ntfs-3g; return 0; fi
+  return 1
+}
 hostmnt() { # $1 = fs type, $2 = mount options (ro|rw), $3 = device; mounted on $HOST
-  if [ "$1" = ntfs ]; then @ntfs-3g "$3" $HOST -o "$2,noatime" 2>/run/ntfs.err; else mount -t "$1" -o "$2" "$3" $HOST 2>/dev/null; fi
+  if [ "$1" = ntfs ]; then ntfs_mnt "$2" "$3" $HOST; else mount -t "$1" -o "$2" "$3" $HOST 2>/dev/null; fi
 }
 want_rw() { # $1 = device: is it the loader's data partition (omloader.data=, else VTOYDATA, else the partition holding the ISO)? then rw
   local da v; da=$(arg omloader.data)
@@ -72,7 +79,7 @@ part_order() {
   done
   echo $a $b
 }
-probe_mnt() { if [ "$1" = ntfs ]; then @ntfs-3g "$2" $P -o ro,noatime 2>/dev/null; else mount -t "$1" -o ro "$2" $P 2>/dev/null; fi; }
+probe_mnt() { if [ "$1" = ntfs ]; then ntfs_mnt ro "$2" $P >/dev/null; else mount -t "$1" -o ro "$2" $P 2>/dev/null; fi; }
 # after a hit: list other partitions that also hold an omloader ISO (just for the log)
 skipped_list() { # $@ = remaining partitions
   local n t out= c; P=/run/medium-probe
@@ -103,11 +110,15 @@ scan_dev() { # $1 = partition/disk device. 0 = ISO found (host fs stays mounted 
     ISOPATH=$f
     # the data partition is mounted rw by omloader-mounts later: switch this (shared) mount to rw now so both agree
     if want_rw "$d"; then
-      if [ "$ft" = ntfs ]; then # FUSE cannot remount: release the ISO, mount again rw (dirty/hibernated volume: stays ro), reattach the ISO
-        umount /run/medium 2>/dev/null; losetup -d "$ISOLOOP" 2>/dev/null; umount $HOST 2>/dev/null
-        k=0; while [ $k -lt 15 ]; do hostmnt ntfs rw "$d" && { HRW=1; break; }; k=$((k+1)); sleep 0.2; done
-        if [ $HRW = 0 ]; then echo "OMLOADER_STAGE1: $d (ntfs) not mountable read-write ($(tail -1 /run/ntfs.err)): read-only"; hostmnt ntfs ro "$d" || return 1; fi
-        iso_try "$HOST$f" 1 || { umount $HOST 2>/dev/null; return 1; }
+      if [ "$ft" = ntfs ]; then
+        if [ "$NTFSDRV" = ntfs3 ] && mount -o remount,rw $HOST 2>/run/ntfs.err; then HRW=1
+        else # ntfs3 refused rw (dirty/hibernated) or the volume is on ntfs-3g (FUSE cannot remount): release the ISO, mount again rw with ntfs-3g
+          [ "$NTFSDRV" = ntfs3 ] && echo "OMLOADER_STAGE1: $d ntfs3 rw remount failed ($(tail -1 /run/ntfs.err)): trying ntfs-3g rw"
+          umount /run/medium 2>/dev/null; losetup -d "$ISOLOOP" 2>/dev/null; umount $HOST 2>/dev/null
+          k=0; while [ $k -lt 15 ]; do @ntfs-3g "$d" $HOST -o rw,noatime 2>/run/ntfs.err && { HRW=1; NTFSDRV=ntfs-3g; break; }; k=$((k+1)); sleep 0.2; done
+          if [ $HRW = 0 ]; then echo "OMLOADER_STAGE1: $d (ntfs) not mountable read-write ($(tail -1 /run/ntfs.err)): read-only"; hostmnt ntfs ro "$d" || return 1; fi
+          iso_try "$HOST$f" 1 || { umount $HOST 2>/dev/null; return 1; }
+        fi
       else mount -o remount,rw $HOST 2>/dev/null && HRW=1; fi
     fi
     cat > /run/omloader/medium.env <<ENV
@@ -117,6 +128,7 @@ MEDIUM_HOST_DEV=$d
 MEDIUM_HOST_FS=$ft
 MEDIUM_HOST_MNT=$HOST
 MEDIUM_HOST_RW=$HRW
+MEDIUM_HOST_DRV=${NTFSDRV:-$ft}
 MEDIUM_ISO=$f
 MEDIUM_ISO_LOOP=$ISOLOOP
 ENV

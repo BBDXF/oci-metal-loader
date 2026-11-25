@@ -175,15 +175,26 @@ type CreateOpts struct {
 
 func roundMiB(n int64) int64 { return (n + mib - 1) / mib * mib }
 
+// AllocMethod is how the last StoreCreate allocated the file (truncate|fallocate|zero-write), for logs.
+var AllocMethod string
+
 func (o StoreOps) allocate(path string, size int64, prealloc bool) error {
 	if !prealloc {
+		AllocMethod = "truncate"
 		_, err := o.R.Run("truncate", "-s", strconv.FormatInt(size, 10), path)
 		return err
 	}
 	// fallocate (exfat/ntfs/ext4/xfs); filesystems without it (vfat, older exfat) get real zeros
-	if _, err := o.R.Run("fallocate", "-l", strconv.FormatInt(size, 10), path); err == nil {
-		return nil
+	// OMLOADER_ALLOC=zero forces the zero-write path (tests / filesystems whose fallocate is suspect). `timeout` keeps a stuck
+	// fallocate from wedging creation/shutdown. Plain mode 0 (no KEEP_SIZE): the file has its full size and allocated clusters.
+	if os.Getenv("OMLOADER_ALLOC") != "zero" {
+		if _, err := o.R.Run("timeout", "600", "fallocate", "-l", strconv.FormatInt(size, 10), path); err == nil {
+			AllocMethod = "fallocate(mode 0)"
+			return nil
+		}
+		os.Remove(path)
 	}
+	AllocMethod = "zero-write"
 	_, err := o.R.Run("dd", "if=/dev/zero", "of="+path, "bs=1M", "count="+strconv.FormatInt(size/mib, 10), "conv=fsync", "status=none")
 	return err
 }
