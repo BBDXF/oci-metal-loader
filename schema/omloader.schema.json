@@ -471,13 +471,13 @@
         "host_disks": {
           "type": "object",
           "additionalProperties": false,
-          "description": "expose the machine's disks/partitions in guests (default off; see docs/INSTALL.md 'Host disks in guests')",
+          "description": "expose the machine's disks/partitions in guests (default ON: mode rw, disks boot, automount, force_rw_data true; see docs/INSTALL.md 9.4)",
           "properties": {
-            "mode": {"enum": ["off", "ro", "rw"]},
-            "disks": {"enum": ["boot", "all"]},
+            "mode": {"enum": ["off", "ro", "rw"], "default": "rw"},
+            "disks": {"enum": ["boot", "all"], "default": "boot"},
             "mount_root": {"type": "string", "pattern": "^/.+"},
-            "automount": {"type": "boolean"},
-            "force_rw_data": {"type": "boolean"}
+            "automount": {"type": "boolean", "default": true},
+            "force_rw_data": {"type": "boolean", "default": true, "description": "false keeps the omloader data/store partition read-only"}
           }
         },
         "autologin": {

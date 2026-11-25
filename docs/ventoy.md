@@ -75,3 +75,8 @@ native GPU drivers, multi-monitor and acceleration). Options:
 Inside a booted guest the resolution is the guest's business: change it in the desktop (Settings -> Displays, `xrandr`). A VM guest's kernel line can carry
 `video=...` through `boot.kernel_cmdline_extra` in boot.yaml (appended to the VM guest's command line; see INSTALL.md); containers run on the loader kernel and
 have no kernel line of their own. Under Ventoy the framebuffer mode before the Linux console is whatever Ventoy's menu set.
+
+
+## Host disks in guests
+
+By default guests see the data partition (and the other partitions of its disk) under `/mnt/disks/<disk>/<label>`, read-write like on a plain Ventoy stick; nothing is mounted until accessed. Never delete or move `omloader/` (it holds `store.img`). Windows Fast Startup/hibernation makes ntfs3 refuse read-write. Switch off with `guest_defaults.host_disks.mode: off`; details in INSTALL.md 9.4.

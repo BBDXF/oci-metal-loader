@@ -11,7 +11,7 @@ RSH  = $(if $(OML_REMOTE_PASS),sshpass -e )ssh -o StrictHostKeyChecking=no
 CONTAINER_ENGINE ?= $(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
 export CONTAINER_ENGINE
 
-.PHONY: update-base screenshots bin config-pkg test vet fmt version iso iso-local e2e-live-local sync iso-remote fixture disk e2e e2e-oci e2e-snap e2e-live e2e-ui e2e-pull e2e-ventoy e2e-ntfs e2e-storefile-guests e2e-isoscan e2e-store e2e-tui e2e-real e2e-autoboot e2e-quick e2e-full help licenses clean clean-remote check-remote
+.PHONY: update-base screenshots bin config-pkg test vet fmt version iso iso-local e2e-live-local sync iso-remote fixture disk e2e e2e-oci e2e-snap e2e-live e2e-ui e2e-pull e2e-ventoy e2e-ntfs e2e-storefile-guests e2e-hostdisks e2e-isoscan e2e-store e2e-tui e2e-real e2e-autoboot e2e-quick e2e-full help licenses clean clean-remote check-remote
 
 version:
 	@echo $(VERSION)
@@ -80,6 +80,9 @@ e2e-ventoy: sync     ## boot through Ventoy (normal+GRUB2), boot.yaml auto-boot,
 	$(call run-one,e2e-ventoy.sh,)
 e2e-ntfs: sync       ## ISO on an NTFS data partition labelled VHDX: stage 1 ntfs-3g, data-partition fallback, dirty NTFS read-only
 	$(call run-one,e2e-ntfs.sh,)
+e2e-hostdisks: sync   ## host disks in guests (default on, rw): container + VM see the data partition
+	$(call run-one,e2e-hostdisks.sh,)
+
 e2e-storefile-guests: sync ## store file on NTFS with real guests: Arch VM (.ko.zst modules) + Docker image via mirror (needs network)
 	$(call run-one,e2e-storefile-guests.sh,SKIP_BUILD=1)
 e2e-isoscan: sync    ## stage-1 ISO search order: Ventoy partitions first, VTOY_DEFAULT_SEARCH_ROOT, omloader/ dir, skipped-candidates log

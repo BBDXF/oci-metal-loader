@@ -99,3 +99,6 @@ Ventoy persistence uses ext4 image files (`*.dat`, created with `CreatePersisten
 ### Background creation (v0.4.4) / 后台创建
 - The loader works RAM-only while the store is created; progress `creating store: X/Y GB` (from `/run/omloader/store-create.status`) is on the Storage page. When done: "store ready, used from next boot" (no live re-attach). Starting an image (`omloader boot`) **cancels** a running creation and deletes the partial `store.img.new`; it restarts at the next boot. A stale `.new` is removed at start.
 - 存储文件在后台创建（`omloader-store-create.service`，先写 `store.img.new`，完成后重命名），TUI 不再等待；创建期间快照仅在内存中，存储页显示 `creating store: X/Y GB`，完成后提示“store ready, used from next boot”（下次启动生效）。启动镜像会取消正在进行的创建并删除 `.new`，下次启动重新开始。NTFS 默认使用内核 ntfs3 并以 `fallocate` 分配（瞬间完成），ntfs-3g 仅作回退。
+
+
+> Host disks: guests can see (and, by default, write) the partition that holds `store.img` under `/mnt/disks/<disk>/<label>`. Never delete, move or rewrite `omloader/store.img` there (`guest_defaults.host_disks.force_rw_data: false` makes it read-only; INSTALL.md 9.4).

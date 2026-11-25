@@ -113,8 +113,10 @@ func TestFstabAndSkip(t *testing.T) {
 }
 
 func TestRolesAndRO(t *testing.T) {
+	f, tr := false, true
 	if !PartRO(config.HostDisks{Mode: "ro"}, "") || PartRO(config.HostDisks{Mode: "rw"}, "") ||
-		!PartRO(config.HostDisks{Mode: "rw"}, "data") || PartRO(config.HostDisks{Mode: "rw", ForceRWData: true}, "store") {
+		!PartRO(config.HostDisks{Mode: "rw", ForceRWData: &f}, "data") || PartRO(config.HostDisks{Mode: "rw", ForceRWData: &tr}, "store") ||
+		PartRO(config.HostDisks{}, "data") || !PartRO(config.HostDisks{Mode: "ro"}, "data") {
 		t.Fatal("PartRO")
 	}
 	mi := "36 1 8:4 / /run/medium-host rw - ntfs3 /dev/vda4 rw\n"
@@ -140,5 +142,12 @@ func TestPlanTablesRebaseBlock(t *testing.T) {
 	cfg := config.HostDisks{Mode: "ro"}
 	if rd := HostDisksReadme(cfg, DisksFromPlan(pl)); !strings.Contains(rd, "omloader/store.img") || !strings.Contains(rd, "/mnt/disks/vda/A") {
 		t.Fatal(rd)
+	}
+}
+
+func TestDataSourceFallback(t *testing.T) {
+	mi := "36 1 8:1 / /mnt/images rw - exfat /dev/vda1 rw\n37 1 7:0 / /mnt/snap rw - ext4 /dev/loop3 rw\n"
+	if dataSource(mi, "", "/mnt/images/omloader/images") != "/dev/vda1" || dataSource(mi, "", "/mnt/snap/x") != "" || dataSource(mi, "", "") != "" {
+		t.Fatal("dataSource")
 	}
 }

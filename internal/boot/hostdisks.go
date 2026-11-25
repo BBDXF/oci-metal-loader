@@ -202,10 +202,10 @@ func DMPartName(disk string, n int) string { return fmt.Sprintf("oml-%sp%d", dis
 // PartRO decides whether a partition is mapped/mounted read-only: everything is ro in mode ro; in mode rw the data/store
 // partition stays ro unless force_rw_data.
 func PartRO(cfg config.HostDisks, role string) bool {
-	if cfg.Mode != "rw" {
+	if cfg.EffMode() != "rw" {
 		return true
 	}
-	return role != "" && !cfg.ForceRWData
+	return role != "" && !cfg.ForceRW()
 }
 
 // FstabLines renders the guest fstab entries (mountable partitions only).
@@ -284,24 +284,24 @@ func RebaseExtents(ex []Extent, startSectors uint64) []Extent {
 // README renders /mnt/disks/README.txt.
 func HostDisksReadme(cfg config.HostDisks, disks []HDDisk) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "omloader host disks (mode %s, %s)\n\n", cfg.Mode, map[bool]string{true: "all disks", false: "boot disk only"}[cfg.AllDisks()])
+	fmt.Fprintf(&b, "omloader host disks (mode %s, %s)\n\n", cfg.EffMode(), map[bool]string{true: "all disks", false: "boot disk only"}[cfg.AllDisks()])
 	b.WriteString("This machine's own disks appear here as <disk>/<name>, mounted on first access.\n")
-	if cfg.Mode == "rw" {
-		b.WriteString("Mode rw: partitions are writable except the omloader data/store partition (unless force_rw_data).\n")
+	if cfg.EffMode() == "rw" {
+		b.WriteString("Mode rw: partitions are writable (the omloader data/store partition too unless force_rw_data: false).\n")
 	} else {
 		b.WriteString("Mode ro: everything is read-only.\n")
 	}
 	b.WriteString("\nDO NOT delete, move or edit omloader/store.img or anything under omloader/ on the omloader data partition:\n")
 	b.WriteString("the running guest's snapshots and root live there.\n")
-	b.WriteString("NTFS: if Windows used Fast Startup/hibernation the volume may be unclean; disable it in Windows before writing (rw).\n\n")
+	b.WriteString("NTFS: if Windows used Fast Startup/hibernation the volume is dirty and ntfs3 refuses read-write; shut Windows down fully (or disable Fast Startup).\n\n")
 	for _, d := range disks {
 		for _, p := range d.Parts {
 			note := ""
 			switch p.Role {
 			case "data":
-				note = "  <- omloader data partition (always read-only unless force_rw_data)"
+				note = "  <- omloader data partition (read-only when force_rw_data: false)"
 			case "store":
-				note = "  <- omloader store (always read-only unless force_rw_data)"
+				note = "  <- omloader store (read-only when force_rw_data: false)"
 			}
 			if !MountableFS(p.FSType) {
 				note += "  [not mounted: " + orStr(p.FSType, "unknown") + "]"
@@ -465,14 +465,14 @@ func MediumHostMnt(envPath string) string {
 }
 
 // loaderDiscover is DiscoverHostDisks with the live loader's data partition and storages.
-func loaderDiscover(r Runner, cfg config.HostDisks, mountInfoPath string, store map[string]bool) ([]HDDisk, string) {
+func loaderDiscover(r Runner, cfg config.HostDisks, mountInfoPath, imagesRoot string, store map[string]bool) ([]HDDisk, string) {
 	mi := mountInfoPath
 	if mi == "" {
 		mi = "/proc/self/mountinfo"
 	}
 	b, _ := os.ReadFile(mi)
 	mm := MediumHostMnt("")
-	src := DataMountSource(string(b), mm)
+	src := dataSource(string(b), mm, imagesRoot)
 	disks, _ := DiscoverHostDisks(r, cfg, DiscoverOpts{DataSource: src, StoreUUIDs: store})
 	return disks, mm
 }
@@ -641,7 +641,7 @@ func ApplyHostDisks(root string, cfg config.HostDisks, pl []HostDiskPlan, out io
 	if err := guestWrite(root, filepath.Join(cfg.Root(), "README.txt"), []byte(HostDisksReadme(cfg, disks)), 0o644); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "OMLOADER: host disks: %d fstab entries under %s (mode %s)\n", len(lines), cfg.Root(), cfg.Mode)
+	fmt.Fprintf(out, "OMLOADER: host disks: %d fstab entries under %s (mode %s)\n", len(lines), cfg.Root(), cfg.EffMode())
 	return nil
 }
 
@@ -658,7 +658,7 @@ func (o Options) bindHostDisks(r Runner, cfg config.HostDisks, warn io.Writer) {
 	b, _ := os.ReadFile(mi)
 	mounts := parseMountInfo(string(b))
 	mm := MediumHostMnt("")
-	src := DataMountSource(string(b), mm)
+	src := dataSource(string(b), mm, o.ImagesRoot)
 	disks, err := DiscoverHostDisks(r, cfg, DiscoverOpts{DataSource: src})
 	if err != nil {
 		fmt.Fprintf(warn, "warning: host disks: %v\n", err)
@@ -721,4 +721,44 @@ func (o Options) bindHostDisks(r Runner, cfg config.HostDisks, warn io.Writer) {
 // ApplyHostDisksReadme writes only the README (containers have no fstab entries).
 func ApplyHostDisksReadme(root string, cfg config.HostDisks, pl []HostDiskPlan) error {
 	return guestWrite(root, filepath.Join(cfg.Root(), "README.txt"), []byte(HostDisksReadme(cfg, DisksFromPlan(pl))), 0o644)
+}
+
+// dataSource finds the block device of the loader data partition: the MEDIUM_HOST_MNT mount, else the block-device mount
+// that holds the images root (e.g. /mnt/images when there is no medium.env).
+func dataSource(mountinfo, mediumMnt, imagesRoot string) string {
+	if d := DataMountSource(mountinfo, mediumMnt); d != "" {
+		return d
+	}
+	if imagesRoot != "" {
+		if m, _, ok := findMount(parseMountInfo(mountinfo), imagesRoot); ok && strings.HasPrefix(m.Source, "/dev/") && !strings.HasPrefix(m.Source, "/dev/loop") {
+			return m.Source
+		}
+	}
+	return ""
+}
+
+// DropClaimedDisks removes the disks that hold a partition the guest preinit mounts directly (a storage that is neither NoMount nor
+// a store-file loop): the kernel would refuse the exclusive whole-disk dm-linear (partition already claimed). Returns the dropped names.
+func DropClaimedDisks(disks []HDDisk, st []StorageRef) ([]HDDisk, []string) {
+	claimed := map[string]bool{}
+	for _, s := range st {
+		if s.NoMount || s.Loop != nil || s.UUID == "" {
+			continue
+		}
+		claimed[s.UUID] = true
+	}
+	var keep []HDDisk
+	var dropped []string
+	for _, d := range disks {
+		bad := false
+		for _, p := range d.Parts {
+			bad = bad || p.UUID != "" && claimed[p.UUID]
+		}
+		if bad {
+			dropped = append(dropped, d.Name)
+		} else {
+			keep = append(keep, d)
+		}
+	}
+	return keep, dropped
 }

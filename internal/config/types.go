@@ -330,11 +330,22 @@ type HostDisks struct {
 	Disks       string `yaml:"disks" json:"disks"`                 // boot (default: the disk holding the loader data partition) | all
 	MountRoot   string `yaml:"mount_root" json:"mount_root"`       // default /mnt/disks
 	Automount   *bool  `yaml:"automount" json:"automount"`         // default true: x-systemd.automount fstab entries / container mounts
-	ForceRWData bool   `yaml:"force_rw_data" json:"force_rw_data"` // with mode rw: also the omloader data/store partition rw (dangerous)
+	ForceRWData *bool  `yaml:"force_rw_data" json:"force_rw_data"` // default true (like Ventoy: the data partition is plainly read-write); false keeps the omloader data/store partition ro
 }
 
 // Enabled reports whether host disks are exposed.
-func (h HostDisks) Enabled() bool { return h.Mode == "ro" || h.Mode == "rw" }
+func (h HostDisks) Enabled() bool { return h.EffMode() != "off" }
+
+// EffMode is the effective mode: rw (default, empty), ro or off.
+func (h HostDisks) EffMode() string {
+	if h.Mode == "" {
+		return "rw"
+	}
+	return h.Mode
+}
+
+// ForceRW reports force_rw_data (default true).
+func (h HostDisks) ForceRW() bool { return h.ForceRWData == nil || *h.ForceRWData }
 
 // Root returns the mount root (default /mnt/disks).
 func (h HostDisks) Root() string {

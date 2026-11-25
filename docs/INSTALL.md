@@ -322,23 +322,23 @@ Full example: [`examples/ubuntu-24.04/image.yaml`](../examples/ubuntu-24.04/imag
 
 ### 9.4 Host disks in guests (`guest_defaults.host_disks`)
 
-Off by default. When enabled, the machine's own disks show up in guests as `<mount_root>/<disk>/<name>` (e.g. `/mnt/disks/nvme0n1/VHDX`), including the Ventoy NTFS data partition with the ISO/VHDX and your other files.
+**On by default** (mode `rw`, like Ventoy where the data partition is plainly read-write; nothing is mounted until accessed). The machine's own disks show up in guests as `<mount_root>/<disk>/<name>` (e.g. `/mnt/disks/nvme0n1/VHDX`), including the Ventoy NTFS data partition with the ISO/VHDX and your other files.
 
 ```yaml
 guest_defaults:
   host_disks:
-    mode: ro            # off (default) | ro | rw
+    mode: rw            # rw (default) | ro | off
     disks: boot         # boot = only the disk holding the loader data partition | all
     mount_root: /mnt/disks
     automount: true     # x-systemd.automount fstab entries (VMs)
-    force_rw_data: false  # mode rw only: also the omloader data/store partition rw (do not)
+    force_rw_data: true   # default; false keeps the omloader data/store partition read-only
 ```
 
 - `<name>` = filesystem LABEL, else GPT partition name, else `p<N>`; sanitised to `[A-Za-z0-9._-]` (max 32 chars); duplicates on one disk get `_p<N>`. `README.txt` in the mount root lists everything.
 - Mountable: ntfs, exfat, vfat, ext2/3/4, xfs, btrfs. BitLocker, LUKS, swap, LVM members and unknown filesystems are skipped.
 - VMs (kexec): the loader reads the GPT/MBR and the guest initramfs maps the whole disk as one dm-linear (`oml-<disk>`) plus one per partition (`oml-<disk>p<N>`); the store-file mapping uses the same whole-disk device, so there is no partition-vs-disk claim conflict. fstab entries (`noauto,x-systemd.automount,nofail`) are written into the guest. Containers get the loader's own mounts bind-mounted.
-- The omloader data/store partition is always read-only in the guest unless `mode: rw` **and** `force_rw_data: true`. Never delete or move `omloader/store.img` or anything under `omloader/`.
-- NTFS needs a guest driver (`ntfs3` module or `ntfs-3g`); many distro VM kernels ship neither (install `ntfs-3g` in the image). If Windows used Fast Startup/hibernation the volume may be dirty: disable it before using `rw`.
+- The omloader data/store partition is read-write by default (like Ventoy); set `force_rw_data: false` (or `mode: ro`) to keep it read-only, `mode: off` to hide all host disks. Never delete or move `omloader/store.img` or anything under `omloader/`.
+- NTFS needs a guest driver (`ntfs3` module or `ntfs-3g`); many distro VM kernels ship neither (install `ntfs-3g` in the image). If Windows used Fast Startup/hibernation the volume is dirty and ntfs3 refuses read-write: shut Windows down fully (or disable Fast Startup).
 - Global setting only (no per-image override).
 
 ## 10. File and folder layout

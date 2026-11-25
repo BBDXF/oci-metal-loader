@@ -516,7 +516,11 @@ func (o Options) prepareGuest(r Runner, res *config.Resolved, p *Plan, mnt, kern
 				store[s.UUID] = true
 			}
 		}
-		disks, _ := loaderDiscover(r, hd, o.MountInfoPath, store)
+		disks, _ := loaderDiscover(r, hd, o.MountInfoPath, o.ImagesRoot, store)
+		disks, dropped := DropClaimedDisks(disks, gp.Storages)
+		if len(dropped) > 0 && o.Warn != nil {
+			fmt.Fprintf(o.Warn, "warning: host disks: %s not offered to the guest: a partition on it is mounted by the guest initramfs (exclusive claim); use a store file (NoMount) to share that disk\n", strings.Join(dropped, ","))
+		}
 		gp.HostDisks = HostDisksPlan(disks)
 	}
 	if !realRoot {

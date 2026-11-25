@@ -13,6 +13,12 @@ echo OMLOADER_DATA_EXT4=$(cat /var/lib/omloader-data/counter)
 echo OMLOADER_DATA_DIR=$(cat /srv/dirdata/counter)
 echo OMLOADER_DATA_FSTYPE=$(awk '$2=="/var/lib/omloader-data"{print $3}' /proc/mounts)
 echo OMLOADER_COUNTER=$n
+# host disks (default on, rw): the data partition must be visible and writable under /mnt/disks/<disk>/<label>
+echo OMLOADER_HOSTDISKS=$(ls -d /mnt/disks/*/* 2>/dev/null | tr '\n' ',')
+for hd in /mnt/disks/*/VTOYDATA /mnt/disks/*/VHDX; do [ -d "$hd" ] || continue
+  touch "$hd/.omloader-hd-test" 2>/dev/null && { echo OMLOADER_HOSTDISKS_RW=yes; rm -f "$hd/.omloader-hd-test"; } || echo OMLOADER_HOSTDISKS_RW=no
+  [ -d "$hd/omloader" ] && echo OMLOADER_HOSTDISKS_OMLDIR=yes; done
+[ -f /mnt/disks/README.txt ] && echo OMLOADER_HOSTDISKS_README=yes
 echo OMLOADER_GUEST_KERNEL=$(uname -r)
 echo OMLOADER_GUEST_HOSTNAME=$(cat /etc/hostname)
 echo OMLOADER_GUEST_ROOTFS=$(awk '$2=="/"{t=$3} END{print t}' /proc/mounts)

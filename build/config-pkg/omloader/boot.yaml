@@ -17,13 +17,15 @@
 #   users:
 #     - {name: alice, password_hash: "$6$...", sudo: true, ssh_authorized_keys: ["ssh-ed25519 AAAA... alice@pc"]}
 
-# --- host disks in guests: show this machine's disks/partitions (e.g. this data partition) under /mnt/disks/<disk>/<label> ---
+# --- host disks in guests (ON by default, like Ventoy: this data partition is plainly read-write under /mnt/disks/<disk>/<label>) ---
+# Never delete or move omloader/ (store.img!) on it. NTFS: Windows Fast Startup/hibernation leaves the volume dirty and ntfs3
+# then refuses read-write: shut Windows down fully. The guest needs an NTFS driver (ntfs3 or ntfs-3g). Nothing is mounted until accessed.
 # guest_defaults:
 #   host_disks:
-#     mode: ro               # off (default) | ro | rw   (NTFS: disable Windows Fast Startup/hibernation first)
+#     mode: rw               # rw (default) | ro | off
 #     disks: boot            # boot = only the disk holding this partition | all
 #     # mount_root: /mnt/disks
-#     # force_rw_data: false # with mode rw, also make omloader/ on this partition writable (do NOT delete omloader/store.img)
+#     # force_rw_data: true  # false = keep omloader/ read-only in guests
 
 # --- network / mirrors (China: region_preset cn tries the cn mirrors as fallbacks) ---
 # mirror_policy:
