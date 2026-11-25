@@ -37,6 +37,8 @@ exec /init "$@"
 // gets a .device unit for /dev/mapper/<name> (no DM cookie => stock 10-dm.rules would leave SYSTEMD_READY=0 / no symlink).
 const dmUdevRules = `# omloader: dm devices assembled by preinit (no udev cookie)
 SUBSYSTEM=="block", KERNEL=="dm-*", ATTR{dm/name}=="oml-*", SYMLINK+="mapper/$attr{dm/name}", TAG+="systemd", ENV{SYSTEMD_READY}="1"
+# host-disk partitions (oml-<disk>p<N>): probe ID_FS_* and let udisks/desktops list them
+SUBSYSTEM=="block", KERNEL=="dm-*", ATTR{dm/name}=="oml-*p[0-9]*", IMPORT{builtin}="blkid", ENV{UDISKS_IGNORE}="0", ENV{UDISKS_SYSTEM}="0"
 `
 
 // ExtraSpec describes the appended initrd.

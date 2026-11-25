@@ -207,6 +207,7 @@ func ExecuteOverlay(o Options, res *config.Resolved, p *Plan, r Runner) (*Switch
 		if err := o.bindModules(r, warn); err != nil {
 			return fail(err)
 		}
+		o.bindHostDisks(r, res.Config.GuestDefaults.HostDisks, warn)
 		if spec.Init, err = SelectInit(o.NewRoot, rtc, warn); err != nil {
 			return fail(err)
 		}

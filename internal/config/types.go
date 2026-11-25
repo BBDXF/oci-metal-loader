@@ -320,7 +320,35 @@ type GuestDefaults struct {
 	Users            []User `yaml:"users" json:"users"`
 	// Hostname of the guest: "" or "image" = the image name sanitised to a DNS label, "keep" = do not touch the guest, else the literal name.
 	Hostname string `yaml:"hostname" json:"hostname"`
+	// HostDisks exposes the machine's own disks/partitions inside guests (default off).
+	HostDisks HostDisks `yaml:"host_disks" json:"host_disks"`
 }
+
+// HostDisks configures "host disks in guests" (guest_defaults.host_disks).
+type HostDisks struct {
+	Mode        string `yaml:"mode" json:"mode"`                   // off (default) | ro | rw
+	Disks       string `yaml:"disks" json:"disks"`                 // boot (default: the disk holding the loader data partition) | all
+	MountRoot   string `yaml:"mount_root" json:"mount_root"`       // default /mnt/disks
+	Automount   *bool  `yaml:"automount" json:"automount"`         // default true: x-systemd.automount fstab entries / container mounts
+	ForceRWData bool   `yaml:"force_rw_data" json:"force_rw_data"` // with mode rw: also the omloader data/store partition rw (dangerous)
+}
+
+// Enabled reports whether host disks are exposed.
+func (h HostDisks) Enabled() bool { return h.Mode == "ro" || h.Mode == "rw" }
+
+// Root returns the mount root (default /mnt/disks).
+func (h HostDisks) Root() string {
+	if h.MountRoot == "" {
+		return "/mnt/disks"
+	}
+	return h.MountRoot
+}
+
+// AllDisks reports disks: all.
+func (h HostDisks) AllDisks() bool { return h.Disks == "all" }
+
+// AutomountOn reports the automount setting (default true).
+func (h HostDisks) AutomountOn() bool { return h.Automount == nil || *h.Automount }
 
 // EffectiveRuntime merges guest_defaults into an image's runtime (all image types; the image always wins):
 //   - users: a non-nil image list (even `users: []`) replaces the default list; nil takes the defaults.

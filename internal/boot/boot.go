@@ -382,6 +382,7 @@ func Execute(o Options, res *config.Resolved, p *Plan, r Runner) (string, error)
 	base = strings.ReplaceAll(base, "{ROOT}", root)
 	cmdline := base
 	initrdArg := initrdPath
+	var hdPlan []HostDiskPlan
 	if !o.NoInject {
 		cmdline = rewriteCmdline(base, root, p.ReadOnly)
 		initrdArg = filepath.Join(os.TempDir(), "omloader-initrd.XXXXXX")
@@ -392,6 +393,7 @@ func Execute(o Options, res *config.Resolved, p *Plan, r Runner) (string, error)
 		if err != nil {
 			return fail(err)
 		}
+		hdPlan = gp.HostDisks
 		if o.Capture != nil {
 			o.Capture.Plan, o.Capture.Extra = gp, extra
 		}
@@ -430,6 +432,14 @@ func Execute(o Options, res *config.Resolved, p *Plan, r Runner) (string, error)
 		// kernel + initrd are loaded in memory now: provision default accounts into the live COW layer, then unmount cleanly
 		hostName, _ := config.ResolveHostname(res.Config.GuestDefaults, img.Runtime, o.Image) // "" when keep
 		ProvisionVMGuest(r, mnt, config.EffectiveRuntime(res.Config.GuestDefaults, img.Runtime), res.Config.Boot.VMFixESPFstab, hostName, out, warn)
+		if hdc := res.Config.GuestDefaults.HostDisks; hdc.Enabled() || guestExists(mnt, "/etc/fstab") {
+			hpl := hdPlan
+			if _, err := r.Run("mount", "-o", "remount,rw", mnt); err == nil {
+				if err := ApplyHostDisks(mnt, hdc, hpl, out); err != nil {
+					fmt.Fprintf(warn, "warning: host disks: %v (the guest boots anyway)\n", err)
+				}
+			}
+		}
 	}
 	cleanup()
 	if !o.NoKexec && !o.DryRun {
@@ -498,6 +508,16 @@ func (o Options) prepareGuest(r Runner, res *config.Resolved, p *Plan, mnt, kern
 	}
 	for _, s := range tr.list {
 		gp.Storages = append(gp.Storages, *s)
+	}
+	if hd := res.Config.GuestDefaults.HostDisks; hd.Enabled() && realRoot && !o.DryRun {
+		store := map[string]bool{}
+		for _, s := range gp.Storages {
+			if s.UUID != "" {
+				store[s.UUID] = true
+			}
+		}
+		disks, _ := loaderDiscover(r, hd, o.MountInfoPath, store)
+		gp.HostDisks = HostDisksPlan(disks)
 	}
 	if !realRoot {
 		return gp, nil, nil

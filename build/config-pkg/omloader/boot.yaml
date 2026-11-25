@@ -17,6 +17,14 @@
 #   users:
 #     - {name: alice, password_hash: "$6$...", sudo: true, ssh_authorized_keys: ["ssh-ed25519 AAAA... alice@pc"]}
 
+# --- host disks in guests: show this machine's disks/partitions (e.g. this data partition) under /mnt/disks/<disk>/<label> ---
+# guest_defaults:
+#   host_disks:
+#     mode: ro               # off (default) | ro | rw   (NTFS: disable Windows Fast Startup/hibernation first)
+#     disks: boot            # boot = only the disk holding this partition | all
+#     # mount_root: /mnt/disks
+#     # force_rw_data: false # with mode rw, also make omloader/ on this partition writable (do NOT delete omloader/store.img)
+
 # --- network / mirrors (China: region_preset cn tries the cn mirrors as fallbacks) ---
 # mirror_policy:
 #   region_preset: cn

@@ -72,6 +72,12 @@ experimental:
 #   image autologin or autologin_user set      -> replaces autologin + autologin_user
 guest_defaults:
   hostname: image         # image = the image name as an RFC 1123 label (vm-ubuntu-noble); keep = leave the guest's own; or a literal name. image.yaml runtime.hostname wins
+  host_disks:             # the machine's own disks/partitions inside guests: /mnt/disks/<disk>/<label>
+    mode: "off"           # off | ro | rw
+    disks: boot           # boot (disk holding the loader data partition) | all
+    mount_root: /mnt/disks
+    automount: true
+    force_rw_data: false  # mode rw only: also the omloader data/store partition rw
   autologin: true
   autologin_user: oci
   root_password: Oci123

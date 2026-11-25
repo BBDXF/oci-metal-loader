@@ -65,8 +65,10 @@ type GuestPlan struct {
 	Layers      []GuestLayer `json:"layers"`
 	RootIndex   int          `json:"root_index"` // 1-based index in kpartx output
 	RootDev     string       `json:"root_dev"`   // expected /dev/mapper/<partition>
-	Modules     []string     `json:"modules"`    // initrd paths, insmod in order
-	Loader      string       `json:"loader"`     // dynamic loader inside the initrd used to run bundled tools
+	// HostDisks: whole-disk dm + per-partition dm to create (guest_defaults.host_disks); store/base extents are then rebased onto the disk dm.
+	HostDisks []HostDiskPlan `json:"host_disks,omitempty"`
+	Modules   []string       `json:"modules"` // initrd paths, insmod in order
+	Loader    string         `json:"loader"`  // dynamic loader inside the initrd used to run bundled tools
 }
 
 // Layer is one dm-snapshot layer on the loader side.
@@ -123,6 +125,10 @@ type GuestOptions struct {
 	Out         io.Writer
 	// DevExists reports whether a device node exists (default os.Stat).
 	DevExists func(string) bool
+	// test hooks for host disks
+	ListDisks func() []string
+	OpenDisk  func(name string) (io.ReaderAt, func(), error)
+	SysRoot   string // default /sys
 }
 
 // LoadPlan reads a plan.json.
@@ -167,6 +173,10 @@ func GuestAssemble(p *GuestPlan, r Runner, o GuestOptions) (string, error) {
 	}
 	mounts := map[string]string{}
 	devs := map[string]string{}
+	if o.SysRoot == "" {
+		o.SysRoot = "/sys"
+	}
+	var hds *hdState
 	for _, s := range p.Storages {
 		var dev string
 		var lastErr error
@@ -176,11 +186,22 @@ func GuestAssemble(p *GuestPlan, r Runner, o GuestOptions) (string, error) {
 				return "", fmt.Errorf("storage %s: host storage %q of the store file has no device (plan order)", s.ID, s.Loop.Storage)
 			}
 			name := "oml-store-" + s.ID
-			if _, err := r.Run("dmsetup", "create", name, "--table", LinearTable(s.Extents, hd)); err != nil {
+			ex, backing := s.Extents, hd
+			if len(p.HostDisks) > 0 {
+				if sd, start, ok := sysParent(o.SysRoot, hd); ok {
+					if hds == nil {
+						hds = assembleHostDisks(p, r, o, logf, sd)
+					}
+					if pd := hds.bySys[sd]; pd != nil {
+						ex, backing = RebaseExtents(s.Extents, start), "/dev/mapper/"+DMDiskName(pd.Name)
+					}
+				}
+			}
+			if _, err := r.Run("dmsetup", "create", name, "--table", LinearTable(ex, backing)); err != nil {
 				return "", fmt.Errorf("storage %s: dm-linear over %s: %w", s.ID, hd, err)
 			}
 			dev = "/dev/mapper/" + name
-			logf("storage %s: store file mapped by %d extents on %s as %s", s.ID, len(s.Extents), hd, dev)
+			logf("storage %s: store file mapped by %d extents on %s as %s", s.ID, len(s.Extents), backing, dev)
 		} else if s.Loop != nil {
 			m, ok := mounts[s.Loop.Storage]
 			if !ok {
@@ -256,7 +277,18 @@ func GuestAssemble(p *GuestPlan, r Runner, o GuestOptions) (string, error) {
 		if !ok {
 			return "", fmt.Errorf("base storage %q has no device", p.Base.Storage)
 		}
-		if _, err := r.Run("dmsetup", "create", "oml-basefile", "--table", LinearTable(p.BaseExtents, hd)); err != nil {
+		bex, bbk := p.BaseExtents, hd
+		if len(p.HostDisks) > 0 {
+			if sd, start, ok := sysParent(o.SysRoot, hd); ok {
+				if hds == nil {
+					hds = assembleHostDisks(p, r, o, logf, sd)
+				}
+				if pd := hds.bySys[sd]; pd != nil {
+					bex, bbk = RebaseExtents(p.BaseExtents, start), "/dev/mapper/"+DMDiskName(pd.Name)
+				}
+			}
+		}
+		if _, err := r.Run("dmsetup", "create", "oml-basefile", "--table", LinearTable(bex, bbk)); err != nil {
 			return "", fmt.Errorf("dm-linear over base file: %w", err)
 		}
 		base = "/dev/mapper/oml-basefile"
@@ -294,6 +326,9 @@ func GuestAssemble(p *GuestPlan, r Runner, o GuestOptions) (string, error) {
 		return "", fmt.Errorf("root device %s did not appear", root)
 	}
 	logf("root ready: %s", root)
+	if len(p.HostDisks) > 0 && hds == nil {
+		assembleHostDisks(p, r, o, logf, "")
+	}
 	return root, nil
 }
 

@@ -317,6 +317,27 @@ VM 客户系统通过 `kexec` 启动，关机时无法卸载存储，所以下�
 
 完整示例：[`examples/ubuntu-24.04/image.yaml`](../examples/ubuntu-24.04/image.yaml)。`omloader import … --data name:/mount:backend[:size[:snapshot]]` 可在导入时声明数据卷。
 
+### 9.4 在客户机中使用本机磁盘（`guest_defaults.host_disks`）
+
+默认关闭。开启后，本机磁盘以 `<mount_root>/<磁盘>/<名称>`（如 `/mnt/disks/nvme0n1/VHDX`）出现在客户机里，包括存放 ISO/VHDX 与其他文件的 Ventoy NTFS 数据分区。
+
+```yaml
+guest_defaults:
+  host_disks:
+    mode: ro            # off（默认）| ro | rw
+    disks: boot         # boot = 仅包含加载器数据分区的那块盘 | all
+    mount_root: /mnt/disks
+    automount: true     # 虚拟机 fstab 使用 x-systemd.automount
+    force_rw_data: false  # 仅 mode rw：连 omloader 数据/存储分区也可写（不建议）
+```
+
+- `<名称>` = 文件系统 LABEL，否则 GPT 分区名，否则 `p<N>`；仅保留 `[A-Za-z0-9._-]`（最长 32 字符），同盘重名加 `_p<N>`。挂载根目录下的 `README.txt` 有完整列表。
+- 可挂载：ntfs、exfat、vfat、ext2/3/4、xfs、btrfs；BitLocker、LUKS、swap、LVM 成员、未知文件系统会跳过。
+- 虚拟机（kexec）：加载器读取 GPT/MBR，客户机 initramfs 把整盘映射为一个 dm-linear（`oml-<盘>`），再为每个分区映射 `oml-<盘>p<N>`；store 文件映射也基于同一个整盘设备，因此不会出现分区/整盘占用冲突。fstab 条目（`noauto,x-systemd.automount,nofail`）写入客户机。容器则 bind 挂载加载器自己的挂载点。
+- omloader 数据/存储分区在客户机中始终只读，除非 `mode: rw` **且** `force_rw_data: true`。切勿删除或移动 `omloader/store.img` 及 `omloader/` 下任何内容。
+- NTFS 需要客户机有驱动（`ntfs3` 模块或 `ntfs-3g`），不少发行版 VM 内核两者都没有（需在镜像里安装 `ntfs-3g`）。若 Windows 启用了快速启动/休眠，卷可能处于脏状态，用 `rw` 前请先关闭。
+- 仅全局配置（无按镜像覆盖）。
+
 ## 10. 文件与目录布局
 
 **代码仓库**（给开发者；详见 [DEVELOPMENT.md](DEVELOPMENT.md#repository-layout)）：
