@@ -12,7 +12,7 @@
 
 # --- first-boot init dialog defaults (each image is confirmed once; the image's own settings are prefilled first) ---
 guest:
-  timezone: Asia/Shanghai       # IANA name; code default is UTC
+  timezone: Asia/Shanghai       # IANA name; also the code default (UTC+8)
   # hostname: "{image}"
   # locale: en_US.UTF-8
   # keymap: us

@@ -73,7 +73,7 @@ experimental:
 # First-boot init dialog: every image must be confirmed once (timezone/hostname/locale/keymap/user) before it boots.
 # init: confirm (ask; no autoboot countdown for un-initialised images) | accept-defaults (apply without asking) | skip (no init)
 guest:
-  timezone: UTC           # the shipped omloader/boot.yaml config pack sets Asia/Shanghai
+  timezone: Asia/Shanghai   # IANA name (UTC+8); "UTC" or any other zone name to change
   hostname: "{image}"
   locale: en_US.UTF-8
   keymap: us

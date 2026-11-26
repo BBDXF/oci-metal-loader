@@ -61,7 +61,7 @@ func (s *realSvc) InitSave(image string, values []string) error {
 func loaderClock(c *config.Config) {
 	tz := c.Guest.Timezone
 	if tz == "" {
-		tz = "UTC"
+		tz = "Asia/Shanghai"
 	}
 	os.Setenv("TZ", tz)
 	if _, err := os.Stat("/run/systemd/system"); err != nil {

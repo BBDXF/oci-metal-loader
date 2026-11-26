@@ -346,7 +346,7 @@ guest_defaults:
 
 ```yaml
 guest:
-  timezone: UTC          # IANA 名称；随包的 omloader/boot.yaml 设为 Asia/Shanghai
+  timezone: Asia/Shanghai   # IANA 名称（UTC+8，默认值）；可改为 UTC、Europe/Berlin 等
   hostname: "{image}"    # {image} = 规范化后的镜像名
   locale: en_US.UTF-8
   keymap: us

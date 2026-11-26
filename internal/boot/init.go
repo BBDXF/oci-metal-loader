@@ -111,7 +111,7 @@ func InitPrefill(c *config.Config, hints ImageHints, image string) []InitField {
 		return SrcDefault
 	}
 	return []InitField{
-		{FTimezone, or(g.Timezone, "UTC"), src(hints.has("/etc/timezone") || hints.has("/etc/localtime"))},
+		{FTimezone, or(g.Timezone, "Asia/Shanghai"), src(hints.has("/etc/timezone") || hints.has("/etc/localtime"))},
 		{FHostname, host, src(hints.has("/etc/hostname"))},
 		{FLocale, or(g.Locale, "en_US.UTF-8"), src(hints.has("/etc/locale.conf") || hints.has("/etc/default/locale"))},
 		{FKeymap, or(g.Keymap, "us"), src(hints.has("/etc/vconsole.conf") || hints.has("/etc/default/keyboard"))},

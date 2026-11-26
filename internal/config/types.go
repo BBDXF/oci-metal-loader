@@ -33,7 +33,7 @@ type Config struct {
 
 // GuestInit are the prefilled values of the first-boot init dialog (the image's own settings win when it has them).
 type GuestInit struct {
-	Timezone string `yaml:"timezone" json:"timezone"` // IANA name, default UTC (the shipped config pack sets Asia/Shanghai)
+	Timezone string `yaml:"timezone" json:"timezone"` // IANA name, default Asia/Shanghai (UTC+8)
 	Hostname string `yaml:"hostname" json:"hostname"` // default "{image}" (the sanitised image name)
 	Locale   string `yaml:"locale" json:"locale"`     // default en_US.UTF-8
 	Keymap   string `yaml:"keymap" json:"keymap"`     // default us

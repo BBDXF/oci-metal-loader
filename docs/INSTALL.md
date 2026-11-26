@@ -349,7 +349,7 @@ Applying: cloud-init images get a NoCloud seed in `/var/lib/cloud/seed/nocloud/`
 
 ```yaml
 guest:
-  timezone: UTC          # IANA name; the shipped omloader/boot.yaml sets Asia/Shanghai
+  timezone: Asia/Shanghai   # IANA name (UTC+8, the default); e.g. UTC, Europe/Berlin
   hostname: "{image}"    # {image} = the sanitised image name
   locale: en_US.UTF-8
   keymap: us
