@@ -82,6 +82,7 @@ clock:
   rtc: localtime          # localtime (default: same as Windows, which keeps the RTC in local time) | utc (Linux-only machines)
 guest_defaults:
   hostname: image         # image = the image name as an RFC 1123 label (vm-ubuntu-noble); keep = leave the guest's own; or a literal name. image.yaml runtime.hostname wins
+  vm_root_size: 20G       # lxd-vm guests: grow the root disk/partition/ext4 to this size at boot (virtual size only; sparse COW). 0|off|keep = do not grow. image.yaml vm_root_size wins
   host_disks:             # the machine's own disks/partitions inside guests: /mnt/disks/<disk>/<label> (default ON, like Ventoy's plain data partition)
     mode: rw              # rw (default) | ro | off
     disks: boot           # boot (disk holding the loader data partition) | all

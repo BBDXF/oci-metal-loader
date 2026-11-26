@@ -234,6 +234,8 @@ type Image struct {
 	Data      []DataVolume `yaml:"data" json:"data"`
 	// LXDTemplates: guest paths templated by the LXD metadata.yaml of the imported image (hints for the first-boot init dialog).
 	LXDTemplates []string `yaml:"lxd_templates" json:"lxd_templates"`
+	// VMRootSize overrides guest_defaults.vm_root_size for this image (lxd-vm only; "" = use the default).
+	VMRootSize string `yaml:"vm_root_size" json:"vm_root_size"`
 }
 type Kernel struct {
 	Path          string   `yaml:"path" json:"path"`
@@ -359,6 +361,32 @@ type GuestDefaults struct {
 	Hostname string `yaml:"hostname" json:"hostname"`
 	// HostDisks exposes the machine's own disks/partitions inside guests (default off).
 	HostDisks HostDisks `yaml:"host_disks" json:"host_disks"`
+	// VMRootSize grows the root disk of lxd-vm guests to this size ("20G"; default 20G; "0"/"off"/"keep" = do not grow). image.yaml vm_root_size wins.
+	VMRootSize string `yaml:"vm_root_size" json:"vm_root_size"`
+}
+
+// DefaultVMRootSize is used when neither guest_defaults nor image.yaml set vm_root_size.
+const DefaultVMRootSize = "20G"
+
+// ParseVMRootSize returns the target size in bytes; 0 = do not grow (0/off/keep/no/false).
+func ParseVMRootSize(s string) (int64, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "0", "off", "keep", "no", "false", "none":
+		return 0, nil
+	}
+	return ParseSize(s)
+}
+
+// EffectiveVMRootSize resolves image.yaml (wins) > guest_defaults > DefaultVMRootSize into bytes (0 = keep).
+func EffectiveVMRootSize(g GuestDefaults, img Image) (int64, error) {
+	v := strings.TrimSpace(img.VMRootSize)
+	if v == "" {
+		v = strings.TrimSpace(g.VMRootSize)
+	}
+	if v == "" {
+		v = DefaultVMRootSize
+	}
+	return ParseVMRootSize(v)
 }
 
 // HostDisks configures "host disks in guests" (guest_defaults.host_disks).

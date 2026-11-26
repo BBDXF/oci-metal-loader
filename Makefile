@@ -11,7 +11,7 @@ RSH  = $(if $(OML_REMOTE_PASS),sshpass -e )ssh -o StrictHostKeyChecking=no
 CONTAINER_ENGINE ?= $(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
 export CONTAINER_ENGINE
 
-.PHONY: update-base screenshots bin config-pkg test vet fmt version iso iso-local e2e-live-local sync iso-remote fixture disk e2e e2e-oci e2e-snap e2e-live e2e-ui e2e-pull e2e-ventoy e2e-ntfs e2e-storefile-guests e2e-hostdisks e2e-isoscan e2e-store e2e-tui e2e-real e2e-autoboot e2e-init e2e-quick e2e-full help licenses clean clean-remote check-remote
+.PHONY: update-base screenshots bin config-pkg test vet fmt version iso iso-local e2e-live-local sync iso-remote fixture disk e2e e2e-oci e2e-snap e2e-live e2e-ui e2e-pull e2e-ventoy e2e-ntfs e2e-storefile-guests e2e-hostdisks e2e-isoscan e2e-store e2e-tui e2e-real e2e-autoboot e2e-init e2e-vmroot e2e-quick e2e-full help licenses clean clean-remote check-remote
 
 version:
 	@echo $(VERSION)
@@ -87,6 +87,8 @@ e2e-storefile-guests: sync ## store file on NTFS with real guests: Arch VM (.ko.
 	$(call run-one,e2e-storefile-guests.sh,SKIP_BUILD=1)
 e2e-isoscan: sync    ## stage-1 ISO search order: Ventoy partitions first, VTOY_DEFAULT_SEARCH_ROOT, omloader/ dir, skipped-candidates log
 	$(call run-one,e2e-isoscan.sh,SKIP_BUILD=1)
+e2e-vmroot: sync   ## vm_root_size: VM root grown (3G, 20G default), persists over reboot, off = unchanged
+	$(call run-one,e2e-vmroot.sh,)
 e2e-init: sync   ## first-boot init dialog: confirm blocks the autoboot, accept-defaults applies timezone/hostname and persists
 	$(call run-one,e2e-init.sh,)
 

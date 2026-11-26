@@ -74,12 +74,14 @@ type Plan struct {
 	BaseFile string
 	BaseSize int64
 	Sectors  int64
-	Layers   []Layer
-	Tree     *snapshot.Tree
-	TreePath string
-	NewTree  bool   // tree must be saved
-	ReadOnly bool   // base booted read-only (no COW)
-	Target   string // node id booted ("" = base read-only)
+	// GrowSectors > Sectors: the snapshot origin is extended to this size and the root partition/fs grown (vm_root_size).
+	GrowSectors int64
+	Layers      []Layer
+	Tree        *snapshot.Tree
+	TreePath    string
+	NewTree     bool   // tree must be saved
+	ReadOnly    bool   // base booted read-only (no COW)
+	Target      string // node id booted ("" = base read-only)
 	// Ephemeral: Target is a throwaway child (discarded by the next boot/snapshot operation).
 	Ephemeral bool
 }
@@ -118,6 +120,13 @@ func BuildPlan(o Options, res *config.Resolved, imageDir string) (*Plan, error) 
 	p := &Plan{BaseFile: base, BaseSize: bst.Size(), Sectors: bst.Size() / 512}
 	if isVM && p.Sectors == 0 {
 		return nil, fmt.Errorf("base image %s is empty", base)
+	}
+	if isVM {
+		want, werr := config.EffectiveVMRootSize(res.Config.GuestDefaults, *img)
+		if werr != nil {
+			return nil, fmt.Errorf("vm_root_size: %w", werr)
+		}
+		p.GrowSectors = GrowSectors(bst.Size(), want)
 	}
 	p.TreePath = filepath.Join(o.SnapRoot, o.Image, "tree.json")
 	st, err := snapmgr.Open(o.SnapRoot, o.Image, true)
@@ -293,7 +302,7 @@ func Execute(o Options, res *config.Resolved, p *Plan, r Runner) (string, error)
 		}
 		layers = append(layers, stackLayer{DMName: l.DMName, Cow: l.CowFile})
 	}
-	final, loops, dms, err := buildStack(r, p.BaseFile, baseDM, p.Sectors, layers)
+	final, loops, dms, err := buildStackGrow(r, p.BaseFile, baseDM, p.Sectors, p.GrowSectors, layers)
 	var mnt string
 	mounted := false
 	partsMapped := false
@@ -350,6 +359,11 @@ func Execute(o Options, res *config.Resolved, p *Plan, r Runner) (string, error)
 	}
 	if rootIdx == 0 {
 		return fail(fmt.Errorf("no ext4/xfs root partition found; set kernel.root_partition"))
+	}
+	if p.GrowSectors > p.Sectors && len(layers) > 0 {
+		if np := o.growRoot(r, final, rootIdx, len(parts), warn); np != nil {
+			parts = np
+		}
 	}
 	root := parts[rootIdx-1]
 	mo, err := r.Run("mktemp", "-d", "/tmp/omloader-mnt.XXXXXX")
@@ -479,7 +493,7 @@ func (o Options) prepareGuest(r Runner, res *config.Resolved, p *Plan, mnt, kern
 	if err != nil {
 		return nil, nil, err
 	}
-	gp := &GuestPlan{Version: 1, Image: o.Image, Sectors: p.Sectors, BaseDM: "oml-" + o.Image + "-base", RootIndex: rootIdx, RootDev: rootDev}
+	gp := &GuestPlan{Version: 1, Image: o.Image, Sectors: p.Sectors, GrowSectors: p.GrowSectors, BaseDM: "oml-" + o.Image + "-base", RootIndex: rootIdx, RootDev: rootDev}
 	if gp.Base, err = tr.ref(p.BaseFile, false); err != nil {
 		return nil, nil, err
 	}

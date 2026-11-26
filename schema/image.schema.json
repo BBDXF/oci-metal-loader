@@ -191,6 +191,7 @@
         }
       }
     },
+    "vm_root_size": {"type": "string", "description": "lxd-vm: grow the root disk to this size (e.g. 20G); 0/off/keep = do not grow; overrides guest_defaults.vm_root_size"},
     "data": {
       "type": "array",
       "items": {

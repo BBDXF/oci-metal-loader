@@ -40,7 +40,7 @@ func setup(t *testing.T, sha string, tree *snapshot.Tree, extra string) (*fx, *c
 	if sha != "" {
 		y += "sha256: " + sha + "\n"
 	}
-	y += "kernel:\n  path: /boot/vmlinuz\n  initrd: /boot/initrd.img\n  cmdline: root={ROOT} ro\n" + extra + "snapshots:\n  mode: dm-snapshot\n"
+	y += "kernel:\n  path: /boot/vmlinuz\n  initrd: /boot/initrd.img\n  cmdline: root={ROOT} ro\n" + extra + "snapshots:\n  mode: dm-snapshot\nvm_root_size: off\n"
 	ip := filepath.Join(f.dir, "image.yaml")
 	os.WriteFile(ip, []byte(y), 0o644)
 	if tree != nil {

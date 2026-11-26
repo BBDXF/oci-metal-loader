@@ -81,6 +81,13 @@ func (r *Resolved) Validate() ErrorList {
 	if h := gd.Hostname; h != "" && h != "image" && h != "keep" && !hostLabelRe.MatchString(h) {
 		add("guest_defaults.hostname", "invalid hostname %q (want image, keep or an RFC 1123 label: [a-z0-9-], max 63, no leading/trailing -)", h)
 	}
+	if _, err := ParseVMRootSize(gd.VMRootSize); gd.VMRootSize != "" && err != nil {
+		add("guest_defaults.vm_root_size", "invalid size %q (want e.g. 20G, or 0/off/keep)", gd.VMRootSize)
+	}
+	if r.Image == nil {
+	} else if _, err := ParseVMRootSize(r.Image.VMRootSize); r.Image.VMRootSize != "" && err != nil {
+		add("vm_root_size", "invalid size %q (want e.g. 20G, or 0/off/keep)", r.Image.VMRootSize)
+	}
 	enum("guest.init", c.Guest.Init, "confirm", "accept-defaults", "skip")
 	enum("clock.rtc", c.Clock.RTC, "utc", "localtime")
 	if tz := c.Guest.Timezone; tz != "" && (hasDotDot(tz) || strings.HasPrefix(tz, "/") || strings.ContainsAny(tz, " \t\n")) {

@@ -338,7 +338,13 @@ guest_defaults:
 - NTFS 需要客户机有驱动（`ntfs3` 模块或 `ntfs-3g`），不少发行版 VM 内核两者都没有（需在镜像里安装 `ntfs-3g`）。若 Windows 启用了快速启动/休眠，卷为脏状态，ntfs3 会拒绝读写挂载：请完全关机（或关闭快速启动）。
 - 仅全局配置（无按镜像覆盖）。
 
-### 9.5 首次启动初始化对话框与时钟（`guest:`、`clock:`）
+### 9.5 虚拟机根盘大小（`vm_root_size`）
+
+`lxd-vm` 客户机的根是一个与镜像磁盘等大的 dm-snapshot（如 Ubuntu 桌面版仅 4G 且几乎已满）。启动时加载器把 snapshot 的 origin 扩展到 `vm_root_size`（默认 `20G`；基础文件不会被修改，COW 仍为稀疏文件），移动 GPT 备份头，扩展最后一个分区，并对 ext4 执行 `e2fsck -fp` + `resize2fs`。可在 `guest_defaults.vm_root_size` 设置，或在 `image.yaml` 中按镜像设置 `vm_root_size:`（优先）。`0`/`off`/`keep` = 不扩容；基础盘已 >= 该值则不处理。容器不受影响。
+
+限制：根分区必须是最后一个分区且为 ext4（xfs/btrfs 只扩分区不扩文件系统，并记录警告）；任何失败只告警并按原样启动。已扩容启动过快照的镜像不要再改成 `off`（文件系统会超出设备）。该大小只是虚拟大小，实际占用随客户机写入增长（COW 位于存储区）。
+
+### 9.6 首次启动初始化对话框与时钟（`guest:`、`clock:`）
 
 每个镜像（以 `base` 为根的快照谱系）在首次启动前必须由用户确认一次：TUI 显示包含时区、主机名、语言、键盘布局、用户、密码的表单，并标明每项来源（`image` = 镜像自带的 LXD `metadata.yaml` 模板，`default config` = `guest:` / `guest_defaults`）。标为 `image` 且未修改的字段保留镜像自己的值。结果保存为 `<images>/<image>/init.json`，之后所有快照的启动不再询问；`snapshot revert base` 会清除它。未确认初始化的镜像**不参与**自动启动倒计时：TUI 会打开表单并提示 "Image not initialised, confirm to boot."。`omloader boot` 会拒绝此类镜像，除非加 `--accept-defaults`（或内核参数 `omloader.init=accept`，或配置 `guest.init: accept-defaults`）。
 

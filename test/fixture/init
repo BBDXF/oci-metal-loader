@@ -5,7 +5,7 @@ mount -t devtmpfs dev /dev 2>/dev/null
 mount -o remount,rw / 2>/dev/null
 D=/var/lib/omloader-test; mkdir -p $D
 n=$(cat $D/counter 2>/dev/null || echo 0); n=$((n+1)); echo $n > $D/counter; sync
-{ echo "OMLOADER_GUEST_OK"; echo "OMLOADER_COUNTER=$n"; echo "OMLOADER_GUEST_CMDLINE=$(cat /proc/cmdline)"; echo "OMLOADER_GUEST_ROOT=$(findmnt -no SOURCE /)"; echo "OMLOADER_HOSTDISKS_DM=$(ls /dev/mapper 2>/dev/null | grep -E '^oml-[a-z0-9]+p?[0-9]*$' | tr '\n' ',')"; echo "OMLOADER_HOSTDISKS_FSTAB=$(grep -c 'BEGIN omloader host-disks' /etc/fstab 2>/dev/null)"; echo "OMLOADER_HOSTDISKS_MNTS=$(grep -o ' /mnt/disks/[^ ]*' /etc/fstab 2>/dev/null | tr -d ' ' | tr '\n' ',')"; } > /dev/ttyS0
+{ echo "OMLOADER_GUEST_OK"; echo "OMLOADER_COUNTER=$n"; echo "OMLOADER_GUEST_CMDLINE=$(cat /proc/cmdline)"; echo "OMLOADER_GUEST_ROOT=$(findmnt -no SOURCE /)"; echo "OMLOADER_ROOTSIZE=$(df -B1 --output=size / 2>/dev/null | tail -1 | tr -d ' ')"; echo "OMLOADER_DEVSIZE=$(blockdev --getsize64 $(findmnt -no SOURCE /) 2>/dev/null)"; echo "OMLOADER_HOSTDISKS_DM=$(ls /dev/mapper 2>/dev/null | grep -E '^oml-[a-z0-9]+p?[0-9]*$' | tr '\n' ',')"; echo "OMLOADER_HOSTDISKS_FSTAB=$(grep -c 'BEGIN omloader host-disks' /etc/fstab 2>/dev/null)"; echo "OMLOADER_HOSTDISKS_MNTS=$(grep -o ' /mnt/disks/[^ ]*' /etc/fstab 2>/dev/null | tr -d ' ' | tr '\n' ',')"; } > /dev/ttyS0
 sync
 exec 3<> <(:); echo 1 > /proc/sys/kernel/sysrq; echo o > /proc/sysrq-trigger
 read -t 30 -u 3 x

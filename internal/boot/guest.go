@@ -58,9 +58,11 @@ type GuestPlan struct {
 	Image    string       `json:"image"`
 	Storages []StorageRef `json:"storages"`
 	// BaseExtents: the base image file lives on a NoMount storage; it is exposed as a dm-linear device over these extents.
-	BaseExtents []Extent     `json:"base_extents,omitempty"`
-	Base        FileRef      `json:"base"`
-	Sectors     int64        `json:"sectors"`
+	BaseExtents []Extent `json:"base_extents,omitempty"`
+	Base        FileRef  `json:"base"`
+	Sectors     int64    `json:"sectors"`
+	// GrowSectors > Sectors: the snapshot origin is extended (linear + zero) to this size (vm_root_size).
+	GrowSectors int64        `json:"grow_sectors,omitempty"`
 	BaseDM      string       `json:"base_dm"` // used when there are no layers (read-only linear map)
 	Layers      []GuestLayer `json:"layers"`
 	RootIndex   int          `json:"root_index"` // 1-based index in kpartx output
@@ -76,6 +78,15 @@ type stackLayer struct{ DMName, Cow string }
 
 // stack creates loop devices and dm devices; returns the final device and everything to undo.
 func buildStack(r Runner, base, baseDM string, sectors int64, layers []stackLayer) (final string, loops, dms []string, err error) {
+	return buildStackGrow(r, base, baseDM, sectors, sectors, layers)
+}
+
+// buildStackGrow is buildStack with the snapshot origin extended to total sectors (> sectors): the base is a read-only
+// linear+zero dm (the base file is never modified); the COW layers then cover total sectors.
+func buildStackGrow(r Runner, base, baseDM string, sectors, total int64, layers []stackLayer) (final string, loops, dms []string, err error) {
+	if total < sectors || len(layers) == 0 {
+		total = sectors
+	}
 	out, err := r.Run("losetup", "-r", "-f", "--show", base)
 	if err != nil {
 		return "", loops, dms, err
@@ -89,6 +100,14 @@ func buildStack(r Runner, base, baseDM string, sectors int64, layers []stackLaye
 		dms = append(dms, baseDM)
 		return "/dev/mapper/" + baseDM, loops, dms, nil
 	}
+	if total > sectors {
+		tbl := fmt.Sprintf("0 %d linear %s 0\n%d %d zero\n", sectors, dev, sectors, total-sectors)
+		if _, err := runStdin(r, strings.NewReader(tbl), "dmsetup", "create", "--readonly", baseDM); err != nil {
+			return "", loops, dms, err
+		}
+		dms = append(dms, baseDM)
+		dev = "/dev/mapper/" + baseDM
+	}
 	for _, l := range layers {
 		out, err := r.Run("losetup", "-f", "--show", l.Cow)
 		if err != nil {
@@ -96,7 +115,7 @@ func buildStack(r Runner, base, baseDM string, sectors int64, layers []stackLaye
 		}
 		cow := firstLine(out)
 		loops = append(loops, cow)
-		if _, err := r.Run("dmsetup", "create", l.DMName, "--table", fmt.Sprintf("0 %d snapshot %s %s P 8", sectors, dev, cow)); err != nil {
+		if _, err := r.Run("dmsetup", "create", l.DMName, "--table", fmt.Sprintf("0 %d snapshot %s %s P 8", total, dev, cow)); err != nil {
 			return "", loops, dms, err
 		}
 		dms = append(dms, l.DMName)
@@ -316,7 +335,17 @@ func GuestAssemble(p *GuestPlan, r Runner, o GuestOptions) (string, error) {
 		}
 		layers = append(layers, stackLayer{DMName: l.DMName, Cow: c})
 	}
-	final, _, _, err := buildStack(r, base, p.BaseDM, p.Sectors, layers)
+	final, loops, dms, err := buildStackGrow(r, base, p.BaseDM, p.Sectors, p.GrowSectors, layers)
+	if err != nil && p.GrowSectors > p.Sectors {
+		fmt.Fprintf(gout(o.Out), "OMLOADER_GUEST: warning: grown origin failed (%s); falling back to the ungrown stack\n", strings.ReplaceAll(err.Error(), "\n", " | "))
+		for i := len(dms) - 1; i >= 0; i-- {
+			r.Run("dmsetup", "remove", dms[i])
+		}
+		for i := len(loops) - 1; i >= 0; i-- {
+			r.Run("losetup", "-d", loops[i])
+		}
+		final, _, _, err = buildStack(r, base, p.BaseDM, p.Sectors, layers)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -346,3 +375,20 @@ func GuestAssemble(p *GuestPlan, r Runner, o GuestOptions) (string, error) {
 }
 
 func marshalPlan(p *GuestPlan) ([]byte, error) { return json.MarshalIndent(p, "", "  ") }
+
+// runStdin pipes stdin to the command when the runner supports it (dmsetup create reads a multi-line table from stdin).
+func runStdin(r Runner, stdin io.Reader, name string, args ...string) (string, error) {
+	if rs, ok := r.(interface {
+		RunStdin(io.Reader, string, ...string) (string, error)
+	}); ok {
+		return rs.RunStdin(stdin, name, args...)
+	}
+	return r.Run(name, args...)
+}
+
+func gout(w io.Writer) io.Writer {
+	if w == nil {
+		return io.Discard
+	}
+	return w
+}

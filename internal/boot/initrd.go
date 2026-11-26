@@ -15,7 +15,7 @@ var GuestTools = []string{"dmsetup", "kpartx", "losetup", "blkid", "insmod"}
 
 // DefaultModules are looked up in the guest image's /lib/modules (missing/built-in ones are skipped).
 var DefaultModules = []string{
-	"loop", "dm-mod", "dm-snapshot", "dm-bufio", "ext4", "xfs", "exfat", "vfat", "nls_utf8", "nls_cp437", "nls_iso8859-1",
+	"loop", "dm-mod", "dm-snapshot", "dm-zero", "dm-bufio", "ext4", "xfs", "exfat", "vfat", "nls_utf8", "nls_cp437", "nls_iso8859-1",
 	"nvme", "virtio_blk", "virtio_pci", "virtio_scsi", "sd_mod", "ahci", "usb-storage", "uas", "xhci-pci",
 }
 

@@ -29,6 +29,12 @@ guest:
 #   users:
 #     - {name: alice, password_hash: "$6$...", sudo: true, ssh_authorized_keys: ["ssh-ed25519 AAAA... alice@pc"]}
 
+# --- VM root disk size (lxd-vm only; containers are unaffected) ---
+# The guest root is a dm-snapshot as big as the image's disk (Ubuntu desktop: 4G, nearly full). The loader extends it at boot to
+# vm_root_size and grows the last (root) partition + ext4. 0|off|keep = do not grow. image.yaml `vm_root_size:` wins.
+# guest_defaults:
+#   vm_root_size: 20G
+
 # --- host disks in guests (ON by default, like Ventoy: this data partition is plainly read-write under /mnt/disks/<disk>/<label>) ---
 # Never delete or move omloader/ (store.img!) on it. NTFS: Windows Fast Startup/hibernation leaves the volume dirty and ntfs3
 # then refuses read-write: shut Windows down fully. The guest needs an NTFS driver (ntfs3 or ntfs-3g). Nothing is mounted until accessed.

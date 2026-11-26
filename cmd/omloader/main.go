@@ -206,7 +206,7 @@ func runGuest(args []string, out, errw io.Writer) int {
 	r := &boot.ExecRunner{BinDir: boot.GuestBinDir, LibDir: boot.GuestLibDir, Loader: p.Loader, Env: []string{"DM_DISABLE_UDEV=1"}}
 	root, err := boot.GuestAssemble(p, r, boot.GuestOptions{Out: out})
 	if err != nil {
-		fmt.Fprintln(errw, "OMLOADER_GUEST: error:", err)
+		fmt.Fprintln(errw, "OMLOADER_GUEST: error:", strings.ReplaceAll(err.Error(), "\n", " | "))
 		return 1
 	}
 	fmt.Fprintln(out, "OMLOADER_GUEST: root =", root)

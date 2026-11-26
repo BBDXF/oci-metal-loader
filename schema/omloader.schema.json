@@ -486,6 +486,7 @@
       "description": "accounts + console autologin for every image type (public default password; see docs/INSTALL.md)",
       "properties": {
         "hostname": {"type": "string"},
+        "vm_root_size": {"type": "string", "default": "20G", "description": "lxd-vm: grow the root disk to this size (e.g. 20G); 0/off/keep = do not grow"},
         "host_disks": {
           "type": "object",
           "additionalProperties": false,
