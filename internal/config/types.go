@@ -40,17 +40,17 @@ type GuestInit struct {
 	Init     string `yaml:"init" json:"init"`         // confirm (default) | accept-defaults | skip
 }
 
-// Clock configures the RTC interpretation: utc (default) | localtime (dual boot with Windows).
+// Clock configures the RTC interpretation: localtime (default, same as Windows) | utc.
 type Clock struct {
 	RTC string `yaml:"rtc" json:"rtc"`
 }
 
 // EffRTC is the effective clock.rtc.
 func (c Clock) EffRTC() string {
-	if c.RTC == "localtime" {
-		return "localtime"
+	if c.RTC == "utc" {
+		return "utc"
 	}
-	return "utc"
+	return "localtime"
 }
 
 // InitMode is the effective guest.init.

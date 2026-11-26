@@ -79,7 +79,7 @@ guest:
   keymap: us
   init: confirm
 clock:
-  rtc: utc                # utc | localtime (dual boot with Windows, which keeps the RTC in local time)
+  rtc: localtime          # localtime (default: same as Windows, which keeps the RTC in local time) | utc (Linux-only machines)
 guest_defaults:
   hostname: image         # image = the image name as an RFC 1123 label (vm-ubuntu-noble); keep = leave the guest's own; or a literal name. image.yaml runtime.hostname wins
   host_disks:             # the machine's own disks/partitions inside guests: /mnt/disks/<disk>/<label> (default ON, like Ventoy's plain data partition)

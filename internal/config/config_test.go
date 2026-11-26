@@ -189,7 +189,7 @@ func TestGuestInitDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	g := r.Config.Guest
-	if g.Timezone != "Asia/Shanghai" || g.Hostname != "{image}" || g.Locale != "en_US.UTF-8" || g.Keymap != "us" || g.InitMode() != "confirm" || r.Config.Clock.EffRTC() != "utc" {
+	if g.Timezone != "Asia/Shanghai" || g.Hostname != "{image}" || g.Locale != "en_US.UTF-8" || g.Keymap != "us" || g.InitMode() != "confirm" || r.Config.Clock.EffRTC() != "localtime" {
 		t.Errorf("guest %+v clock %+v", g, r.Config.Clock)
 	}
 	if errs := r.Validate(); len(errs) > 0 {

@@ -352,12 +352,12 @@ guest:
   keymap: us
   init: confirm          # confirm | accept-defaults（不弹窗）| skip（不初始化；systemd-firstboot 保持屏蔽）
 clock:
-  rtc: utc               # utc | localtime
+  rtc: localtime         # localtime（默认，与 Windows 一致）| utc
 ```
 
 `guest.timezone` 与 `clock.rtc` 同时作用于加载器自身的时区与 RTC 模式（`timedatectl`）。
 
-**Windows 双系统陷阱：** Windows 把硬件时钟当作*本地时间*，Linux 当作 UTC，切换系统后时间会差一个时区偏移。要么在此设置 `clock.rtc: localtime`，要么让 Windows 使用 UTC：`reg add "HKLM\SYSTEM\CurrentControlSet\Control\TimeZoneInformation" /v RealTimeIsUniversal /t REG_DWORD /d 1 /f`。
+**Windows 双系统：** Windows 把硬件时钟当作*本地时间*；默认的 `clock.rtc: localtime` 与之一致，Windows 无需改动。仅 Linux 的机器可设为 `clock.rtc: utc`；若想在有 Windows 时仍用 `utc`，让 Windows 使用 UTC：`reg add "HKLM\SYSTEM\CurrentControlSet\Control\TimeZoneInformation" /v RealTimeIsUniversal /t REG_DWORD /d 1 /f`。
 
 ## 10. 文件与目录布局
 

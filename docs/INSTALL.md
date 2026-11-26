@@ -355,12 +355,12 @@ guest:
   keymap: us
   init: confirm          # confirm | accept-defaults (no dialog) | skip (no init; systemd-firstboot stays masked)
 clock:
-  rtc: utc               # utc | localtime
+  rtc: localtime         # localtime (default, like Windows) | utc
 ```
 
 `guest.timezone` and `clock.rtc` also set the loader's own time zone and RTC mode (`timedatectl`).
 
-**Windows dual-boot trap:** Windows keeps the hardware clock in *local time*, Linux in UTC, so the time is wrong by the UTC offset after switching. Either set `clock.rtc: localtime` here, or make Windows use UTC: `reg add "HKLM\SYSTEM\CurrentControlSet\Control\TimeZoneInformation" /v RealTimeIsUniversal /t REG_DWORD /d 1 /f`.
+**Windows dual-boot:** Windows keeps the hardware clock in *local time*; the default `clock.rtc: localtime` matches it, so no change is needed in Windows. On a Linux-only machine set `clock.rtc: utc`; or, to keep `utc` with Windows, make Windows use UTC: `reg add "HKLM\SYSTEM\CurrentControlSet\Control\TimeZoneInformation" /v RealTimeIsUniversal /t REG_DWORD /d 1 /f`.
 
 ## 10. File and folder layout
 
