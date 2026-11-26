@@ -511,6 +511,7 @@ Boot: omloader boot --image <image> [--snapshot current|base|<label>] [--ephemer
 
 - **选择 ISO 后黑屏 / 没有菜单。** 多半是 Secure Boot 没关：请关闭。试试 Ventoy 的另一种启动模式（normal ↔ GRUB2）。Ventoy 菜单只在 VGA 显示；加载器自己的 GRUB 与启动日志同时输出到串口（`console=ttyS0,115200`）。
   帧缓冲控制台会按分辨率挑选字体（`omloader.font=`、`console.conf`）。*真机表现未测试。*
+- **AMD 核显机器（如 Ryzen 5600G）：kexec 后虚拟机黑屏。** `amdgpu` 在 kexec 后无法重新初始化 GPU（上游已知问题）。启动虚拟机客户机时，请从 GRUB 菜单项「safe display」（`nomodeset`）启动加载器：加载器中 `amdgpu` 不会碰 GPU，客户机内核只初始化一次，显示即可正常。代价：加载器 TUI 使用固定的较低分辨率。容器 / Docker-OCI 镜像用普通菜单项即可。客户机的 `kernel_cmdline_extra` 中无需再加 `nomodeset`。
 - **第一阶段提示找不到 live 介质 / 进入救援 shell。** 加载器找不到它的 ISO：ISO 可放在 exFAT、NTFS、ext4、xfs 或 FAT32 上，位置 `/omloader.iso`、`/omloader/` 或 `/ISO/`，或用 `omloader.isofile=` 指定。
 - **虚拟机里启动后控制台分辨率变低（如 1920x1080 -> 1280x800）。** 虚拟机的显示驱动替换了固件帧缓冲。请选择 GRUB 菜单项「safe display」（`nomodeset`），或在虚拟机里固定视频模式；真机上由原生驱动选择模式。详见 [ventoy.md](ventoy.md)。
 - **GPU 初始化错误 / 黑屏（如 AMD 上的 `fatal error during GPU init`）。** ISO 在 live 根文件系统中内置 amdgpu（`firmware-amd-graphics`）、Intel i915 GuC/HuC（`firmware-intel-graphics`）、bnx2/bnx2x 网卡、Realtek、Intel 无线及 misc 固件；NVIDIA 使用免固件的 nouveau/efifb。绕过办法：在 GRUB 选择「safe display (nomodeset)」，或在内核参数中加 `nomodeset` / `amdgpu.modeset=0`；控制台仍可通过固件帧缓冲工作。反馈问题：进入 shell（`S`）后发送 `dmesg | grep -i -E 'amdgpu|firmware'` 的输出。

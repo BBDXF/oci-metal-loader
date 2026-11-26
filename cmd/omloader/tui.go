@@ -118,6 +118,10 @@ func uptime() string {
 // terminal. A container boot leaves /run/omloader-switch for the launcher script; a VM boot ends in kexec -e.
 func tuiBoot(s *realSvc, req tui.BootRequest, out, errw io.Writer) int {
 	fmt.Fprintln(out, tui.L.BootStarting)
+	if res, err := config.Load(s.cfgPath, filepath.Join(s.imageDir(req.Image), "image.yaml")); err == nil &&
+		(res.Image.Type == "lxd-vm" || res.Image.Type == "vm") && amdHintNeeded("/sys", "/proc/cmdline") {
+		fmt.Fprintln(out, amdHint)
+	}
 	if f, err := os.OpenFile("/run/omloader/boot.lock", os.O_CREATE|os.O_RDWR, 0o600); err == nil {
 		if syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) != nil {
 			fmt.Fprintln(errw, "error: another console is already booting an image")

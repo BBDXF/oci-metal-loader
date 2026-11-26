@@ -60,6 +60,8 @@ Without `omloader.image=` on the kernel command line `autoboot.sh` reads this fi
 ## Display
 In Ventoy's GRUB2 mode `grub.cfg` does not touch the video mode (no `gfxmode`/`gfxterm`, no resolution submenu): Ventoy drives the display. The Linux console font is still sized to the framebuffer by `omloader-console.service` (see `docs/tui.md`, *Console font and resolution*).
 
+**AMD iGPU (e.g. Ryzen 5600G):** `amdgpu` cannot re-init after kexec (upstream known issue). For VM guests boot the loader from the "safe display" GRUB entry (`nomodeset`), so the guest kernel initialises the GPU once and the display works; the loader TUI then has a fixed lower resolution. Containers use the normal entry. Guest `nomodeset` in `kernel_cmdline_extra` is not needed.
+
 ## Console resolution (tty1 / VNC)
 
 GRUB switches to the best mode of the firmware (up to 1920x1080) and keeps it for the Linux console (`gfxpayload=keep`). In **VMs** (QEMU/libvirt virtio or
