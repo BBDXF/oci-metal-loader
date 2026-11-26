@@ -69,7 +69,7 @@ bochs video) the kernel's display driver is loaded about 3 s after boot, replace
 1280x800: the screen "drops" when the TUI appears. The default entry keeps the native drivers on purpose (container guests run on the loader kernel and keep
 native GPU drivers, multi-monitor and acceleration). Options:
 
-- Choose the GRUB entry **"OCI Metal Loader (safe display: keep the firmware resolution, nomodeset)"** (it also works from Ventoy's GRUB2 mode menu), or add `nomodeset`
+- Choose the GRUB entry **"OCI Metal Loader - Safe display (nomodeset; use for VM guests on AMD iGPU)"** (it also works from Ventoy's GRUB2 mode menu), or add `nomodeset`
   to the kernel arguments (`/boot/grub/extra.cfg`: `set omloader_args="nomodeset"`; libvirt: `OML_ARGS=nomodeset test/manual-run.sh start`).
 - Or fix the video mode of the VM (libvirt: `<video><model type='virtio' heads='1'><resolution x='1920' y='1080'/></model></video>`, which `test/manual-run.sh` does).
 - On real hardware the native driver normally chooses the panel's native mode; no action needed.
