@@ -51,6 +51,9 @@ func (m *Model) StartAutoBoot() {
 	}
 }
 
+// AutoBootArmed reports a pending countdown.
+func (m *Model) AutoBootArmed() bool { return m.auto != nil }
+
 // AutoBootActive is true while the countdown runs.
 func (m *Model) AutoBootActive() bool { return m.autoOn }
 

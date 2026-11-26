@@ -59,6 +59,7 @@ func runTUI(args []string, out, errw io.Writer) int {
 	svc := &realSvc{cfgPath: *cfg, imagesRoot: *ir, snapRoot: *sr, dataRoot: *dr, env: env}
 	os.Setenv("DM_DISABLE_UDEV", "1")
 	th := tui.EnvTheme(*ascii)
+	ramShown := false
 	armed := true // the automatic boot countdown only runs in the first TUI session (never again after a failed boot)
 	for {
 		m := tui.New(svc, th)
@@ -69,6 +70,10 @@ func runTUI(args []string, out, errw io.Writer) int {
 			claimAutoBoot()
 		}
 		armed = false
+		if !ramShown && !m.AutoBootActive() && !m.AutoBootArmed() {
+			_, creating := os.Stat("/run/omloader/store-create.lock")
+			ramShown = m.ShowRAMNotice(creating == nil)
+		}
 		term := &tui.Terminal{In: os.Stdin, Out: os.Stdout}
 		// marker for the test harness / boot timing: printed to the console log right before the first frame
 		fmt.Fprintf(os.Stdout, "OMLOADER_TUI_READY uptime=%s\r\n", uptime())

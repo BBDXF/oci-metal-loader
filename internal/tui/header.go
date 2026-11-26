@@ -92,3 +92,19 @@ func joinParts(p []string) string {
 	}
 	return s
 }
+
+// ShowRAMNotice opens a one-time popup when the snapshot store is RAM only (nothing survives a reboot).
+// creating: a store file is being created in the background. Returns false when no notice applies.
+func (m *Model) ShowRAMNotice(creating bool) bool {
+	if !m.hdrOK || m.hdr.StoreKind != "ram" || m.dlg != nil {
+		return false
+	}
+	l := []string{"No persistent store: snapshots and changes live in RAM", "and are LOST when you reboot or power off.", ""}
+	if creating {
+		l = append(l, "A store file (omloader/store.img) is being created in the", "background; it is used from the next boot.")
+	} else {
+		l = append(l, "To keep them: create a store file (Storage menu) or add an", "ext4 partition labelled OMLOADER.")
+	}
+	m.message("RAM mode", true, l...)
+	return true
+}

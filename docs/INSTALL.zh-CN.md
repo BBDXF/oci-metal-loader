@@ -541,4 +541,4 @@ Docker/OCI 镜像是实验性功能（默认开启；需要带 systemd 或 shell
 
 ### 常见问题：TUI 显示 "store RAM only"
 
-快照只在内存中，断电即失。优先级：`OMLOADER` 分区 > 存储文件（`omloader/store.img`、`omloader/*.dat|*.img`、`ventoy/*.dat`，ext4 卷标必须为 `OMLOADER`）> 内存。默认首次启动时加载器会在后台自动创建 `omloader/store.img`（`storage.snapshots.store_file.size`，20G；不阻塞 TUI，下次启动才使用，启动镜像会取消创建）。以下情况不会创建：宿主只读（Windows 快速启动/休眠导致的 NTFS → 请完全关机）、剩余空间 < 4G + 1G、`auto_create: false`、`omloader.store=off`。原因见 Storage 页面/加载器日志，详见 [store-file.md](store-file.md)。
+TUI 在此状态下打开时会弹出一次 "RAM mode" 提示（Enter 或 Esc 关闭；自动启动倒计时期间不弹）。快照只在内存中，断电即失。优先级：`OMLOADER` 分区 > 存储文件（`omloader/store.img`、`omloader/*.dat|*.img`、`ventoy/*.dat`，ext4 卷标必须为 `OMLOADER`）> 内存。默认首次启动时加载器会在后台自动创建 `omloader/store.img`（`storage.snapshots.store_file.size`，20G；不阻塞 TUI，下次启动才使用，启动镜像会取消创建）。以下情况不会创建：宿主只读（Windows 快速启动/休眠导致的 NTFS → 请完全关机）、剩余空间 < 4G + 1G、`auto_create: false`、`omloader.store=off`。原因见 Storage 页面/加载器日志，详见 [store-file.md](store-file.md)。
