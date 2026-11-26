@@ -55,8 +55,8 @@ jobs:
           tar -C bin -czf dist/omloader-${VERSION}-linux-amd64.tar.gz omloader
           OML_VERSION="$VERSION" build/mk-config-pkg.sh && cp out/omloader-${VERSION}-config.zip dist/
           (cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS)
-          # pre-release while the major version is 0
-          case "$VERSION" in 0.*) echo "PRERELEASE=true" >> "$GITHUB_ENV";; *) echo "PRERELEASE=false" >> "$GITHUB_ENV";; esac
+          # pre-release below 0.3.0 or with a -suffix (rc, dev)
+          case "$VERSION" in 0.[0-2].*|*-*) echo "PRERELEASE=true" >> "$GITHUB_ENV";; *) echo "PRERELEASE=false" >> "$GITHUB_ENV";; esac
       - name: GitHub Release
         uses: softprops/action-gh-release@v2
         with:
